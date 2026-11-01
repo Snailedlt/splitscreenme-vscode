@@ -62,7 +62,6 @@ export interface ApiModel {
   globals: Record<string, GlobalInfo>;
   objects: Record<string, ApiObject>;
   enums: Record<string, EnumInfo>;
-  protoInputEnums: Record<string, EnumInfo>;
   nucleusClasses: Record<string, { doc: string; params: string[] }>;
 }
 

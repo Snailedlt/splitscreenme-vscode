@@ -31,7 +31,10 @@ export const RULES = {
   },
   'readonly-member': { severity: 'warning', description: 'The property is read-only (computed by Nucleus); assigning it has no effect.' },
   'type-mismatch': { severity: 'warning', description: 'The assigned value does not match the type Nucleus expects.' },
-  'wrong-arguments': { severity: 'warning', description: 'No overload of this Nucleus method takes this number of arguments.' },
+  'wrong-arguments': {
+    severity: 'error',
+    description: 'No overload of this Nucleus method takes this number of arguments. Jint throws "No public methods with the specified arguments were found", so the handler fails to load (top level) or the instance setup fails (Game.Play).',
+  },
   'missing-required': { severity: 'error', description: 'Game.GUID, Game.GameName and Game.ExecutableName are required for Nucleus to load the handler.' },
   'callback-only-global': {
     severity: 'error',
@@ -117,7 +120,11 @@ interface Ctx {
   fnDepth: number;
   inTypeof: boolean;
   topLevelStatement: boolean;
+  /** Inside "use strict" code (program or function directive). */
+  strict: boolean;
 }
+
+const hasUseStrict = (body: Node[] | undefined) => !!body?.some((st) => st.type === 'ExpressionStatement' && st.directive === 'use strict');
 
 class Analyzer {
   private aliases = new Map<string, Resolved | null>();
@@ -135,7 +142,7 @@ class Analyzer {
 
   run() {
     this.collectBindings();
-    this.walk(this.program, { fnDepth: 0, inTypeof: false, topLevelStatement: false });
+    this.walk(this.program, { fnDepth: 0, inTypeof: false, topLevelStatement: false, strict: hasUseStrict(this.program.body) });
     this.checkRequired();
     this.checkDuplicates();
     this.checkHubInstall();
@@ -221,6 +228,7 @@ class Analyzer {
         fnDepth: ctx.fnDepth + (isFn ? 1 : 0),
         inTypeof: ctx.inTypeof || (node.type === 'UnaryExpression' && node.operator === 'typeof'),
         topLevelStatement: node.type === 'Program' || (node.type === 'ExpressionStatement' && ctx.topLevelStatement),
+        strict: ctx.strict || (isFn && node.body?.type === 'BlockStatement' && hasUseStrict(node.body.body)),
       };
       if (Array.isArray(v)) {
         for (const c of v) if (c && typeof c.type === 'string') this.walk(c, childCtx);
@@ -406,6 +414,18 @@ class Analyzer {
       });
       const s = suggest(name, visible.length ? visible : candidates);
       const fixes: Fix[] | undefined = s && !n.computed ? [{ title: `Change to \`${s}\``, edits: [{ start: n.property.start, end: n.property.end, text: s }], preferred: true }] : undefined;
+      if (isWrite && ctx.strict) {
+        // Verified with Jint 2.11.58: in strict code the write throws a TypeError.
+        this.report({
+          rule: 'unknown-member',
+          severity: 'error',
+          message: `\`${name}\` does not exist on \`${label}\`. In "use strict" code Jint throws on this write, so the handler fails to load (or the instance fails, inside a callback).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          start: n.property.start,
+          end: n.property.end,
+          fixes,
+        });
+        return;
+      }
       // `var args = (Context.Args = "...")` is an idiom from older handlers (and the official
       // guide): the property write is dropped, but the value still reaches the variable.
       const assign = ctx.parent;
@@ -473,7 +493,8 @@ class Analyzer {
     if (actual === 'null') return;
     if (expected.startsWith('enum:')) {
       const enumName = expected.slice(5);
-      if (actual === 'number' || actual === 'boolean') return;
+      if (actual === 'boolean') return this.checkBoolToEnum(label, enumName, value);
+      if (actual === 'number') return;
       const r = this.resolve(value);
       if (r?.kind === 'enumValue' && r.enumName !== enumName) mismatch(`a \`Nucleus.${enumName}\` value, not \`Nucleus.${r.enumName}\`.`);
       else if (actual === 'string') mismatch(api.enums[enumName] ? `a \`Nucleus.${enumName}\` value (e.g. \`Nucleus.${enumName}.${Object.keys(api.enums[enumName].values)[0]}\`).` : 'a number or boolean.');
@@ -504,13 +525,44 @@ class Analyzer {
       case 'number[]':
       case 'boolean[]':
         if (actual === 'array' || actual === 'expression') return;
-        return mismatch(`an array (e.g. \`[${value.raw ?? '...'}]\`), not ${article(actual)}.`, [
-          { title: 'Wrap the value in an array', edits: [{ start: value.start, end: value.end, text: `[${this.text.slice(value.start, value.end)}]` }], preferred: true },
-        ]);
+        // Verified with Jint 2.11.58: "Value of object[] type is expected" is thrown, so the
+        // handler fails to load (or the instance fails, inside Game.Play).
+        return mismatch(
+          `an array (e.g. \`[${value.raw ?? '...'}]\`), not ${article(actual)}. Jint cannot convert it and throws, so Nucleus fails to load the handler.`,
+          [{ title: 'Wrap the value in an array', edits: [{ start: value.start, end: value.end, text: `[${this.text.slice(value.start, value.end)}]` }], preferred: true }],
+          'error',
+        );
       case 'function':
         if (actual === 'function' || actual === 'expression') return;
         return mismatch(`a function, e.g. \`function () { ... }\`, not ${article(actual)}.`);
     }
+  }
+
+  /**
+   * Jint converts `true` to 1 and `false` to 0 for enum fields (verified with Jint 2.11.58).
+   * Fine for enums like Nucleus.SetWindowPosHook (True = 1), but Nucleus.DPIHandling has
+   * True = 0, so `Game.DPIHandling = true` selects Scaled.
+   */
+  private checkBoolToEnum(label: string, enumName: string, value: Node) {
+    const e = api.enums[enumName];
+    if (!e) return;
+    const b: boolean = value.value;
+    const num = b ? 1 : 0;
+    const names = Object.keys(e.values);
+    const actualKey = names.find((k) => e.values[k] === num);
+    const meantKey = names.find((k) => k.toLowerCase() === String(b));
+    if (actualKey && actualKey === meantKey) return; // e.g. SetWindowPosHook: true -> True
+    if (!actualKey && !b) return; // false -> 0 with no member: "off"
+    const fixes: Fix[] = [];
+    if (meantKey) fixes.push({ title: `Use Nucleus.${enumName}.${meantKey} (what \`${b}\` suggests)`, edits: [{ start: value.start, end: value.end, text: `Nucleus.${enumName}.${meantKey}` }], preferred: true });
+    if (actualKey) fixes.push({ title: `Use Nucleus.${enumName}.${actualKey} (keeps the current behaviour)`, edits: [{ start: value.start, end: value.end, text: `Nucleus.${enumName}.${actualKey}` }] });
+    this.report({
+      rule: 'type-mismatch',
+      message: `\`${label} = ${b}\` converts to ${num}, which is ${actualKey ? `\`Nucleus.${enumName}.${actualKey}\`` : 'not a defined value'}${meantKey && meantKey !== actualKey ? `, not \`Nucleus.${enumName}.${meantKey}\`` : ''}. Use the enum value you mean.`,
+      start: value.start,
+      end: value.end,
+      fixes,
+    });
   }
 
   private checkCall(n: Node) {
@@ -535,7 +587,7 @@ class Analyzer {
       const arities = [...new Set((m.overloads ?? []).map((o) => o.params.length))].sort((a, b) => a - b);
       this.report({
         rule: 'wrong-arguments',
-        message: `\`${label}\` takes ${arities.join(' or ')} argument${arities.length === 1 && arities[0] === 1 ? '' : 's'}, but ${count} ${count === 1 ? 'was' : 'were'} given. Nucleus will fail with "No public methods with the specified arguments were found".`,
+        message: `\`${label}\` takes ${arities.join(' or ')} argument${arities.length === 1 && arities[0] === 1 ? '' : 's'}, but ${count} ${count === 1 ? 'was' : 'were'} given. Jint throws "No public methods with the specified arguments were found".`,
         start: n.callee.property?.start ?? n.start,
         end: n.end,
       });

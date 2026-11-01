@@ -3503,7 +3503,7 @@
      "kind": "field",
      "csType": "SetWindowPosHook",
      "type": "enum:SetWindowPosHook",
-     "ts": "number | boolean",
+     "ts": "Nucleus.SetWindowPosHook | number | boolean",
      "doc": "Prevents the game from calling SetWindowPos to resposition and resize the game window, instead forcing it to the resolution set by Nucleus. This will usually require using startup hooks.",
      "example": "Game.ProtoInput.SetWindowPosHook = true;",
      "category": "Proto Input"
@@ -3562,7 +3562,7 @@
      "kind": "field",
      "csType": "MoveWindowHook",
      "type": "enum:MoveWindowHook",
-     "ts": "number | boolean",
+     "ts": "Nucleus.MoveWindowHook | number | boolean",
      "doc": ""
     },
     "AdjustWindowRectHook": {
@@ -3576,7 +3576,7 @@
      "kind": "field",
      "csType": "SetRemoveBorderHook",
      "type": "enum:SetRemoveBorderHook",
-     "ts": "number | boolean",
+     "ts": "Nucleus.SetRemoveBorderHook | number | boolean",
      "doc": ""
     },
     "ScaleFromX": {
@@ -3803,7 +3803,7 @@
      "kind": "field",
      "csType": "DrawFakeCursor",
      "type": "enum:DrawFakeCursor",
-     "ts": "number | boolean",
+     "ts": "Nucleus.DrawFakeCursor | number | boolean",
      "doc": "This is set in the input locking",
      "example": "Game.ProtoInput.DrawFakeCursor = false;",
      "category": "Proto Input"
@@ -3854,7 +3854,7 @@
      "kind": "field",
      "csType": "PutMouseInsideWindow",
      "type": "enum:PutMouseInsideWindow",
-     "ts": "number | boolean",
+     "ts": "Nucleus.PutMouseInsideWindow | number | boolean",
      "doc": ""
     },
     "UseDinputRedirection": {
@@ -9218,10 +9218,9 @@
     "GdiDpiScaling_DpiUnaware": 3,
     "GdiDpiScaling_DpiUnaware_GdiScale": 4
    }
-  }
- },
- "protoInputEnums": {
+  },
   "SetWindowPosHook": {
+   "doc": "Value for `Game.ProtoInput.SetWindowPosHook`. `true` is the same as `True`.",
    "values": {
     "True": 1,
     "DontResize": 2,
@@ -9229,6 +9228,7 @@
    }
   },
   "MoveWindowHook": {
+   "doc": "Value for `Game.ProtoInput.MoveWindowHook`. `true` is the same as `True`.",
    "values": {
     "True": 1,
     "DontResize": 2,
@@ -9236,12 +9236,14 @@
    }
   },
   "DrawFakeCursor": {
+   "doc": "Value for `Game.ProtoInput.DrawFakeCursor`. `true` is the same as `True`.",
    "values": {
     "True": 1,
     "Fix": 2
    }
   },
   "PutMouseInsideWindow": {
+   "doc": "Value for `Game.ProtoInput.PutMouseInsideWindow`. `true` is the same as `True`.",
    "values": {
     "True": 1,
     "IgnoreTopLeft": 2,
@@ -9249,12 +9251,14 @@
    }
   },
   "SetRemoveBorderHook": {
+   "doc": "Value for `Game.ProtoInput.SetRemoveBorderHook`. `true` is the same as `True`.",
    "values": {
     "True": 1,
     "DontWait": 2
    }
   },
   "Key": {
+   "doc": "Virtual key codes.",
    "values": {
     "Back": 8,
     "Tab": 9,

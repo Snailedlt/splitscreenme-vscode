@@ -408,11 +408,23 @@ const enumSources = {
 const enums = {};
 for (const [name, [file, doc]] of Object.entries(enumSources)) enums[name] = { doc, values: parseEnum(read(gaming, file), name) };
 
+// The Proto Input option enums are declared in namespace Nucleus.Gaming too, so handlers can
+// use them as Nucleus.SetWindowPosHook.DontResize etc. (verified with Jint 2.11.58).
 const protoEnumFile = read(gaming, 'Coop/ProtoInput/ProtoInputEnumsOptions.cs');
-const protoEnums = {};
-for (const m of protoEnumFile.matchAll(/public\s+enum\s+(\w+)/g)) protoEnums[m[1]] = { values: parseEnum(protoEnumFile, m[1]) };
+if (!/namespace\s+Nucleus\.Gaming\s*[{;\n]/.test(protoEnumFile)) throw new Error('ProtoInputEnumsOptions.cs moved out of Nucleus.Gaming');
+const protoEnumDocs = {
+  SetWindowPosHook: 'Value for `Game.ProtoInput.SetWindowPosHook`. `true` is the same as `True`.',
+  MoveWindowHook: 'Value for `Game.ProtoInput.MoveWindowHook`. `true` is the same as `True`.',
+  DrawFakeCursor: 'Value for `Game.ProtoInput.DrawFakeCursor`. `true` is the same as `True`.',
+  PutMouseInsideWindow: 'Value for `Game.ProtoInput.PutMouseInsideWindow`. `true` is the same as `True`.',
+  SetRemoveBorderHook: 'Value for `Game.ProtoInput.SetRemoveBorderHook`. `true` is the same as `True`.',
+  Key: 'Virtual key codes.',
+};
+for (const m of protoEnumFile.matchAll(/public\s+enum\s+(\w+)/g)) {
+  enums[m[1]] = { doc: protoEnumDocs[m[1]] ?? 'Proto Input option values.', values: parseEnum(protoEnumFile, m[1]) };
+}
 
-const enumNames = new Set([...Object.keys(enums), ...Object.keys(protoEnums)]);
+const enumNames = new Set(Object.keys(enums));
 
 const NUM = new Set(['int', 'uint', 'long', 'ulong', 'double', 'float', 'short', 'ushort', 'byte', 'sbyte', 'decimal', 'IntPtr']);
 /** Simplified type used by the linter: string|boolean|number|string[]|number[]|function|enum:X|object:X|any */
@@ -675,7 +687,6 @@ const model = {
     UserInfo: { doc: 'User info.', members: { GetLocalIP: { kind: 'method', doc: 'Local IP address.', overloads: [{ returns: 'string', params: [] }] } } },
   },
   enums,
-  protoInputEnums: protoEnums,
   nucleusClasses: {
     IniSaveInfo: { doc: 'A key in an INI file, for `Context.ModifySaveFile(..., Nucleus.SaveType.INI, [...])`.', params: ['section', 'key', 'value'] },
     CfgSaveInfo: { doc: 'A key in a CFG file, for `Context.ModifySaveFile(..., Nucleus.SaveType.CFG, [...])`.', params: ['section', 'key', 'value'] },

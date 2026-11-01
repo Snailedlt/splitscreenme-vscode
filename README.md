@@ -102,10 +102,10 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 | `syntax-error` | error | The file does not parse. |
 | `es5-only` | error | Syntax Jint 2.x cannot parse: arrow functions, template strings, classes, spread/rest, destructuring, default parameters, `for…of`, `?.`, `??`, `**`, trailing commas in calls, `const` in a `for` head, … The handler would not load. Fixes are offered where mechanical. |
 | `let-const-semantics` | info | `let`/`const` *are* accepted by Jint 2.x, but behave exactly like `var`: function-scoped and reassignable. |
-| `unknown-member` | warning | `Game.IgnoreWindowBordercheck`, `Context.PLayerID`, `player.ProtoController5`, … Jint silently ignores writes to unknown properties of Nucleus objects, and reads return `undefined`. With `"use strict"`, writes throw instead. Includes a did-you-mean fix. |
+| `unknown-member` | warning | `Game.IgnoreWindowBordercheck`, `Context.PLayerID`, `player.ProtoController5`, … Jint silently ignores writes to unknown properties of Nucleus objects, and reads return `undefined`. In `"use strict"` code the write throws, so it is an **error** there. Includes a did-you-mean fix. |
 | `readonly-member` | warning | Assigning computed values such as `Context.Width`, or methods. |
-| `type-mismatch` | warning | `Game.KillMutex = "x"` (needs an array), `Game.HandlerInterval = "100"`, a non-function `Game.Play`, the wrong `Nucleus.*` enum, … `"true"`/`"false"` strings are only `info`, because .NET parses them. |
-| `wrong-arguments` | warning | No overload of a `Context`/`ProtoInput` method or `new Nucleus.IniSaveInfo` takes that many arguments. This fails at runtime with "No public methods with the specified arguments were found". |
+| `type-mismatch` | warning / error | A non-array for an array option (`Game.KillMutex = "x"`) is an **error**: Jint throws and the handler doesn't load. Booleans for enums are checked against what they convert to: `Game.DPIHandling = true` selects `Scaled`, not `True`. Other mismatches (`Game.HandlerInterval = "100"`, a non-function `Game.Play`, the wrong `Nucleus.*` enum) are warnings. `"true"`/`"false"` strings are only `info`, because .NET parses them. |
+| `wrong-arguments` | error | No overload of a `Context`/`ProtoInput` method or `new Nucleus.IniSaveInfo` takes that many arguments. Jint throws "No public methods with the specified arguments were found", so the handler fails to load or the instance fails. |
 | `missing-required` | error | `Game.GUID`, `Game.GameName` or `Game.ExecutableName` is missing or empty (`ExecutableNames` also satisfies the executable). |
 | `callback-only-global` | error | `Context`, `Player`, `PlayerList`, `Handler` or `ProtoInput` used at the top level. They only exist inside callbacks such as `Game.Play`. |
 | `duplicate-assignment` | warning | The same option is set twice at the top level, so the first value is dead. |
@@ -125,7 +125,7 @@ Game.Other = 1; // nucleus-lint-disable-line
 
 ### How the rules were validated
 
-The linter runs over the 150 most-downloaded handlers on the Hub with **no errors**. The warnings it reports there are real defects: typos such as `Context.PLayerID` and `Game.IgnoreWindowBordercheck`, options that don't exist (`Game.ForceFinishOnPlay`, `Player.ProtoController5`–`17`), and a find-and-replace accident (`Game.PauseEscapeTheBackroomsweenStarts`). The `let`/`const` and unknown-property behaviours were confirmed in the Jint 2.11 parser and interop sources.
+The linter runs over the 150 most-downloaded handlers on the Hub with **no errors**. The warnings it reports there are real defects: typos such as `Context.PLayerID` and `Game.IgnoreWindowBordercheck`, options that don't exist (`Game.ForceFinishOnPlay`, `Player.ProtoController5`–`17`), and a find-and-replace accident (`Game.PauseEscapeTheBackroomsweenStarts`). The engine behaviours behind the rules were confirmed against Jint 2.11.58 itself: 41 probe handlers were run with Nucleus' engine setup, and the linter reports an error for exactly the probes that fail to load or fail in `Game.Play`.
 
 ## Settings
 

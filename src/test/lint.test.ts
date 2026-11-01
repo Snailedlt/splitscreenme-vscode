@@ -239,3 +239,41 @@ test('Proto Input requires the legacy input options to be off', () => {
   assert.deepEqual(only(HEADER, 'protoinput-legacy-hooks'), []);
   assert.deepEqual(only(HEADER + 'Game.ProtoInput.XinputHook = true;\n', 'protoinput-legacy-hooks'), []);
 });
+
+// The following were verified by running probes through Jint 2.11.58 with Nucleus' engine setup.
+test('a non-array value for an array option is an error (the handler fails to load)', () => {
+  const d = only(HEADER + 'Game.KillMutex = "Mutex";\nGame.XInputPlusDll = 5;\nGame.DirExclusions = null;\n', 'type-mismatch');
+  assert.deepEqual(d.map((x) => x.severity), ['error', 'error']);
+  assert.match(d[0].message, /fails to load/);
+});
+
+test('booleans assigned to enums: DPIHandling true means Scaled', () => {
+  const t = only(HEADER + 'Game.DPIHandling = true;\n', 'type-mismatch');
+  assert.equal(t.length, 1);
+  assert.match(t[0].message, /converts to 1, which is `Nucleus\.DPIHandling\.Scaled`, not `Nucleus\.DPIHandling\.True`/);
+  assert.deepEqual(t[0].fixes!.map((f) => f.edits[0].text), ['Nucleus.DPIHandling.True', 'Nucleus.DPIHandling.Scaled']);
+  const f = only(HEADER + 'Game.DPIHandling = false;\n', 'type-mismatch');
+  assert.match(f[0].message, /converts to 0, which is `Nucleus\.DPIHandling\.True`/);
+  // Proto Input enums define True = 1, so booleans mean what they say
+  assert.deepEqual(only(HEADER + 'Game.ProtoInput.SetWindowPosHook = true;\nGame.ProtoInput.DrawFakeCursor = false;\n', 'type-mismatch'), []);
+});
+
+test('Proto Input enums are reachable as Nucleus.<Enum>', () => {
+  assert.deepEqual(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResize;\n'), []);
+  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResiz;\n')), ['unknown-member']);
+  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.DrawFakeCursor.Fix;\n')), ['type-mismatch']);
+});
+
+test('wrong argument counts are errors', () => {
+  const d = only(HEADER + 'Game.Play = function () { Context.GetFolder(); };\n', 'wrong-arguments');
+  assert.equal(d[0].severity, 'error');
+});
+
+test('unknown-member writes are errors in "use strict" code (Jint throws)', () => {
+  const top = only('"use strict";\n' + HEADER + 'Game.NoSuchOption = true;\n', 'unknown-member');
+  assert.equal(top[0].severity, 'error');
+  const fn = only(HEADER + 'Game.Play = function () {\n  "use strict";\n  Context.Nope = 1;\n};\nGame.Other = 1;\n', 'unknown-member');
+  assert.deepEqual(fn.map((d) => d.severity), ['error', 'warning']);
+  // not a directive unless it comes first
+  assert.equal(only(HEADER + '"use strict";\nGame.NoSuchOption = true;\n', 'unknown-member')[0].severity, 'warning');
+});
