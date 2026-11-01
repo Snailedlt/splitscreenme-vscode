@@ -1,0 +1,10 @@
+**
+!dist/extension.js
+!dist/cli.js
+!types/nucleus.d.ts
+!snippets/**
+!media/icon.png
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE

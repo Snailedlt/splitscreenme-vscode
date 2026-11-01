@@ -1,0 +1,297 @@
+{
+  "name": "splitscreenme-vscode",
+  "displayName": "SplitScreen.Me / Nucleus Co-op Handler Tools",
+  "description": "IntelliSense, docs, linting and packaging for Nucleus Co-op game handlers (SplitScreen.Me).",
+  "version": "0.1.0",
+  "publisher": "splitscreenme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SplitScreen-Me/splitscreenme-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets",
+    "Other"
+  ],
+  "keywords": [
+    "nucleus",
+    "nucleus co-op",
+    "splitscreen",
+    "split-screen",
+    "handler"
+  ],
+  "main": "./dist/extension.js",
+  "bin": {
+    "nucleus-lint": "./dist/cli.js"
+  },
+  "activationEvents": [
+    "onLanguage:javascript"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "splitscreenme.newHandler",
+        "title": "New Handler…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.packageHandler",
+        "title": "Package Handler for the Hub (.nc)",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.installHandler",
+        "title": "Install Handler into Nucleus Co-op",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.browseHub",
+        "title": "Browse Handlers on the Hub…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.setupTypes",
+        "title": "Set Up Type Definitions (jsconfig.json + .d.ts)",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.lintWorkspace",
+        "title": "Lint All Handlers in Workspace",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.openDocs",
+        "title": "Open Documentation…",
+        "category": "Nucleus"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "splitscreenme.packageHandler",
+          "when": "resourceExtname == .js",
+          "group": "nucleus@1"
+        },
+        {
+          "command": "splitscreenme.installHandler",
+          "when": "resourceExtname == .js && !isWeb",
+          "group": "nucleus@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "splitscreenme.installHandler",
+          "when": "!isWeb"
+        }
+      ]
+    },
+    "snippets": [
+      {
+        "language": "javascript",
+        "path": "./snippets/nucleus.code-snippets"
+      }
+    ],
+    "configuration": {
+      "title": "SplitScreen.Me / Nucleus Co-op",
+      "properties": {
+        "splitscreenme.detection": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "off"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/…, or live in a \"handlers\" folder.",
+            "Treat every JavaScript file as a Nucleus handler.",
+            "Disable all handler features."
+          ],
+          "description": "Which JavaScript files are treated as Nucleus Co-op handlers."
+        },
+        "splitscreenme.lint.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, …)."
+        },
+        "splitscreenme.lint.rules": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Override the severity of individual rules, e.g. `{ \"deprecated\": \"off\", \"unknown-member\": \"error\" }`. See the [rule list](https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules).",
+          "properties": {
+            "syntax-error": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "es5-only": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "let-const-semantics": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "unknown-member": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "readonly-member": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "type-mismatch": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "wrong-arguments": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "missing-required": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "callback-only-global": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "duplicate-assignment": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "hub-install-parse": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "guid-characters": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "deprecated": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "splitscreenme.completion.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Provide completion, hover and signature help for the Nucleus API. Turned off automatically by \"Set Up Type Definitions\", since TypeScript then provides them."
+        },
+        "splitscreenme.nucleusPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Nucleus Co-op installation folder (contains NucleusCoop.exe and \"handlers\"). Used by \"Install Handler into Nucleus Co-op\"."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "generate": "node scripts/generate-api.mjs",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node scripts/build.mjs --tests && node --test dist-test/*.test.js",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "node scripts/build.mjs --production"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1b1f2a",
+    "theme": "dark"
+  }
+}

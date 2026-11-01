@@ -1,0 +1,32 @@
+name: Update Nucleus API data
+# Regenerates data/nucleus-api.json and types/nucleus.d.ts from the latest
+# Nucleus Co-op sources and docs, and opens a PR if anything changed.
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-nucleus ../splitscreenme-nucleus
+      - run: git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-www ../splitscreenme-www
+      - run: npm run generate
+      - run: npm test
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: update-nucleus-api
+          title: Update Nucleus API data
+          commit-message: Update Nucleus API data from upstream sources
+          body: Regenerated `data/nucleus-api.json` and `types/nucleus.d.ts` with `npm run generate`.

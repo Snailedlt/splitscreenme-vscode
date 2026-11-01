@@ -1,0 +1,263 @@
+// Typed access to the generated Nucleus handler API model (data/nucleus-api.json).
+import raw from '../../data/nucleus-api.json';
+
+export type SimpleType =
+  | 'string'
+  | 'boolean'
+  | 'number'
+  | 'string[]'
+  | 'number[]'
+  | 'boolean[]'
+  | 'function'
+  | 'array'
+  | 'void'
+  | 'any'
+  | `enum:${string}`;
+
+export interface Param {
+  name: string;
+  type: string;
+  csType?: string;
+  rest?: boolean;
+  optional?: boolean;
+}
+export interface Overload {
+  returns: string;
+  params: Param[];
+}
+export interface Member {
+  kind: 'field' | 'property' | 'method' | 'object';
+  csType?: string;
+  type?: SimpleType;
+  ts?: string;
+  ref?: string;
+  default?: string;
+  readonly?: boolean;
+  internal?: boolean;
+  required?: boolean;
+  doc: string;
+  example?: string;
+  category?: string;
+  deprecated?: string;
+  overloads?: Overload[];
+}
+export interface ApiObject {
+  doc: string;
+  members: Record<string, Member>;
+}
+export interface GlobalInfo {
+  type: string;
+  doc: string;
+  topLevel: boolean;
+}
+export interface EnumInfo {
+  doc?: string;
+  values: Record<string, number>;
+}
+export interface ApiModel {
+  source: { nucleus: string | null; www: string | null };
+  jint: string | null;
+  globals: Record<string, GlobalInfo>;
+  objects: Record<string, ApiObject>;
+  enums: Record<string, EnumInfo>;
+  protoInputEnums: Record<string, EnumInfo>;
+  nucleusClasses: Record<string, { doc: string; params: string[] }>;
+}
+
+export const api = raw as unknown as ApiModel;
+
+export const DOCS_URL = 'https://www.splitscreen.me/docs/handler-api';
+
+/** What a resolved expression refers to. */
+export type Resolved =
+  | { kind: 'object'; type: string } // an ApiObject (Game, Context, GameHook, ...)
+  | { kind: 'list'; of: string } // PlayerList
+  | { kind: 'nucleus' } // the Nucleus namespace
+  | { kind: 'enum'; name: string } // Nucleus.Folder
+  | { kind: 'enumValue'; enumName: string; value: string }
+  | { kind: 'nucleusClass'; name: string }
+  | { kind: 'member'; owner: string; name: string; member: Member }
+  | { kind: 'opaque' }; // something we don't model (System.*, Handler, Record values, ...)
+
+/** Type name of an API object, from a TS type string like "GameHook" or "PlayerInfo[]". */
+export function objectTypeOf(ts: string | undefined): string | undefined {
+  if (!ts) return undefined;
+  return api.objects[ts] ? ts : undefined;
+}
+
+export function resolveGlobal(name: string): Resolved | undefined {
+  const g = api.globals[name];
+  if (!g) return undefined;
+  if (name === 'Nucleus') return { kind: 'nucleus' };
+  if (name === 'PlayerList') return { kind: 'list', of: 'PlayerInfo' };
+  if (api.objects[g.type]) return { kind: 'object', type: g.type };
+  return { kind: 'opaque' };
+}
+
+export interface StepResult {
+  resolved?: Resolved;
+  /** Set when `name` is not a member of a modelled object. */
+  unknown?: { owner: string; ownerLabel: string; candidates: string[] };
+}
+
+/** Resolve `.name` on top of `base`. */
+export function resolveMember(base: Resolved, name: string): StepResult {
+  switch (base.kind) {
+    case 'object': {
+      const obj = api.objects[base.type];
+      const m = obj.members[name];
+      if (!m) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
+      return { resolved: { kind: 'member', owner: base.type, name, member: m } };
+    }
+    case 'member': {
+      const ref = base.member.ref;
+      if (base.member.kind === 'object' && ref && api.objects[ref]) return resolveMember({ kind: 'object', type: ref }, name);
+      return { resolved: { kind: 'opaque' } };
+    }
+    case 'list':
+      if (name === 'Count') return { resolved: { kind: 'opaque' } };
+      return { resolved: { kind: 'opaque' } };
+    case 'nucleus': {
+      if (api.enums[name]) return { resolved: { kind: 'enum', name } };
+      if (api.nucleusClasses[name]) return { resolved: { kind: 'nucleusClass', name } };
+      // Sub-namespaces (e.g. Nucleus.Coop) and other types are reachable but not modelled.
+      if (/^[A-Z]/.test(name) && !looksLikeTypo(name, [...Object.keys(api.enums), ...Object.keys(api.nucleusClasses)])) {
+        return { resolved: { kind: 'opaque' } };
+      }
+      return { unknown: { owner: 'Nucleus', ownerLabel: 'Nucleus', candidates: [...Object.keys(api.enums), ...Object.keys(api.nucleusClasses)] } };
+    }
+    case 'enum': {
+      const e = api.enums[base.name];
+      if (!(name in e.values)) return { unknown: { owner: `Nucleus.${base.name}`, ownerLabel: `Nucleus.${base.name}`, candidates: Object.keys(e.values) } };
+      return { resolved: { kind: 'enumValue', enumName: base.name, value: name } };
+    }
+    default:
+      return { resolved: { kind: 'opaque' } };
+  }
+}
+
+/** Element type when indexing (`PlayerList[i]`). */
+export function resolveIndex(base: Resolved): Resolved {
+  if (base.kind === 'list') return { kind: 'object', type: base.of };
+  return { kind: 'opaque' };
+}
+
+/** Members to offer for completion after `base.`. */
+export function membersOf(base: Resolved): { name: string; member?: Member; enumValue?: number; detail?: string }[] {
+  switch (base.kind) {
+    case 'object':
+      return Object.entries(api.objects[base.type].members)
+        .filter(([, m]) => !m.internal)
+        .map(([name, member]) => ({ name, member }));
+    case 'member':
+      if (base.member.kind === 'object' && base.member.ref && api.objects[base.member.ref]) {
+        return membersOf({ kind: 'object', type: base.member.ref });
+      }
+      return [];
+    case 'list':
+      return [{ name: 'Count', detail: 'number' }];
+    case 'nucleus':
+      return [
+        ...Object.keys(api.enums).map((name) => ({ name, detail: 'enum' })),
+        ...Object.keys(api.nucleusClasses).map((name) => ({ name, detail: 'class' })),
+      ];
+    case 'enum':
+      return Object.entries(api.enums[base.name].values).map(([name, v]) => ({ name, enumValue: v, detail: `= ${v}` }));
+    default:
+      return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
+
+export function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/** Best "did you mean" candidate, or undefined if nothing is close. */
+export function suggest(name: string, candidates: string[]): string | undefined {
+  const lower = name.toLowerCase();
+  const exactCi = candidates.find((c) => c.toLowerCase() === lower);
+  if (exactCi) return exactCi;
+  let best: string | undefined;
+  let bestScore = Infinity;
+  for (const c of candidates) {
+    const d = levenshtein(lower, c.toLowerCase());
+    if (d < bestScore) {
+      bestScore = d;
+      best = c;
+    }
+  }
+  const limit = Math.max(2, Math.floor(name.length / 4));
+  return bestScore <= limit ? best : undefined;
+}
+
+function looksLikeTypo(name: string, candidates: string[]): boolean {
+  return suggest(name, candidates) !== undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+export function memberSignature(owner: string, name: string, m: Member): string[] {
+  const label = ownerLabel(owner);
+  if (m.kind === 'method') {
+    return (m.overloads ?? []).map(
+      (o) => `${label}.${name}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}${p.optional ? '?' : ''}: ${p.type}`).join(', ')}): ${o.returns}`,
+    );
+  }
+  const t = m.kind === 'object' ? m.ref ?? m.ts : m.ts;
+  return [`${m.readonly ? '(read-only) ' : ''}${label}.${name}: ${t}`];
+}
+
+/** "GameHook" -> "Game.Hook" etc., for messages. */
+export function ownerLabel(owner: string): string {
+  switch (owner) {
+    case 'GameHook':
+      return 'Game.Hook';
+    case 'GameProtoInput':
+      return 'Game.ProtoInput';
+    case 'PlayerInfo':
+      return 'Player';
+    case 'ProtoInputRuntime':
+      return 'ProtoInput';
+    case 'ProtoInputValues':
+      return 'ProtoInput.Values';
+    case 'HubMaintainer':
+      return 'Hub.Maintainer';
+    case 'HubHandler':
+      return 'Hub.Handler';
+    default:
+      return owner;
+  }
+}
+
+export function memberMarkdown(owner: string, name: string, m: Member): string {
+  const parts: string[] = [];
+  parts.push('```ts\n' + memberSignature(owner, name, m).join('\n') + '\n```');
+  if (m.deprecated) parts.push(`**${m.deprecated}**`);
+  if (m.doc) parts.push(m.doc);
+  const meta: string[] = [];
+  if (m.default !== undefined) meta.push(`Default: \`${m.default}\``);
+  if (m.category) meta.push(`Category: ${m.category}`);
+  if (m.required) meta.push('**Required**');
+  if (meta.length) parts.push(meta.join(' · '));
+  if (m.example) parts.push('```js\n' + m.example + '\n```');
+  parts.push(`[Handler API docs](${DOCS_URL})`);
+  return parts.join('\n\n');
+}

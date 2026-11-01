@@ -1,0 +1,151 @@
+{
+  "Nucleus handler skeleton": {
+    "prefix": "nc-handler",
+    "description": "Minimal Nucleus Co-op handler (ES5)",
+    "body": [
+      "Game.GameName = \"${1:Game Name}\";",
+      "Game.GUID = \"${2:${1/[^A-Za-z0-9 ]//g}}\";",
+      "Game.ExecutableName = \"${3:Game.exe}\";",
+      "Game.SteamID = \"${4}\";",
+      "Game.MaxPlayers = ${5:4};",
+      "Game.MaxPlayersOneMonitor = ${6:4};",
+      "Game.Description = \"${7}\";",
+      "",
+      "Game.SymlinkGame = true;",
+      "Game.SymlinkExe = false;",
+      "Game.HandlerInterval = 100;",
+      "Game.PauseBetweenStarts = 10;",
+      "Game.SupportsPositioning = true;",
+      "Game.SupportsKeyboard = true;",
+      "Game.KillMutex = [];",
+      "Game.StartArguments = \"-windowed\";",
+      "",
+      "Game.Hook.CustomDllEnabled = false;",
+      "Game.XInputPlusDll = [\"xinput1_3.dll\"];",
+      "",
+      "Game.Play = function () {",
+      "\t$0",
+      "};",
+      ""
+    ]
+  },
+  "Game.Play": {
+    "prefix": "nc-play",
+    "description": "Per-instance setup callback (Context, Player and PlayerList are available inside)",
+    "body": ["Game.Play = function () {", "\t$0", "};"]
+  },
+  "Edit INI file": {
+    "prefix": "nc-ini",
+    "description": "Write keys to an INI file for this instance (Context.ModifySaveFile)",
+    "body": [
+      "var ${1:configPath} = Context.GetFolder(Nucleus.Folder.${2|InstancedGameFolder,Documents,MainGameFolder|}) + \"\\\\\\\\${3:config.ini}\";",
+      "Context.ModifySaveFile(${1}, ${1}, Nucleus.SaveType.INI, [",
+      "\tnew Nucleus.IniSaveInfo(\"${4:Display}\", \"${5:Width}\", Context.Width),",
+      "\tnew Nucleus.IniSaveInfo(\"${4}\", \"${6:Height}\", Context.Height)",
+      "]);"
+    ]
+  },
+  "Edit XML attribute": {
+    "prefix": "nc-xml",
+    "description": "Change an XML attribute (Context.ChangeXmlAttributeValue)",
+    "body": [
+      "var ${1:xmlPath} = Context.GetFolder(Nucleus.Folder.InstancedGameFolder) + \"\\\\\\\\${2:settings.xml}\";",
+      "Context.ChangeXmlAttributeValue(${1}, \"${3://resolution}\", \"${4:width}\", Context.Width);",
+      "Context.ChangeXmlAttributeValue(${1}, \"${3}\", \"${5:height}\", Context.Height);"
+    ]
+  },
+  "Replace lines in a text file": {
+    "prefix": "nc-lines",
+    "description": "Find lines and replace them (Context.FindLineNumberInTextFile + ReplaceLinesInTextFile)",
+    "body": [
+      "var ${1:txtPath} = Context.GetFolder(Nucleus.Folder.InstancedGameFolder) + \"\\\\\\\\${2:settings.cfg}\";",
+      "Context.ReplaceLinesInTextFile(${1}, [",
+      "\tContext.FindLineNumberInTextFile(${1}, \"${3:ScreenWidth}\", Nucleus.SearchType.StartsWith) + \"|${3} \" + Context.Width,",
+      "\tContext.FindLineNumberInTextFile(${1}, \"${4:ScreenHeight}\", Nucleus.SearchType.StartsWith) + \"|${4} \" + Context.Height",
+      "]);"
+    ]
+  },
+  "Write text file": {
+    "prefix": "nc-write",
+    "description": "Write a text file for this instance (Context.WriteTextFile)",
+    "body": [
+      "var ${1:path} = Context.GetFolder(Nucleus.Folder.InstancedGameFolder) + \"\\\\\\\\${2:file.txt}\";",
+      "Context.WriteTextFile(${1}, [",
+      "\t\"${3:line}\"",
+      "]);"
+    ]
+  },
+  "Copy file from handler folder": {
+    "prefix": "nc-copy",
+    "description": "Copy a file shipped in the handler's folder into the instance (add it to FileSymlinkExclusions)",
+    "body": [
+      "System.IO.File.Copy(",
+      "\tSystem.IO.Path.Combine(Game.Folder, \"${1:file.dll}\"),",
+      "\tSystem.IO.Path.Combine(Context.GetFolder(Nucleus.Folder.InstancedGameFolder), \"${2:${1}}\"),",
+      "\ttrue",
+      ");"
+    ]
+  },
+  "Registry value": {
+    "prefix": "nc-reg",
+    "description": "Edit a registry value (restored when Nucleus closes)",
+    "body": ["Context.EditRegKey(\"${1|HKEY_CURRENT_USER,HKEY_LOCAL_MACHINE|}\", \"${2:SOFTWARE\\\\\\\\Company\\\\\\\\Game}\", \"${3:Name}\", ${4:value}, Nucleus.RegType.${5|DWord,String,QWord,Binary,ExpandString,MultiString|});"]
+  },
+  "User option": {
+    "prefix": "nc-option",
+    "description": "Ask the user to pick an option before launch (read with Context.Options[key])",
+    "body": [
+      "Game.AddOption(\"${1:Option name}\", \"${2:Description}\", \"${3:key}\", [${4:\"A\", \"B\"}]);"
+    ]
+  },
+  "Goldberg emulator": {
+    "prefix": "nc-goldberg",
+    "description": "Use the built-in Goldberg Steam emulator for LAN between instances",
+    "body": [
+      "Game.UseGoldberg = true;",
+      "Game.GoldbergNeedSteamInterface = ${1|false,true|};",
+      "Game.GoldbergLobbyConnect = ${2|false,true|};",
+      "Game.UseNucleusEnvironment = true;"
+    ]
+  },
+  "Proto Input hooks": {
+    "prefix": "nc-protoinput",
+    "description": "Proto Input setup for multiple keyboards and mice",
+    "body": [
+      "Game.SupportsMultipleKeyboardsAndMice = true;",
+      "Game.LockInputToggleKey = 0x23; // END",
+      "Game.ProtoInput.InjectStartup = false;",
+      "Game.ProtoInput.InjectRuntime_EasyHookMethod = true;",
+      "Game.ProtoInput.RegisterRawInputHook = true;",
+      "Game.ProtoInput.MessageFilterHook = true;",
+      "Game.ProtoInput.GetCursorPosHook = true;",
+      "Game.ProtoInput.SetCursorPosHook = true;",
+      "Game.ProtoInput.GetKeyStateHook = true;",
+      "Game.ProtoInput.GetAsyncKeyStateHook = true;",
+      "Game.ProtoInput.GetKeyboardStateHook = true;",
+      "Game.ProtoInput.CursorVisibilityHook = true;",
+      "Game.ProtoInput.ClipCursorHook = true;",
+      "Game.ProtoInput.FocusHooks = true;",
+      "Game.ProtoInput.XinputHook = true;",
+      "Game.ProtoInput.UseOpenXinput = true;",
+      "Game.ProtoInput.RawInputFilter = true;",
+      "Game.ProtoInput.MouseActivateFilter = true;",
+      "Game.ProtoInput.WindowActivateFilter = true;",
+      "Game.ProtoInput.WindowActvateAppFilter = true;",
+      "Game.ProtoInput.MouseWheelFilter = true;",
+      "Game.ProtoInput.MouseButtonFilter = true;",
+      "Game.ProtoInput.KeyboardButtonFilter = true;",
+      "Game.ProtoInput.SendMouseWheelMessages = true;",
+      "Game.ProtoInput.SendMouseButtonMessages = true;",
+      "Game.ProtoInput.SendMouseMovementMessages = true;",
+      "Game.ProtoInput.SendKeyboardButtonMessages = true;",
+      "Game.ProtoInput.BlockedMessages = [0x0008]; // WM_KILLFOCUS",
+      "$0"
+    ]
+  },
+  "Loop over players": {
+    "prefix": "nc-players",
+    "description": "Loop over all players (inside a callback)",
+    "body": ["for (var i = 0; i < PlayerList.Count; i++) {", "\tvar player = PlayerList[i];", "\t$0", "}"]
+  }
+}
