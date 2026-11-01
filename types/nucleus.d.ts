@@ -1114,7 +1114,6 @@ interface Game {
   /**
    * If enabled, it will allow multiple Keyboards and Mice to be used as a device input in Nucleus. Before enabling it by default, be sure that all works without problems.
    * @example Game.SupportsMultipleKeyboardsAndMice = true;
-   * @deprecated Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).
    */
   SupportsMultipleKeyboardsAndMice: boolean;
   /**
@@ -1281,7 +1280,6 @@ interface Game {
    *  This is usually convenient to leave disabled whilst testing.
    * @default false
    * @example Game.LockInputAtStart = true;
-   * @deprecated Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).
    */
   LockInputAtStart: boolean;
   /**
@@ -1294,7 +1292,6 @@ interface Game {
    * See https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
    * @default 0x23
    * @example Game.LockInputToggleKey = 0x23;
-   * @deprecated Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).
    */
   LockInputToggleKey: number;
   /**

@@ -67,7 +67,7 @@ Assign one device per instance.
   - Proto Input's Xinput hook: `Game.ProtoInput.XinputHook = true;`, often with `Game.ProtoInput.UseOpenXinput = true;` (more than 4 controllers).
   - Nucleus' custom x360ce dll: `Game.Hook.CustomDllEnabled = true;` with `Game.Hook.XInputNames`.
 - **DirectInput-only games:** `Game.UseDevReorder = true;`, Proto Input's `DinputDeviceHook`, or XInputPlus with dinput dlls.
-- **Keyboard and mouse.** `Game.SupportsKeyboard = true;` gives one KB/M player. Multiple keyboards and mice need **Proto Input** (https://www.splitscreen.me/docs/protoinput): `Game.SupportsMultipleKeyboardsAndMice = true;` plus the `Game.ProtoInput.*` hooks and filters (template feature `protoinput`). The older `Game.Hook*`/`Game.Send*` multi-KB options are deprecated. Users press End (`Game.LockInputToggleKey`) to lock input once all instances run.
+- **Keyboard and mouse.** `Game.SupportsKeyboard = true;` gives one KB/M player. Multiple keyboards and mice need **Proto Input** (https://www.splitscreen.me/docs/protoinput): `Game.SupportsMultipleKeyboardsAndMice = true;` plus the `Game.ProtoInput.*` hooks and filters (template feature `protoinput`). The older `Game.Hook*`/`Game.Send*` multi-KB options are deprecated and must be set to `false` when using Proto Input (several default to `true`); the template does this. Users press End (`Game.LockInputToggleKey`) to lock input once all instances run.
 
 ## 8. Test plan for the user
 

@@ -111,6 +111,7 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 | `duplicate-assignment` | warning | The same option is set twice at the top level, so the first value is dead. |
 | `hub-install-parse` | warning | When installing from the Hub, Nucleus reads `Game.GameName` and `Game.ExecutableName` by finding a line that *starts with* them and taking the text between the first and last `"`. Indented lines, single quotes, extra quotes on the line (for example in a comment), or `Game.ExecutableNames` appearing first all break the install. |
 | `guid-characters` | info | `Game.GUID` becomes a folder name, so use letters, digits and spaces. |
+| `protoinput-legacy-hooks` | warning | The handler uses Proto Input with multiple keyboards/mice but leaves the legacy input options (`Game.HookGetCursorPos`, `Game.SendNormalMouseInput`, …) unset or `true`; several default to `true`. The [Proto Input guide](https://www.splitscreen.me/docs/protoinput) says to set them to `false`. Fix inserts the lines. |
 | `deprecated` | hint | Options the docs mark deprecated, such as the pre-Proto Input multi-keyboard settings. |
 
 Change severities with the `splitscreenme.lint.rules` setting, e.g. `{ "deprecated": "off" }`, or with comments:

@@ -110,7 +110,7 @@ Game.Play = function () {
 
 test('nested objects and enums are checked', () => {
   const src = HEADER + 'Game.Hook.ForceFocuss = true;\nGame.ProtoInput.FocusHook = true;\nvar f = Nucleus.Folder.Instanced;\nGame.DPIHandling = Nucleus.SaveType.INI;\n';
-  const d = lint(src);
+  const d = lint(src).filter((x) => x.rule !== 'protoinput-legacy-hooks');
   assert.deepEqual(rules(d), ['unknown-member', 'unknown-member', 'unknown-member', 'type-mismatch']);
   assert.equal(d[0].fixes![0].edits[0].text, 'ForceFocus');
   assert.equal(d[1].fixes![0].edits[0].text, 'FocusHooks');
@@ -195,7 +195,7 @@ test('suppression comments and rule overrides', () => {
 });
 
 test('deprecated options are hints with the deprecated tag', () => {
-  const d = only(HEADER + 'Game.SupportsMultipleKeyboardsAndMice = true;\n', 'deprecated');
+  const d = only(HEADER + 'Game.HookGetCursorPos = true;\n', 'deprecated');
   assert.equal(d.length, 1);
   assert.equal(d[0].severity, 'hint');
   assert.deepEqual(d[0].tags, ['deprecated']);
@@ -217,4 +217,25 @@ test('member names follow Jint: first letter case-insensitive, the rest exact', 
   const d = only(src, 'unknown-member');
   assert.equal(d.length, 1);
   assert.match(d[0].message, /IgnoreWindowBordercheck/);
+});
+
+test('options the Proto Input guide still requires are not deprecated', () => {
+  const src = HEADER + 'Game.SupportsMultipleKeyboardsAndMice = true;\nGame.LockInputAtStart = false;\nGame.LockInputToggleKey = 0x23;\n';
+  assert.deepEqual(lint(src), []);
+});
+
+test('Proto Input requires the legacy input options to be off', () => {
+  const src = HEADER + 'Game.SupportsMultipleKeyboardsAndMice = true;\nGame.ProtoInput.FocusHooks = true;\nGame.HookGetCursorPos = true;\n';
+  const d = only(src, 'protoinput-legacy-hooks');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /HookSetCursorPos.*default.*true/);
+  assert.match(d[0].message, /HookGetCursorPos is set to true/);
+  const fixed = apply(src, d[0].fixes![0]);
+  assert.match(fixed, /Game\.SendNormalMouseInput = false;/);
+  // setting a deprecated option to false is the recommended thing, not a hint
+  assert.deepEqual(only(fixed.replace('Game.HookGetCursorPos = true;', 'Game.HookGetCursorPos = false;'), 'deprecated'), []);
+  assert.deepEqual(only(fixed.replace('Game.HookGetCursorPos = true;', 'Game.HookGetCursorPos = false;'), 'protoinput-legacy-hooks'), []);
+  // no Proto Input, or Proto Input for controllers only: no warning
+  assert.deepEqual(only(HEADER, 'protoinput-legacy-hooks'), []);
+  assert.deepEqual(only(HEADER + 'Game.ProtoInput.XinputHook = true;\n', 'protoinput-legacy-hooks'), []);
 });

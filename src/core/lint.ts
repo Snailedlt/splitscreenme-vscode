@@ -43,7 +43,11 @@ export const RULES = {
     description: 'When a handler is installed from the Hub, Nucleus finds Game.GameName and Game.ExecutableName by reading lines that start with them and taking the text between the first and last double quote.',
   },
   'guid-characters': { severity: 'info', description: 'Game.GUID becomes a folder name; use only letters, digits and spaces.' },
-  deprecated: { severity: 'hint', description: 'The option is deprecated.' },
+  'protoinput-legacy-hooks': {
+    severity: 'warning',
+    description: 'With Proto Input and multiple keyboards/mice, the legacy input options (Game.HookGetCursorPos, Game.SendNormalMouseInput, ...) must be set to false; several default to true and would run alongside Proto Input.',
+  },
+  deprecated: { severity: 'hint', description: 'The option is deprecated (setting it to false is fine).' },
 } as const satisfies Record<string, { severity: Severity; description: string }>;
 
 export type RuleId = keyof typeof RULES;
@@ -135,6 +139,7 @@ class Analyzer {
     this.checkRequired();
     this.checkDuplicates();
     this.checkHubInstall();
+    this.checkProtoInputLegacy();
     this.checkGuid();
   }
 
@@ -427,7 +432,8 @@ class Analyzer {
       return;
     }
     const r = step.resolved;
-    if (r?.kind === 'member' && r.member.deprecated) {
+    const setFalse = isWrite && ctx.parent!.right.type === 'Literal' && ctx.parent!.right.value === false;
+    if (r?.kind === 'member' && r.member.deprecated && !setFalse) {
       this.report({ rule: 'deprecated', message: `\`${ownerLabel(r.owner)}.${name}\`: ${r.member.deprecated}`, start: n.property.start, end: n.property.end, tags: ['deprecated'] });
     }
   }
@@ -640,6 +646,43 @@ class Analyzer {
         });
       }
     }
+  }
+
+  private checkProtoInputLegacy() {
+    const proto = [...this.topAssignments.entries()].find(([k]) => k.startsWith('Game.ProtoInput.'));
+    if (!proto) return;
+    const game = api.objects.Game.members;
+    const valueOf = (k: string) => {
+      const nodes = this.topAssignments.get(`Game.${k}`);
+      const v = nodes?.[nodes.length - 1]?.right;
+      return v?.type === 'Literal' ? v.value : v ? 'expr' : undefined;
+    };
+    // Nucleus only applies the legacy hooks for multi keyboard/mouse sessions
+    // (DllsInjector: SupportsMultipleKeyboardsAndMice && HookGetCursorPos, RawInputProcessor).
+    if (valueOf('SupportsMultipleKeyboardsAndMice') !== true) return;
+    const missing: string[] = [];
+    const enabled: string[] = [];
+    for (const [k, m] of Object.entries(game)) {
+      if (!m.protoInputLegacy) continue;
+      const v = valueOf(k);
+      if (v === undefined && m.default === 'true') missing.push(k);
+      else if (v === true) enabled.push(k);
+    }
+    if (!missing.length && !enabled.length) return;
+    const at = lineStart(this.text, proto[1][0].start);
+    const parts = [
+      missing.length ? `${missing.map((k) => `Game.${k}`).join(', ')} default${missing.length === 1 ? 's' : ''} to true` : '',
+      enabled.length ? `${enabled.map((k) => `Game.${k}`).join(', ')} ${enabled.length === 1 ? 'is' : 'are'} set to true` : '',
+    ].filter(Boolean);
+    this.report({
+      rule: 'protoinput-legacy-hooks',
+      message: `This handler uses Proto Input, but ${parts.join(' and ')}. The Proto Input guide says to set the legacy input options to false so they don't run alongside it.`,
+      start: proto[1][0].start,
+      end: proto[1][0].end,
+      fixes: missing.length
+        ? [{ title: 'Turn off the legacy input options', edits: [{ start: at, end: at, text: `// Legacy input options: off when using Proto Input\n${missing.map((k) => `Game.${k} = false;`).join('\n')}\n` }], preferred: true }]
+        : undefined,
+    });
   }
 
   private checkGuid() {

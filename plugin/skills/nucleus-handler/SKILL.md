@@ -34,13 +34,14 @@ If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `#
 5. **Hub install parsing:** `Game.GameName = "...";` and `Game.ExecutableName = "...";` must each start their own line (no indentation), use double quotes, and have no other `"` on the line (not even in a comment). Nucleus reads them with a line scanner when installing from the Hub.
 6. **Types matter:** list options take arrays (`Game.KillMutex = ["name"];`, not `"name"`), booleans are `true`/`false` (not strings), numbers are numbers.
 7. **Files you modify per instance must not be symlinks to the original game.** With `Game.SymlinkGame = true`, edit config files that live outside the game folder (Documents/AppData via `Game.UseNucleusEnvironment`), or add the file to `Game.FileSymlinkExclusions` / `Game.FileSymlinkCopyInstead` so each instance gets its own copy. Otherwise every instance (and the real install) shares one file.
-8. **Don't add Hub metadata lines** (`Hub.Handler.Version`, `Hub.Handler.Id`, `Hub.Maintainer.*`). The Hub writes them on upload; keep them unchanged if they are already present.
+8. **With Proto Input, turn the legacy input options off.** Set `Game.HookGetCursorPos`, `Game.SendNormalMouseInput`, `Game.DrawFakeMouseCursor` and the rest to `false`; several default to `true` and would run alongside Proto Input. The `protoinput` template and lint rule `protoinput-legacy-hooks` handle this. Keep `Game.SupportsMultipleKeyboardsAndMice`, `Game.LockInputAtStart` and `Game.LockInputToggleKey`: they are still used.
+9. **Don't add Hub metadata lines** (`Hub.Handler.Version`, `Hub.Handler.Id`, `Hub.Maintainer.*`). The Hub writes them on upload; keep them unchanged if they are already present.
 
 ## Workflow
 
 **New handler.** Follow [reference/workflow.md](reference/workflow.md). In short:
 1. **Research.** Look up the game's engine, input API (XInput/DirectInput/raw input), multiplayer type (LAN, online-only, Steam/Epic/GOG networking), launcher/DRM, config and save locations. PCGamingWiki is the best single source. Ask the user what you can't find; they have the game.
-2. **Learn from existing handlers.** `hub search` the game and its series. Then search titles of other games on the same engine (Unreal Engine 4, Unity, Source, ...). `hub fetch` one or two and reuse their approach.
+2. **Learn from existing handlers.** `hub search` the game and its series. If a handler for this exact game already exists (especially a verified one), tell the user **first**. Installing it from Nucleus' handler browser may be all they need. If they still want changes, build on it rather than starting over. Then search titles of other games on the same engine (Unreal Engine 4, Unity, Source, ...). `hub fetch` one or two and reuse their approach.
 3. **Scaffold** with `new`, then adapt it: multiple instances (mutexes, `ChangeExe`, ...), connectivity (LAN or emulator), windowing/resolution in `Game.Play`, focus, input.
 4. **Lint** until there are no errors or warnings you can't justify.
 5. **Hand over a test plan.** Install via the VS Code extension or copy `<Name>.js` (and its `<Name>/` folder) into `<Nucleus>/handlers/`. Ask the user to enable debug logging (Settings, or `DebugLog=True` under `[Misc]` in Nucleus' `Settings.ini`), test with 2 players, and send `debug-log.txt` from the Nucleus folder plus what they saw.

@@ -39,7 +39,7 @@ test('handler detection', () => {
 });
 
 test('diagnostics are published with codes, tags and positions', async () => {
-  const doc = m.makeDocument(HEADER + 'Game.Hook.ForceFocuss = true;\nGame.SupportsMultipleKeyboardsAndMice = true;\n');
+  const doc = m.makeDocument(HEADER + 'Game.Hook.ForceFocuss = true;\nGame.HookGetCursorPos = true;\n');
   m.workspace.textDocuments = [doc];
   activate({ subscriptions: [] } as any);
   await tick();

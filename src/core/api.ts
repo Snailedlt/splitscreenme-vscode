@@ -39,6 +39,8 @@ export interface Member {
   example?: string;
   category?: string;
   deprecated?: string;
+  /** Legacy input option the Proto Input guide says to set to false. */
+  protoInputLegacy?: boolean;
   overloads?: Overload[];
 }
 export interface ApiObject {

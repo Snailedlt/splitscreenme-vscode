@@ -932,7 +932,6 @@ Example: `Game.LauncherTitle = "Launcher Window Title";`
 ### Game.LockInputAtStart
 `LockInputAtStart: boolean`
 default `false` · Support for multiple mice and keyboards
-**Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).**
 Once you have finished setting up the input options, enable this to automatically lock input (equivalent to pressing End) once all of the instances have been set up. 
  This is usually convenient to leave disabled whilst testing.
 Example: `Game.LockInputAtStart = true;`
@@ -944,7 +943,6 @@ default `false`
 ### Game.LockInputToggleKey
 `LockInputToggleKey: number`
 default `0x23` · Support for multiple mice and keyboards
-**Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).**
 See https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 Example: `Game.LockInputToggleKey = 0x23;`
 
@@ -1327,7 +1325,6 @@ Example: `Game.SupportsKeyboard = true;`
 ### Game.SupportsMultipleKeyboardsAndMice
 `SupportsMultipleKeyboardsAndMice: boolean`
 Support for multiple mice and keyboards
-**Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).**
 If enabled, it will allow multiple Keyboards and Mice to be used as a device input in Nucleus. Before enabling it by default, be sure that all works without problems.
 Example: `Game.SupportsMultipleKeyboardsAndMice = true;`
 

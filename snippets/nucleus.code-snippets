@@ -32,7 +32,11 @@
   "Game.Play": {
     "prefix": "nc-play",
     "description": "Per-instance setup callback (Context, Player and PlayerList are available inside)",
-    "body": ["Game.Play = function () {", "\t$0", "};"]
+    "body": [
+      "Game.Play = function () {",
+      "\t$0",
+      "};"
+    ]
   },
   "Edit INI file": {
     "prefix": "nc-ini",
@@ -89,7 +93,9 @@
   "Registry value": {
     "prefix": "nc-reg",
     "description": "Edit a registry value (restored when Nucleus closes)",
-    "body": ["Context.EditRegKey(\"${1|HKEY_CURRENT_USER,HKEY_LOCAL_MACHINE|}\", \"${2:SOFTWARE\\\\\\\\Company\\\\\\\\Game}\", \"${3:Name}\", ${4:value}, Nucleus.RegType.${5|DWord,String,QWord,Binary,ExpandString,MultiString|});"]
+    "body": [
+      "Context.EditRegKey(\"${1|HKEY_CURRENT_USER,HKEY_LOCAL_MACHINE|}\", \"${2:SOFTWARE\\\\\\\\Company\\\\\\\\Game}\", \"${3:Name}\", ${4:value}, Nucleus.RegType.${5|DWord,String,QWord,Binary,ExpandString,MultiString|});"
+    ]
   },
   "User option": {
     "prefix": "nc-option",
@@ -113,6 +119,26 @@
     "description": "Proto Input setup for multiple keyboards and mice",
     "body": [
       "Game.SupportsMultipleKeyboardsAndMice = true;",
+      "// Legacy input options: must be off with Proto Input (several default to true)",
+      "Game.HookSetCursorPos = false;",
+      "Game.HookGetCursorPos = false;",
+      "Game.HookGetKeyState = false;",
+      "Game.HookGetAsyncKeyState = false;",
+      "Game.HookGetKeyboardState = false;",
+      "Game.HookFilterRawInput = false;",
+      "Game.HookFilterMouseMessages = false;",
+      "Game.HookUseLegacyInput = false;",
+      "Game.HookDontUpdateLegacyInMouseMsg = false;",
+      "Game.HookMouseVisibility = false;",
+      "Game.SendNormalMouseInput = false;",
+      "Game.SendNormalKeyboardInput = false;",
+      "Game.SendScrollWheel = false;",
+      "Game.ForwardRawKeyboardInput = false;",
+      "Game.ForwardRawMouseInput = false;",
+      "Game.HookReRegisterRawInput = false;",
+      "Game.HookReRegisterRawInputMouse = false;",
+      "Game.HookReRegisterRawInputKeyboard = false;",
+      "Game.DrawFakeMouseCursor = false;",
       "Game.LockInputToggleKey = 0x23; // END",
       "Game.ProtoInput.InjectStartup = false;",
       "Game.ProtoInput.InjectRuntime_EasyHookMethod = true;",
@@ -146,6 +172,11 @@
   "Loop over players": {
     "prefix": "nc-players",
     "description": "Loop over all players (inside a callback)",
-    "body": ["for (var i = 0; i < PlayerList.Count; i++) {", "\tvar player = PlayerList[i];", "\t$0", "}"]
+    "body": [
+      "for (var i = 0; i < PlayerList.Count; i++) {",
+      "\tvar player = PlayerList[i];",
+      "\t$0",
+      "}"
+    ]
   }
 }

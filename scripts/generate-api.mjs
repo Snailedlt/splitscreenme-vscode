@@ -374,6 +374,25 @@ parseCreateHandlersMd();
 parseProtoInputMd();
 parseMasterHandler();
 
+// handler-api.mdx marks the whole legacy multi-keyboard section deprecated. The Proto Input
+// guide refines that: options in its "deprecated, must explicitly be set to false" block stay
+// deprecated (and must be turned off when using Proto Input, since some default to true);
+// the other plain Game.* options it sets (SupportsMultipleKeyboardsAndMice, LockInputAtStart,
+// LockInputToggleKey, ...) are still in use.
+const protoLegacy = new Set();
+{
+  let inLegacyBlock = false;
+  for (const line of read(wwwRepo, 'docs', 'protoinput.md').split('\n')) {
+    if (/^\s*\/\/.*deprecated/i.test(line)) inLegacyBlock = true;
+    else if (/^\s*(\/\/|$|```)/.test(line)) inLegacyBlock = false;
+    const m = line.match(/^\s*Game\.(?!ProtoInput\.)(\w+)\s*=/);
+    if (!m) continue;
+    const d = docs.get(`Game.${m[1]}`) ?? (docs.set(`Game.${m[1]}`, {}), docs.get(`Game.${m[1]}`));
+    if (inLegacyBlock) protoLegacy.add(m[1]);
+    else delete d.deprecated;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Assemble the model
 // ---------------------------------------------------------------------------
@@ -517,6 +536,7 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}) {
       ...(d.example ? { example: d.example } : {}),
       ...(d.category ? { category: d.category } : {}),
       ...(d.deprecated ? { deprecated: d.deprecated } : {}),
+      ...(objName === 'Game' && protoLegacy.has(m.name) ? { protoInputLegacy: true } : {}),
       ...(objName === 'Game' && REQUIRED_GAME.includes(m.name) ? { required: true } : {}),
     };
   }

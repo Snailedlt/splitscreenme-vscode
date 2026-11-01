@@ -84,6 +84,10 @@ export function renderHandler(info: HandlerInfo): string {
     L.push('');
     L.push('// Proto Input: https://www.splitscreen.me/docs/protoinput');
     L.push('Game.SupportsMultipleKeyboardsAndMice = true;');
+    L.push('// Legacy input options: must be off with Proto Input (several default to true)');
+    for (const k of ['HookSetCursorPos', 'HookGetCursorPos', 'HookGetKeyState', 'HookGetAsyncKeyState', 'HookGetKeyboardState', 'HookFilterRawInput', 'HookFilterMouseMessages', 'HookUseLegacyInput', 'HookDontUpdateLegacyInMouseMsg', 'HookMouseVisibility', 'SendNormalMouseInput', 'SendNormalKeyboardInput', 'SendScrollWheel', 'ForwardRawKeyboardInput', 'ForwardRawMouseInput', 'HookReRegisterRawInput', 'HookReRegisterRawInputMouse', 'HookReRegisterRawInputKeyboard', 'DrawFakeMouseCursor']) {
+      L.push(`Game.${k} = false;`);
+    }
     L.push('Game.LockInputAtStart = false;');
     L.push('Game.LockInputToggleKey = 0x23; // END');
     L.push('Game.ProtoInput.InjectStartup = false;');

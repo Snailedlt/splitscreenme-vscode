@@ -2268,8 +2268,7 @@
      "ts": "boolean",
      "doc": "If enabled, it will allow multiple Keyboards and Mice to be used as a device input in Nucleus. Before enabling it by default, be sure that all works without problems.",
      "example": "Game.SupportsMultipleKeyboardsAndMice = true;",
-     "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "category": "Support for multiple mice and keyboards"
     },
     "HookSetCursorPos": {
      "kind": "field",
@@ -2280,7 +2279,8 @@
      "doc": "This will hook the SetCursorPos Windows function which the game may use to set the mouse position. \n This is useful to have on to prevent the game from moving the 'real' Windows mouse cursor around the screen.",
      "example": "Game.HookSetCursorPos = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookGetCursorPos": {
      "kind": "field",
@@ -2291,7 +2291,8 @@
      "doc": "This will hook the GetCursorPos Windows function which the game may use to get the mouse position.",
      "example": "Game.HookGetCursorPos = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookGetKeyState": {
      "kind": "field",
@@ -2302,7 +2303,8 @@
      "doc": "These options hook Windows functions that can be used by the game to detect if keys are down.",
      "example": "Game.HookGetKeyState = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookGetAsyncKeyState": {
      "kind": "field",
@@ -2313,7 +2315,8 @@
      "doc": "HookGetAsyncKeyState is usually the only one that's needed, but leave the others enabled if there are no problems.",
      "example": "Game.HookGetAsyncKeyState = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookGetKeyboardState": {
      "kind": "field",
@@ -2324,7 +2327,8 @@
      "doc": "Some games may conflict with these hooks, so try toggling some of them if keyboard input isn't working properly.",
      "example": "Game.HookGetKeyboardState = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookFilterRawInput": {
      "kind": "field",
@@ -2334,7 +2338,8 @@
      "doc": "This filters raw input messages inside the application. This makes sure each instance only receives input for its designated input device.",
      "example": "Game.HookFilterRawInput = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookFilterMouseMessages": {
      "kind": "field",
@@ -2344,7 +2349,8 @@
      "doc": "This hook filters many mouse messages to position the mouse cursor and other necessary changes from within the game itself. \n This should almost always be enabled unless it causes some conflict.",
      "example": "Game.HookFilterMouseMessages = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookUseLegacyInput": {
      "kind": "field",
@@ -2354,7 +2360,8 @@
      "doc": "This is the main switch for legacy input.",
      "example": "Game.HookUseLegacyInput = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookDontUpdateLegacyInMouseMsg": {
      "kind": "field",
@@ -2364,7 +2371,8 @@
      "doc": "****Nucleus Co-op will hook mouse movement messages and the GetCursorPos function to work around legacy input. Some games only need the GetCursorPos hook and conflict when mouse movement messages are edited. If this is the case, enable this option***",
      "example": "Game.HookDontUpdateLegacyInMouseMsg = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookMouseVisibility": {
      "kind": "field",
@@ -2375,7 +2383,8 @@
      "doc": "Used for games that toggle the mouse visibility, e.g. hidden in first person movement and visible in menus. \n This shows/hides the fake mouse cursor when the game tries to show/hide the 'real' mouse cursor. \n ***!!!!Most of the time this one is the cause of crashes.!!!!***",
      "example": "Game.HookMouseVisibility = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookReRegisterRawInput": {
      "kind": "field",
@@ -2386,7 +2395,8 @@
      "doc": "Re-register raw input from directly within game process | Recommended to disable forwarding input while using this",
      "example": "Game.HookReRegisterRawInput = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookReRegisterRawInputMouse": {
      "kind": "field",
@@ -2397,7 +2407,8 @@
      "doc": "",
      "example": "Game.HookReRegisterRawInputMouse = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "HookReRegisterRawInputKeyboard": {
      "kind": "field",
@@ -2408,7 +2419,8 @@
      "doc": "",
      "example": "Game.HookReRegisterRawInputKeyboard = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "InjectHookXinput": {
      "kind": "field",
@@ -2437,7 +2449,8 @@
      "doc": "This will send the game mouse input via Windows messages.",
      "example": "Game.SendNormalMouseInput = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "SendNormalKeyboardInput": {
      "kind": "field",
@@ -2448,7 +2461,8 @@
      "doc": "This sends keyboard input via Windows messages. This is usually all that's needed to get keyboard input working.",
      "example": "Game.SendNormalKeyboardInput = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "SendScrollWheel": {
      "kind": "field",
@@ -2459,7 +2473,8 @@
      "doc": "Use this to send scroll wheel events to the game. \n Some games don't need this, if for example they receive scroll wheel data from raw input.",
      "example": "Game.SendScrollWheel = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "ForwardRawKeyboardInput": {
      "kind": "field",
@@ -2470,7 +2485,8 @@
      "doc": "The same as ForwardRawMouseInput, but for keyboards. Again, this should almost never be used instead of re-register raw input.",
      "example": "Game.ForwardRawKeyboardInput = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "ForwardRawMouseInput": {
      "kind": "field",
@@ -2481,7 +2497,8 @@
      "doc": "In some cases, you may need to forward raw mouse input. This is almost never needed as re-register raw input has the same effect with a much more efficient method. Forwarding input forwards raw input from Nucleus Coop to the game. This has a high CPU usage and many input events will not pass, resulting in choppy movement.",
      "example": "Game.ForwardRawMouseInput = false;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "DrawFakeMouseCursor": {
      "kind": "field",
@@ -2492,7 +2509,8 @@
      "doc": "This enables the fake mouse cursor to be drawn over the game by Nucleus Coop. \n If the game uses a custom cursor, you will probably not need this option. (This will be obvious if you see the games custom cursor and a fake cursor drawn over it). \n Be aware this is a 'fake' mouse cursor in the sense that Nucleus Coop will fake mouse input to the game via the other options and then the fake mouse cursor is drawn where the game should be responding to mouse input. \n The fake cursor is drawn by creating a large transparent window over the game. This may prevent the game from receiving mouse input from the 'real' Windows cursor. It is sometimes useful to disable this while testing.",
      "example": "Game.DrawFakeMouseCursor = true;",
      "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput).",
+     "protoInputLegacy": true
     },
     "DrawFakeMouseCursorForControllers": {
      "kind": "field",
@@ -2522,8 +2540,7 @@
      "default": "false",
      "doc": "Once you have finished setting up the input options, enable this to automatically lock input (equivalent to pressing End) once all of the instances have been set up. \n This is usually convenient to leave disabled whilst testing.",
      "example": "Game.LockInputAtStart = true;",
-     "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "category": "Support for multiple mice and keyboards"
     },
     "PreventGameFocus": {
      "kind": "field",
@@ -2543,8 +2560,7 @@
      "default": "0x23",
      "doc": "See https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes",
      "example": "Game.LockInputToggleKey = 0x23;",
-     "category": "Support for multiple mice and keyboards",
-     "deprecated": "Deprecated: use Proto Input instead (see https://www.splitscreen.me/docs/protoinput)."
+     "category": "Support for multiple mice and keyboards"
     },
     "ForceEnvironmentUse": {
      "kind": "field",
