@@ -27,6 +27,7 @@
   ],
   "main": "./dist/extension.js",
   "bin": {
+    "nucleus": "./dist/cli.js",
     "nucleus-lint": "./dist/cli.js"
   },
   "activationEvents": [
@@ -36,7 +37,7 @@
     "commands": [
       {
         "command": "splitscreenme.newHandler",
-        "title": "New Handler…",
+        "title": "New Handler\u2026",
         "category": "Nucleus"
       },
       {
@@ -51,12 +52,17 @@
       },
       {
         "command": "splitscreenme.browseHub",
-        "title": "Browse Handlers on the Hub…",
+        "title": "Browse Handlers on the Hub\u2026",
         "category": "Nucleus"
       },
       {
         "command": "splitscreenme.setupTypes",
         "title": "Set Up Type Definitions (jsconfig.json + .d.ts)",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.setupAgents",
+        "title": "Set Up AI Agent Support (AGENTS.md, skill, CLI)",
         "category": "Nucleus"
       },
       {
@@ -66,7 +72,7 @@
       },
       {
         "command": "splitscreenme.openDocs",
-        "title": "Open Documentation…",
+        "title": "Open Documentation\u2026",
         "category": "Nucleus"
       }
     ],
@@ -86,6 +92,10 @@
       "commandPalette": [
         {
           "command": "splitscreenme.installHandler",
+          "when": "!isWeb"
+        },
+        {
+          "command": "splitscreenme.setupAgents",
           "when": "!isWeb"
         }
       ]
@@ -108,7 +118,7 @@
           ],
           "default": "auto",
           "enumDescriptions": [
-            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/…, or live in a \"handlers\" folder.",
+            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/\u2026, or live in a \"handlers\" folder.",
             "Treat every JavaScript file as a Nucleus handler.",
             "Disable all handler features."
           ],
@@ -117,7 +127,7 @@
         "splitscreenme.lint.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, …)."
+          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, \u2026)."
         },
         "splitscreenme.lint.rules": {
           "type": "object",

@@ -1,0 +1,4 @@
+plugin/skills/nucleus-handler/scripts/nucleus.js linguist-generated=true
+plugin/skills/nucleus-handler/reference/api.md linguist-generated=true
+data/nucleus-api.json linguist-generated=true
+types/nucleus.d.ts linguist-generated=true

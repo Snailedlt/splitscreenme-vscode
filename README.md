@@ -48,6 +48,53 @@ MyGame/
 
 Package and Install both pick this folder up automatically.
 
+## AI agents
+
+The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex, Cursor, …) write handlers that load and work, instead of guessing option names from memory.
+
+- **The `nucleus-handler` skill** (`plugin/skills/nucleus-handler/`) contains:
+  - the hard rules: ES5 only, real options only, `Context` only inside callbacks, Hub line format, …;
+  - a research → reference handlers → scaffold → lint → test-plan workflow;
+  - a symptom-to-option troubleshooting table;
+  - lint-clean recipes;
+  - a generated, greppable API reference.
+- **A bundled CLI** at `plugin/skills/nucleus-handler/scripts/nucleus.js` is a single file with no dependencies; it needs Node. Agents can't see squiggles or hovers, so this gives them the same checks:
+
+  | Command | What it does |
+  | --- | --- |
+  | `nucleus lint <file> --json` | Diagnostics and available fixes |
+  | `nucleus api Game.KillMutex` / `nucleus api --search mutex` | The "hover": type, default and docs |
+  | `nucleus hub search <game>` / `nucleus hub fetch <id>` | Study how existing handlers solved the same problem |
+  | `nucleus new …` / `nucleus package …` | Scaffold a handler / build the `.nc` package |
+
+### Claude Code
+
+```
+/plugin marketplace add SplitScreen-Me/splitscreenme-vscode
+/plugin install nucleus-coop@splitscreenme
+```
+
+The skill loads automatically when you ask about Nucleus handlers.
+
+### Any agent, in your handler folder
+
+Run **Nucleus: Set Up AI Agent Support** in VS Code, or:
+
+```bash
+node path/to/nucleus.js init-agent .
+```
+
+This writes three things:
+- `.claude/skills/nucleus-handler/`: the skill and the CLI;
+- a marked section in `AGENTS.md`, which most agents read;
+- `CLAUDE.md`, containing `@AGENTS.md`.
+
+Existing `AGENTS.md`/`CLAUDE.md` content is kept, and re-running only refreshes the kit.
+
+Agents can't run Nucleus or the game, so the skill tells them to finish with a concrete test plan and to ask for Nucleus' `debug-log.txt`.
+
+Contributors' agents: see [AGENTS.md](AGENTS.md).
+
 ## Lint rules
 
 | Rule | Default | What it catches |
@@ -96,7 +143,7 @@ npm ci && npm run build
 node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is installed
 ```
 
-Options: `--format json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
+It also has `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
 
 ## Development
 

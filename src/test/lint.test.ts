@@ -205,3 +205,16 @@ test('user variables shadowing globals are not resolved', () => {
   const src = HEADER + 'Game.Play = function () {\n  var Player = { Foo: 1 };\n  var x = Player.Foo;\n};\n';
   assert.deepEqual(lint(src), []);
 });
+
+test('the `var x = (Context.X = ...)` idiom is only a hint', () => {
+  const src = HEADER + 'Game.Play = function () {\n  var args = (Context.Args = " -windowed");\n  Context.Argz = 1;\n};\n';
+  const d = only(src, 'unknown-member');
+  assert.deepEqual(d.map((x) => x.severity), ['hint', 'warning']);
+});
+
+test('member names follow Jint: first letter case-insensitive, the rest exact', () => {
+  const src = HEADER + 'Game.symlinkGame = true;\nGame.IgnoreWindowBordercheck = true;\nGame.Play = function () { var w = Context.width; };\n';
+  const d = only(src, 'unknown-member');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /IgnoreWindowBordercheck/);
+});

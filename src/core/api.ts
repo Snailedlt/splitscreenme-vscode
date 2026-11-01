@@ -100,14 +100,26 @@ export interface StepResult {
   unknown?: { owner: string; ownerLabel: string; candidates: string[] };
 }
 
+/**
+ * Jint 2.x (ObjectWrapper.EqualsIgnoreCasing) matches .NET member names with only the
+ * FIRST character case-insensitive: `Context.width` finds `Width`, but
+ * `Game.IgnoreWindowBordercheck` does not find `IgnoreWindowBorderCheck`.
+ */
+export function jintMemberName(members: Record<string, unknown>, name: string): string | undefined {
+  if (name in members) return name;
+  if (!name) return undefined;
+  const alt = (name[0] === name[0].toUpperCase() ? name[0].toLowerCase() : name[0].toUpperCase()) + name.slice(1);
+  return alt in members ? alt : undefined;
+}
+
 /** Resolve `.name` on top of `base`. */
 export function resolveMember(base: Resolved, name: string): StepResult {
   switch (base.kind) {
     case 'object': {
       const obj = api.objects[base.type];
-      const m = obj.members[name];
-      if (!m) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
-      return { resolved: { kind: 'member', owner: base.type, name, member: m } };
+      const key = jintMemberName(obj.members, name);
+      if (!key) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
+      return { resolved: { kind: 'member', owner: base.type, name: key, member: obj.members[key] } };
     }
     case 'member': {
       const ref = base.member.ref;

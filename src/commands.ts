@@ -5,6 +5,7 @@ import { FEATURES, renderHandler, toHandlerFileName, Feature } from './core/temp
 import { writeZip, handlerPackageEntries } from './core/zip';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { lint, looksLikeHandler } from './core/lint';
+import { findSkillDir, installAgentKit } from './core/pkg';
 
 export interface CommandHost {
   lintFiles(entries: { uri: vscode.Uri; text: string }[]): void;
@@ -29,6 +30,7 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
   reg('splitscreenme.setupTypes', () => setupTypes(context));
   reg('splitscreenme.openDocs', openDocs);
   reg('splitscreenme.lintWorkspace', () => lintWorkspace(host));
+  reg('splitscreenme.setupAgents', () => setupAgents(context));
 }
 
 // ---------------------------------------------------------------------------
@@ -338,4 +340,26 @@ async function lintWorkspace(host: CommandHost) {
   host.lintFiles(entries);
   vscode.window.showInformationMessage(`Linted ${entries.length} handler(s). See the Problems panel.`);
   vscode.commands.executeCommand('workbench.actions.view.problems');
+}
+
+// ---------------------------------------------------------------------------
+
+async function setupAgents(context: vscode.ExtensionContext) {
+  const folder =
+    vscode.workspace.workspaceFolders?.length === 1
+      ? vscode.workspace.workspaceFolders[0]
+      : await vscode.window.showWorkspaceFolderPick({ placeHolder: 'Install AI agent support into…' });
+  if (!folder || folder.uri.scheme !== 'file') {
+    vscode.window.showWarningMessage('Open the folder containing your handlers first.');
+    return;
+  }
+  const skillDir = findSkillDir(context.extensionPath);
+  if (!skillDir) throw new Error('The agent skill files are missing from this extension install.');
+  const r = installAgentKit(skillDir, folder.uri.fsPath);
+  const changed = [...r.created, ...r.updated];
+  const choice = await vscode.window.showInformationMessage(
+    `AI agent support installed (${changed.join(', ')}). Agents such as Claude Code, Copilot, Codex and Cursor will read AGENTS.md and can run the bundled linter.`,
+    'Open AGENTS.md',
+  );
+  if (choice) await vscode.window.showTextDocument(vscode.Uri.joinPath(folder.uri, 'AGENTS.md'));
 }

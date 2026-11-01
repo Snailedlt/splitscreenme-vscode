@@ -1,0 +1,14 @@
+{
+  "name": "splitscreenme",
+  "description": "SplitScreen.Me tools for AI coding agents",
+  "owner": { "name": "SplitScreen.Me", "url": "https://www.splitscreen.me" },
+  "plugins": [
+    {
+      "name": "nucleus-coop",
+      "source": "./plugin",
+      "description": "Write, fix and review Nucleus Co-op game handlers: rules, workflow, recipes, API reference and a bundled linter/API/Hub CLI.",
+      "category": "development",
+      "tags": ["nucleus-coop", "splitscreen", "gaming", "handlers"]
+    }
+  ]
+}

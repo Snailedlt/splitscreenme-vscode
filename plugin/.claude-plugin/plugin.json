@@ -1,0 +1,11 @@
+{
+  "name": "nucleus-coop",
+  "displayName": "Nucleus Co-op handlers",
+  "version": "0.1.0",
+  "description": "Write, fix and review Nucleus Co-op (SplitScreen.Me) game handlers: rules, workflow, recipes, API reference and a bundled linter/API/Hub CLI.",
+  "author": { "name": "SplitScreen.Me" },
+  "homepage": "https://www.splitscreen.me/docs/create-handlers",
+  "repository": "https://github.com/SplitScreen-Me/splitscreenme-vscode",
+  "license": "MIT",
+  "keywords": ["nucleus-coop", "splitscreen", "handlers"]
+}

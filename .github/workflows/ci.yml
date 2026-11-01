@@ -16,6 +16,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Generated skill files are committed
+        run: git diff --exit-code -- plugin/
       - run: npx vsce package --no-dependencies -o splitscreenme-vscode.vsix
       - uses: actions/upload-artifact@v4
         with:

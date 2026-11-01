@@ -117,6 +117,7 @@ interface Ctx {
 
 class Analyzer {
   private aliases = new Map<string, Resolved | null>();
+  private parentOf = new WeakMap<Node, Node>();
   private shadowed = new Set<string>();
   /** Top-level assignments keyed by chain ("Game.Hook.ForceFocus"). */
   private topAssignments = new Map<string, Node[]>();
@@ -204,6 +205,7 @@ class Analyzer {
   // ---- walk ----------------------------------------------------------------
 
   private walk(node: Node, ctx: Ctx) {
+    if (ctx.parent) this.parentOf.set(node, ctx.parent);
     this.enter(node, ctx);
     const isFn = node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration' || node.type === 'ArrowFunctionExpression';
     for (const key of Object.keys(node)) {
@@ -390,9 +392,30 @@ class Analyzer {
     if (step.unknown) {
       const { candidates, ownerLabel: owner } = step.unknown;
       const label = ownerLabel(owner);
-      const visible = candidates.filter((c) => !(api.objects[owner]?.members[c]?.internal));
+      const isWriteTarget = ctx.parent?.type === 'AssignmentExpression' && ctx.parent.left === n;
+      const visible = candidates.filter((c) => {
+        const cm = api.objects[owner]?.members[c];
+        if (cm?.internal) return false;
+        // Only suggest something that can actually be assigned.
+        return !isWriteTarget || !cm || (!cm.readonly && cm.kind !== 'method' && cm.kind !== 'object');
+      });
       const s = suggest(name, visible.length ? visible : candidates);
       const fixes: Fix[] | undefined = s && !n.computed ? [{ title: `Change to \`${s}\``, edits: [{ start: n.property.start, end: n.property.end, text: s }], preferred: true }] : undefined;
+      // `var args = (Context.Args = "...")` is an idiom from older handlers (and the official
+      // guide): the property write is dropped, but the value still reaches the variable.
+      const assign = ctx.parent;
+      const valueUsed = isWrite && assign && this.parentOf.get(assign)?.type === 'VariableDeclarator';
+      if (valueUsed) {
+        this.report({
+          rule: 'unknown-member',
+          severity: 'hint',
+          message: `\`${label}.${name}\` is not a Nucleus property, so only the variable receives this value. That is harmless, but \`var x = ...\` alone does the same.`,
+          start: n.property.start,
+          end: n.property.end,
+          tags: ['unnecessary'],
+        });
+        return;
+      }
       const effect = isWrite ? 'Assigning it has no effect' : 'It will be undefined';
       this.report({
         rule: 'unknown-member',
