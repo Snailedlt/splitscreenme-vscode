@@ -692,6 +692,26 @@ class Analyzer {
         });
         return;
       }
+      // Player.ProtoController5+: Nucleus (PlayerInfo) and Proto Input (SetControllerIndex) take four
+      // controller indexes per instance. Common in Hub handlers via copy-paste; the lines do nothing.
+      const extra = owner === 'PlayerInfo' && /^ProtoController(\d+)$/.exec(name);
+      if (extra && Number(extra[1]) > 4) {
+        const stmt = isWrite ? this.parentOf.get(ctx.parent!) : undefined;
+        let pure = true;
+        if (stmt) visit(ctx.parent!.right, (x) => { if (x.type === 'CallExpression' || x.type === 'NewExpression' || x.type === 'AssignmentExpression' || x.type === 'UpdateExpression') pure = false; });
+        const ls = stmt ? lineStart(this.text, stmt.start) : 0;
+        const le = stmt ? nextLineStart(this.text, stmt.end) : 0;
+        const alone = !!stmt && stmt.type === 'ExpressionStatement' && this.text.slice(ls, stmt.start).trim() === '' && /^\s*(\/\/.*)?(\r?\n)?$/.test(this.text.slice(stmt.end, le));
+        this.report({
+          rule: 'unknown-member',
+          message: `\`Player.${name}\` does not exist: Nucleus and Proto Input take at most four controllers per instance (\`ProtoController1\` to \`ProtoController4\`), so ${isWrite ? 'this line does nothing' : 'it is undefined'}.`,
+          start: n.property.start,
+          end: n.property.end,
+          tags: isWrite ? ['unnecessary'] : undefined,
+          fixes: alone ? [{ title: 'Remove this line', edits: [{ start: ls, end: le, text: '' }], preferred: pure }] : undefined,
+        });
+        return;
+      }
       const effect = isWrite ? 'Assigning it has no effect' : 'It will be undefined';
       this.report({
         rule: 'unknown-member',

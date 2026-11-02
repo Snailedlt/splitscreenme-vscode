@@ -109,8 +109,7 @@ test('binary/octal/separator number literals become decimal', () => {
 test('Fix all never applies behaviour-changing fixes', () => {
   const src =
     HEADER +
-    'Game.DPIHandling = true;\nGame.SupportsMultipleKeyboardsAndMice = true;\nGame.ProtoInput.FocusHooks = true;\n' +
-    'Game.Play = function () {\n  for (var i = 0; i < PlayerList.Count; i++) {\n    var player = PlayerList[i];\n    player.ProtoController5 = 1;\n  }\n};\n';
+    'Game.DPIHandling = true;\nGame.SupportsMultipleKeyboardsAndMice = true;\nGame.ProtoInput.FocusHooks = true;\n';
   const r = fixAll(src);
   assert.equal(r.code, src);
   assert.deepEqual(r.applied, []);

@@ -101,9 +101,10 @@ Game.Play = function () {
 `;
   const d = only(src, 'unknown-member');
   assert.deepEqual(
-    d.map((x) => x.message.match(/`(\w+)` does not exist on `([\w.]+)`/)!.slice(1).join('@')),
-    ['IgnoreWindowBordercheck@Game', 'PauseBetweenStart@Game', 'PLayerID@Context', 'ProtoController5@Player'],
+    d.slice(0, 3).map((x) => x.message.match(/`(\w+)` does not exist on `([\w.]+)`/)!.slice(1).join('@')),
+    ['IgnoreWindowBordercheck@Game', 'PauseBetweenStart@Game', 'PLayerID@Context'],
   );
+  assert.match(d[3].message, /`Player\.ProtoController5` does not exist: .*four controllers/);
   assert.equal(d[0].fixes![0].edits[0].text, 'IgnoreWindowBorderCheck');
   assert.equal(d[1].fixes![0].edits[0].text, 'PauseBetweenStarts');
   assert.equal(d[2].fixes![0].edits[0].text, 'PlayerID');
@@ -389,4 +390,18 @@ test('Hub.* lines are known (no warnings) but not offered in completion', () => 
   for (const t of ['Hub.', 'Hub.Handler.']) assert.deepEqual(membersOf(memberContextAt(t, t.length)!.base), []);
   assert.ok(!membersOf(memberContextAt('Game.', 5)!.base).some((m) => m.name === 'Hub'));
   assert.ok(membersOf(memberContextAt('Nucleus.Globals.', 16)!.base).some((m) => m.name === 'NucleusInstallRoot'));
+});
+
+test('Player.ProtoController5+ explained, with a safe removal', () => {
+  const src = HEADER + 'Game.Play = function () {\n  for (var i = 0; i < PlayerList.Count; i++) {\n    var player = PlayerList[i];\n    player.ProtoController4 = Context.GamepadId;\n    player.ProtoController5 = Context.GamepadId;\n    player.ProtoController6 = Context.GamepadId; // copied\n  }\n};\n';
+  const d = only(src, 'unknown-member');
+  assert.equal(d.length, 2);
+  assert.match(d[0].message, /at most four controllers/);
+  assert.deepEqual(d[0].tags, ['unnecessary']);
+  const out = fixAll(src).code;
+  assert.doesNotMatch(out, /ProtoController[56]/);
+  assert.match(out, /ProtoController4 = Context\.GamepadId;/);
+  assert.deepEqual(rules(lint(out)), []);
+  // a call on the right-hand side is kept out of Fix all (removing it would skip the call)
+  assert.equal(only(HEADER + 'Game.Play = function () { Player.ProtoController5 = Context.GetFolder(0); };\n', 'unknown-member')[0].fixes, undefined);
 });
