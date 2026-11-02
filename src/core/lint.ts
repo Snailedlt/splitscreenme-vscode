@@ -409,6 +409,21 @@ class Analyzer {
         if (!n.param) es(n.start, n.body.start, 'An optional catch binding', [{ title: 'Add `(e)`', edits: [{ start: n.start + 5, end: n.body.start, text: ' (e) ' }], preferred: true }]);
         break;
       case 'Literal':
+        // Nucleus rebuilds the file line by line ("\r\n" + line + "\r\n", GenericGameInfo's
+        // constructor), so a backslash line continuation inside a string is followed by an
+        // extra line break, and Jint stops with "Unexpected token ILLEGAL".
+        if (typeof n.value === 'string' && /[\r\n\u2028\u2029]/.test(n.raw)) {
+          const raw: string = n.raw;
+          const joined = raw.replace(/\\(\r\n|[\r\n\u2028\u2029])/g, '');
+          this.report({
+            rule: 'syntax-error',
+            message: 'Nucleus can\'t load a string that continues onto the next line with `\\` (it adds line breaks when it reads the file, which Jint rejects). Keep the string on one line, or join parts with `+`.',
+            start: n.start,
+            end: n.end,
+            fixes: [{ title: 'Join the string onto one line', edits: [{ start: n.start, end: n.end, text: joined }], preferred: true }],
+          });
+          break;
+        }
         if (typeof n.bigint === 'string') es(n.start, n.end, 'A BigInt literal');
         else if (typeof n.value === 'number' && /^0[bBoO]|_/.test(n.raw))
           es(n.start, n.end, 'This number literal syntax', [{ title: `Write it as ${String(n.value)}`, edits: [{ start: n.start, end: n.end, text: String(n.value) }], preferred: true }]);

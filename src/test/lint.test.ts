@@ -303,3 +303,14 @@ test('missing-builtin: no false positives', () => {
   assert.deepEqual(lint(play('var util = { find: function (x) { return x; } };\nutil.find(1);\nvar Map = {};\nvar m = Map;')), []);
   assert.deepEqual(lint(play('function Set() {}\nvar s = new Set();')), []);
 });
+
+test('a string continued with a backslash fails to load in Nucleus (it re-joins lines with extra line breaks)', () => {
+  const src = HEADER + 'Game.Play = function () {\n  Context.StartArguments = "-a \\\n-b";\n};\n';
+  const d = only(src, 'syntax-error');
+  assert.equal(d[0].severity, 'error');
+  const out = fixAll(src).code;
+  assert.match(out, /"-a -b"/);
+  assert.deepEqual(rules(lint(out)), []);
+  // ordinary strings, and escapes like \n, are fine
+  assert.deepEqual(lint(HEADER + 'Game.Play = function () { Context.StartArguments = "a\\nb" + \'c\\\\\'; };\n'), []);
+});
