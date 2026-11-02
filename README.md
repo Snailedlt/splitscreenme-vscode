@@ -19,7 +19,7 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 
 ## Getting started
 
-1. Install the extension. Until it is on the Marketplace, run `npm ci && npm run package`, then **Extensions: Install from VSIX…**.
+1. Install the extension. Until it is on the Marketplace, download the `.vsix` from the [releases](https://github.com/Snailedlt/splitscreenme-vscode/releases) (or run `npm ci && npm run package`), then **Extensions: Install from VSIX…**. Testing it? See [TESTING.md](TESTING.md).
 2. Open the folder where you keep your handlers. Any `.js` file that sets `Game.GUID`, `Game.GameName`, `Game.ExecutableName` or `Game.Play`, or lives in a `handlers` folder, gets handler features. Other JavaScript files are left alone.
 3. Run **Nucleus: New Handler…** from the Command Palette, or type `nc-handler` in an empty `.js` file.
 

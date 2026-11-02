@@ -1,0 +1,30 @@
+name: Release
+# Push a tag like v0.1.0-beta.1: builds the .vsix and attaches it to a GitHub release
+# (a prerelease when the tag has a "-", e.g. -beta.1).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Package
+        run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${GITHUB_REF_NAME}.vsix"
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" "splitscreenme-vscode-${GITHUB_REF_NAME}.vsix" --title "$GITHUB_REF_NAME" --generate-notes $pre
