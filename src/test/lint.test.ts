@@ -283,7 +283,9 @@ test('missing-builtin: ES2015+ library calls that Jint 2.11 lacks', () => {
   const play = (body: string) => HEADER + 'Game.Play = function () {\n' + body + '\n};\n';
   assert.deepEqual(only(play('var o = Object.assign({}, Game);'), 'missing-builtin').map((d) => d.severity), ['error']);
   assert.deepEqual(only(play('var m = new Map();\nvar a = Array.from([1]);'), 'missing-builtin').length, 2);
-  assert.match(only(play('var e = Number.EPSILON;'), 'missing-builtin')[0].message, /is `undefined`/);
+  const eps = only(play('var e = Number.EPSILON;'), 'missing-builtin')[0];
+  assert.match(eps.message, /is `undefined`/);
+  assert.equal(eps.severity, 'warning');
   assert.equal(only(play('var s = Context.StartArguments;\nif (s.includes("-x")) {}'), 'missing-builtin')[0].severity, 'warning');
   assert.equal(only(play('var b = "abc".startsWith("a");'), 'missing-builtin')[0].severity, 'error');
   // Fix all rewrites includes/startsWith with indexOf and Number.parseInt with parseInt

@@ -472,10 +472,12 @@ class Analyzer {
       if (obj.name === 'Number' && (name === 'parseFloat' || name === 'parseInt')) {
         fixes.push({ title: `Use the global \`${name}\``, edits: [{ start: n.start, end: n.end, text: name }], preferred: true });
       }
+      const called = ctx.parent?.type === 'CallExpression' && ctx.parent.callee === n;
       this.report({
         rule: 'missing-builtin',
+        severity: called ? 'error' : 'warning', // reading e.g. Number.EPSILON gives undefined, it doesn't throw
         message:
-          ctx.parent?.type === 'CallExpression' && ctx.parent.callee === n
+          called
             ? `\`${obj.name}.${name}\` does not exist in Nucleus (${engine} has only the ES5 built-ins); calling it throws "Object has no method '${name}'".`
             : `\`${obj.name}.${name}\` is \`undefined\` in Nucleus (${engine} has only the ES5 built-ins).`,
         start: n.start,
