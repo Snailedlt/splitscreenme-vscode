@@ -1,9 +1,15 @@
 name: Release
-# Push a tag like v0.1.0-beta.1: builds the .vsix and attaches it to a GitHub release
-# (a prerelease when the tag has a "-", e.g. -beta.1).
+# Builds the .vsix and attaches it to a GitHub release (a prerelease when the version has a "-",
+# e.g. v0.1.0-beta.1). Either push a tag like v0.1.0-beta.1, or run the workflow by hand with a
+# version: GitHub then creates the tag on the commit it built.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version tag to create, e.g. v0.1.0-beta.1
+        required: true
 
 permissions:
   contents: write
@@ -11,6 +17,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,10 +29,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Package
-        run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${GITHUB_REF_NAME}.vsix"
+        run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${VERSION}.vsix"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
-          gh release create "$GITHUB_REF_NAME" "splitscreenme-vscode-${GITHUB_REF_NAME}.vsix" --title "$GITHUB_REF_NAME" --generate-notes $pre
+          case "$VERSION" in v*) ;; *) echo "Version must start with v"; exit 1;; esac
+          pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
+          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes $pre
