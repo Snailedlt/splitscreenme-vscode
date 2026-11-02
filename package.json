@@ -41,6 +41,17 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.tryIt",
+        "title": "Try It (Simulate Each Player)",
+        "category": "Nucleus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "splitscreenme.tryItSet",
+        "title": "Try It: Change Settings",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.fixAll",
         "title": "Fix All Auto-fixable Problems",
         "category": "Nucleus"
@@ -94,7 +105,18 @@
           "group": "nucleus@2"
         }
       ],
+      "editor/title": [
+        {
+          "command": "splitscreenme.tryIt",
+          "when": "splitscreenme.isHandler",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "splitscreenme.tryItSet",
+          "when": "false"
+        },
         {
           "command": "splitscreenme.installHandler",
           "when": "!isWeb"

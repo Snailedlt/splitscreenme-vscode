@@ -8,6 +8,8 @@ import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
+import { SimResult } from './core/sim';
+import { simulateIsolated } from './sandbox';
 
 const HELP = `Usage: nucleus <command> [options]
 
@@ -17,6 +19,12 @@ Commands:
                               "Context.ModifySaveFile", "KillMutex", "Nucleus.Folder"
   api --search <words>        Search API names and docs, e.g. "api --search mutex"
   api --markdown              Print the full API reference as Markdown
+  simulate <handler.js> [--players N] [--resolution 1920x1080] [--keyboard 1|none]
+                              "Try it": load the handler and run Game.Play for each player the
+                              way Nucleus would (emulating its Jint engine), without Nucleus or
+                              the game. Shows each player's window, launch arguments and file
+                              changes. File, registry and process calls are recorded, never
+                              performed, and the handler has no access to this computer.
   hub search <words>          Search handlers on hub.splitscreen.me
   hub fetch <id> [--out dir]  Download a Hub handler package and extract it (default ./hub-handlers/<title>)
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
@@ -40,7 +48,8 @@ Lint options:
   --fix                       Apply every safe automatic fix and save the files (deterministic, no AI)
   --fix-dry-run               Show what --fix would change, without saving
 
-Exit code: 1 when lint finds errors or a command fails, 2 on bad usage.`;
+Exit code: 1 when lint finds errors, a simulated handler fails to load or run, or a command
+fails; 2 on bad usage.`;
 
 class Usage extends Error {}
 
@@ -67,7 +76,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'api', 'hub', 'new', 'package', 'init-agent', 'rules'];
+  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -86,6 +95,8 @@ async function main(argv: string[]): Promise<number> {
     case 'rules':
       print(json, RULES, () => Object.entries(RULES).map(([id, r]) => `${id.padEnd(22)} ${r.severity.padEnd(8)} ${r.description}`).join('\n'));
       return 0;
+    case 'simulate':
+      return cmdSimulate(args, json);
     case 'api':
       return cmdApi(args, json);
     case 'hub':
@@ -167,6 +178,54 @@ function cmdLint(args: Args, json: boolean): number {
   if (json) console.log(JSON.stringify({ files: out, errors, warnings, ...(fixMode ? { fixed: fixedCount } : {}) }, null, 2));
   else console.log(`${linted} handler(s): ${fixMode ? `${fixedCount} problem(s) ${fixMode === 'dry' ? 'would be fixed' : 'fixed'}, ` : ''}${errors} error(s)${fixMode ? ' left' : ''}, ${warnings} warning(s)${fixMode ? ' left' : ''}`);
   return errors ? 1 : 0;
+}
+
+function cmdSimulate(args: Args, json: boolean): number {
+  const file = args.positional[0];
+  if (!file || args.positional.length > 1) throw new Usage('simulate: give one handler file');
+  const players = Number(flag(args, '--players') ?? 2);
+  if (!Number.isInteger(players) || players < 1 || players > 16) throw new Usage('--players must be 1 to 16');
+  const res = (flag(args, '--resolution') ?? '1920x1080').match(/^(\d+)x(\d+)$/);
+  if (!res) throw new Usage('--resolution must look like 1920x1080');
+  const kbArg = flag(args, '--keyboard') ?? '1';
+  const keyboardPlayer = kbArg === 'none' ? -1 : Number(kbArg) - 1;
+  if (kbArg !== 'none' && (!Number.isInteger(keyboardPlayer) || keyboardPlayer < 0 || keyboardPlayer >= players)) throw new Usage(`--keyboard must be a player number (1-${players}) or "none"`);
+  const src = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  const r = simulateIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer });
+  const failed = !r.loaded || r.players.some((p) => p.error) || r.callbacks.some((c) => c.error);
+  print(json, { file, ...r }, () => formatSimulation(r, keyboardPlayer));
+  return failed ? 1 : 0;
+}
+
+export function formatSimulation(r: SimResult, keyboardPlayer: number): string {
+  const out: string[] = [];
+  if (!r.loaded) {
+    out.push(`Nucleus can't load this handler, so nothing would start.`, `  ${r.loadError ?? ''}`);
+  } else {
+    const failed = r.players.filter((p) => p.error).length;
+    out.push(
+      failed
+        ? `Setup fails for ${failed} of ${r.players.length} players; those players' games won't start.`
+        : `Nucleus would set up all ${r.players.length} player(s).${r.hasPlay ? '' : ' (No Game.Play, so every player gets the same setup.)'}`,
+    );
+  }
+  const ignored = [...new Set(r.ignored)];
+  if (ignored.length) out.push('', `Settings Nucleus skips (${ignored.length}):`, ...ignored.map((s) => `  ${s}`));
+  for (const p of r.players) {
+    out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer ? 'keyboard & mouse' : 'controller'})`);
+    if (p.error) out.push(`  FAILS: ${p.error}`);
+    out.push(`  Window:       ${p.window}`, `  Starts with:  ${p.startArguments || '(nothing extra)'}`);
+    if (p.effects.length) out.push('  Changes before the game starts:', ...p.effects.map((e) => `    - ${e}`));
+    if (p.calls.length) out.push('  Recorded calls:', ...p.calls.map((c) => `    ${c}`));
+  }
+  for (const c of r.callbacks) {
+    out.push('', c.name);
+    if (c.error) out.push(`  FAILS: ${c.error}`);
+    out.push(...c.calls.map((x) => `    ${x}`));
+  }
+  if (r.options.length) out.push('', `Options set (different from Nucleus' defaults):`, ...r.options.map((o) => `  ${o.path} = ${o.value}`));
+  out.push('', 'Simulated: no files, registry or processes were touched. Windows, focus and input still need a real test in Nucleus.');
+  return out.join('\n');
 }
 
 function cmdApi(args: Args, json: boolean): number {

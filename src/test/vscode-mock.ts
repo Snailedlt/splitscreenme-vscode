@@ -134,7 +134,21 @@ export const commands = {
   registerCommand: (id: string, fn: any) => (__registered.commands.push({ id, fn }), disposable),
   executeCommand: async () => {},
 };
+export enum ViewColumn {
+  Active = -1,
+  Beside = -2,
+  One = 1,
+}
+/** Webview panels created by the extension (see createWebviewPanel). */
+export const __panels: { viewType: string; title: string; options: any; webview: { html: string } }[] = [];
 export const window = {
+  activeTextEditor: undefined as any,
+  onDidChangeActiveTextEditor: () => disposable,
+  createWebviewPanel: (viewType: string, title: string, _column: unknown, options: any) => {
+    const panel = { viewType, title, options, webview: { html: '' }, reveal: () => {}, onDidDispose: () => disposable, dispose: () => {} };
+    __panels.push(panel);
+    return panel;
+  },
   showErrorMessage: async () => undefined,
   showWarningMessage: async () => undefined,
   showInformationMessage: async () => undefined,

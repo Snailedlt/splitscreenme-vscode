@@ -129,3 +129,20 @@ test('fix-all code action (source.fixAll.nucleus) and in quick fixes', async () 
   // nothing to do on a clean handler
   assert.deepEqual(provider.provideCodeActions(m.makeDocument(HEADER), null, { diagnostics: [], only: m.CodeActionKind.SourceFixAll }), []);
 });
+
+test('Try it panel: simulates the active handler, no scripts, settings via command links', async () => {
+  const run = (id: string, ...args: unknown[]) => m.__registered.commands.filter((c: any) => c.id === id).at(-1)!.fn(...args);
+  m.window.activeTextEditor = { document: m.makeDocument(HEADER + 'Game.Play = function () { Context.StartArguments = "-w " + Context.Width; };\n') };
+  await run('splitscreenme.tryIt');
+  const panel = m.__panels.at(-1)!;
+  assert.equal(panel.options.enableScripts, false);
+  assert.match(panel.webview.html, /Nucleus would set up all 2 players/);
+  assert.match(panel.webview.html, /-w 960/);
+  assert.match(panel.webview.html, /command:splitscreenme\.tryItSet\?/);
+  await run('splitscreenme.tryItSet', { players: 4 });
+  assert.match(panel.webview.html, /all 4 players/);
+  assert.match(panel.webview.html, /Player 4/);
+  await run('splitscreenme.tryItSet', { keyboardPlayer: 7 }); // out of range: ignored
+  assert.match(panel.webview.html, /all 4 players/);
+  m.window.activeTextEditor = undefined;
+});

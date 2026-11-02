@@ -7,6 +7,7 @@ Before writing or changing a handler, read `.claude/skills/nucleus-handler/SKILL
 ```bash
 node .claude/skills/nucleus-handler/scripts/nucleus.js lint --fix <handler.js>  # apply the safe automatic fixes
 node .claude/skills/nucleus-handler/scripts/nucleus.js lint <handler.js>        # run after every edit
+node .claude/skills/nucleus-handler/scripts/nucleus.js simulate <handler.js>    # what each player gets: window, launch args, file changes
 node .claude/skills/nucleus-handler/scripts/nucleus.js api <Game.Option>        # check an option exists and its type
 node .claude/skills/nucleus-handler/scripts/nucleus.js api --search <words>     # find the right option
 node .claude/skills/nucleus-handler/scripts/nucleus.js hub search <game>        # find similar handlers to learn from

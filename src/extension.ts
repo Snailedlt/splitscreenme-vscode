@@ -3,6 +3,7 @@ import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, owne
 import { callContextAt, memberContextAt, resolveAt } from './core/complete';
 import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
 import { registerCommands } from './commands';
+import { registerTryIt } from './tryit';
 import { fixAll } from './core/fix';
 
 const SOURCE = 'nucleus';
@@ -83,6 +84,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
   );
+
+  registerTryIt(context, isHandler);
 
   registerCommands(context, {
     lintFiles: (entries) => {

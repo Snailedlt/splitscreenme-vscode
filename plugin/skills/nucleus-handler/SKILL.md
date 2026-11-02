@@ -17,6 +17,7 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 | --- | --- |
 | `node .../nucleus.js lint --fix <file.js>` | Apply every safe automatic fix first (ES5 conversions, typos, moving `Context` code into `Game.Play`, ...). It never changes behaviour; what's left needs your judgement. |
 | `node .../nucleus.js lint <file.js>` | **Always run after every edit.** Catches syntax Nucleus can't load, nonexistent options, wrong types, Context used outside `Game.Play`, Hub-install pitfalls. Shows available fixes. |
+| `node .../nucleus.js simulate <file.js> [--players 4]` | **Run after lint is clean.** Loads the handler and runs `Game.Play` for each player the way Nucleus would (emulating its Jint engine), without Nucleus or the game: each player's window, launch arguments, the file/registry changes it would make, settings Nucleus skips, and errors a player would hit (for example an ES2015 method that Jint lacks). Check the output matches what you intended. It runs isolated and touches nothing. |
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |
 | `node .../nucleus.js hub search <words>` | Find existing handlers by game or series name. The Hub has no engine field: to find same-engine handlers, get a list of games on that engine (for example PCGamingWiki's engine page) and search for those titles. |
@@ -44,10 +45,10 @@ If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `#
 1. **Research.** Look up the game's engine, input API (XInput/DirectInput/raw input), multiplayer type (LAN, online-only, Steam/Epic/GOG networking), launcher/DRM, config and save locations. PCGamingWiki is the best single source. Ask the user what you can't find; they have the game.
 2. **Learn from existing handlers.** `hub search` the game and its series. If a handler for this exact game already exists (especially a verified one), tell the user **first**. Installing it from Nucleus' handler browser may be all they need. If they still want changes, build on it rather than starting over. Then search titles of other games on the same engine (Unreal Engine 4, Unity, Source, ...). `hub fetch` one or two and reuse their approach.
 3. **Scaffold** with `new`, then adapt it: multiple instances (mutexes, `ChangeExe`, ...), connectivity (LAN or emulator), windowing/resolution in `Game.Play`, focus, input.
-4. **Lint** until there are no errors or warnings you can't justify.
+4. **Lint** until there are no errors or warnings you can't justify, then **simulate** with 2 and 4 players and check each player's launch arguments, window and file changes are what you meant (per-player values differ, paths point at the instance folder, nothing is skipped).
 5. **Hand over a test plan.** Install via the VS Code extension or copy `<Name>.js` (and its `<Name>/` folder) into `<Nucleus>/handlers/`. Ask the user to enable debug logging (Settings, or `DebugLog=True` under `[Misc]` in Nucleus' `Settings.ini`), test with 2 players, and send `debug-log.txt` from the Nucleus folder plus what they saw.
 
-**Fixing a handler.** Run `lint --fix`, then lint again, then match the user's symptom in [reference/troubleshooting.md](reference/troubleshooting.md). Change one thing at a time and say what each change is for, so test results stay interpretable.
+**Fixing a handler.** Run `lint --fix`, then lint again, then `simulate` to see what each player actually gets, then match the user's symptom in [reference/troubleshooting.md](reference/troubleshooting.md). Change one thing at a time and say what each change is for, so test results stay interpretable.
 
 **Reviewing.** Lint, then check the hard rules, then check the handler's logic against the game facts (paths, file formats, arguments).
 

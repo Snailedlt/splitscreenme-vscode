@@ -28,6 +28,7 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 | Command | What it does |
 | --- | --- |
 | **Nucleus: New Handler…** | Asks for the game name, executable, Steam app ID and optional features, then writes a ready-to-edit handler. |
+| **Nucleus: Try It (Simulate Each Player)** | Opens a panel beside the editor showing what Nucleus would set up for each player: window position and size, launch arguments, the settings files it changes, options Nucleus skips, and errors a player would hit. It updates as you type; pick 1–4 players, the keyboard & mouse player and the monitor size in the panel. Also the ▷ button in the editor title bar. See [Try it](#try-it). |
 | **Nucleus: Package Handler for the Hub (.nc)** | Zips `Game.js` as `handler.js`, plus the `Game/` asset folder next to it. Also available in the Explorer context menu. |
 | **Nucleus: Install Handler into Nucleus Co-op** | Copies `Game.js` and `Game/` into `<Nucleus>/handlers/`. Asks for your Nucleus folder once (`splitscreenme.nucleusPath`). |
 | **Nucleus: Browse Handlers on the Hub…** | Searches hub.splitscreen.me; opens a handler's source or its Hub page. |
@@ -140,6 +141,18 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | `splitscreenme.completion.enable` | `true` | The extension's completion/hover/signature help. Turned off by **Set Up Type Definitions**, because TypeScript then provides them. |
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
 
+## Try it
+
+**Nucleus: Try It** and `nucleus simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.
+
+File, registry and process calls are recorded, never performed. The handler runs in a separate JavaScript realm with no access to Node, VS Code or your files (only text goes in and out), and a time limit stops endless loops, so trying a handler you downloaded is safe. Window placement, focus, input and the game itself still need a real test in Nucleus.
+
+```bash
+node dist/cli.js simulate MyGame.js --players 4 --keyboard none --resolution 2560x1440   # --json for scripts and agents
+```
+
+The exit code is 1 when the handler fails to load or a player's setup fails.
+
 ## Command-line linter
 
 ```bash
@@ -147,7 +160,7 @@ npm ci && npm run build
 node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is installed
 ```
 
-`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. It also has `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
+`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. It also has `simulate`, `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
 
 ## Development
 
@@ -179,6 +192,9 @@ The generator parses the public members of the C# classes exposed to handlers, w
 src/core/api.ts         typed access to the API model, member resolution, suggestions
 src/core/lint.ts        the linter (acorn AST, no VS Code dependency)
 src/core/complete.ts    text-based resolution for completion/hover/signature help
+src/core/sim.ts         "Try it": runs a handler per player, emulating Jint (also used by the testbench workbench)
+src/sandbox.ts          runs sim.ts isolated in a vm context for Node hosts (CLI, extension)
+src/tryit.ts            the Try it panel
 src/core/templates.ts   New Handler templates
 src/core/zip.ts         dependency-free zip reader/writer for .nc packages
 src/core/hub.ts         hub.splitscreen.me client

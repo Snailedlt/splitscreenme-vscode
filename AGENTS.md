@@ -25,8 +25,10 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
   - `lint.ts`: the linter (acorn AST). `RULES` is the rule registry.
   - `complete.ts`: text-based resolution for completion/hover/signature help (works on incomplete code).
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
+  - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
-- `src/extension.ts`, `src/commands.ts`: VS Code glue.
+- `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
+- `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
