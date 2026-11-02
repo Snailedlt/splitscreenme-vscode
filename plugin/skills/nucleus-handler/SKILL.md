@@ -28,7 +28,7 @@ If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `#
 
 ## Hard rules (a violation means the handler silently misbehaves or fails to load)
 
-1. **ES5 JavaScript only.** Nucleus runs handlers with Jint 2.11. No arrow functions, template strings, classes, spread/rest, destructuring, default parameters, `for...of`, `?.`, `??`, or trailing commas in calls. `let`/`const` parse but behave like `var` (function-scoped), so just use `var`.
+1. **ES5 JavaScript only.** Nucleus runs handlers with Jint 2.11. No arrow functions, template strings, classes, spread/rest, destructuring, default parameters, `for...of`, `?.`, `??`, or trailing commas in calls. `let`/`const` parse but behave like `var` (function-scoped), so just use `var`. The standard library is ES5 too: no `Object.assign`, `Array.from`, `Map`/`Set`, `.includes()`, `.startsWith()`, `.endsWith()`, `.find()`, `.repeat()` or `.trimEnd()` (they throw when the code runs). Use `indexOf`, plain objects and loops. `padStart`/`padEnd` are fine.
 2. **Only use options that exist.** Assigning a misspelled or invented option (`Game.IgnoreWindowBordercheck`, `Game.ForceFinishOnPlay`) is silently ignored, so the handler "works" but does nothing. Verify every option with `api` or lint; never guess names. Options are case-sensitive.
 3. **`Context`, `Player`, `PlayerList`, `Handler`, `ProtoInput` exist only inside callbacks** (`Game.Play`, `Game.ProtoInput.OnInputLocked`, ...). Top-level code may only use `Game`, `Hub`, `Nucleus`, `System`.
 4. **Required:** `Game.GUID` (letters/digits/spaces only; becomes a folder name and must be unique), `Game.GameName`, `Game.ExecutableName` (exact .exe file name).

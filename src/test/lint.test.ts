@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
 import { lint, Diagnostic, Fix, looksLikeHandler } from '../core/lint';
+import { fixAll } from '../core/fix';
 
 const HEADER = `Game.GUID = "My Game";
 Game.GameName = "My Game";
@@ -276,4 +277,26 @@ test('unknown-member writes are errors in "use strict" code (Jint throws)', () =
   assert.deepEqual(fn.map((d) => d.severity), ['error', 'warning']);
   // not a directive unless it comes first
   assert.equal(only(HEADER + '"use strict";\nGame.NoSuchOption = true;\n', 'unknown-member')[0].severity, 'warning');
+});
+
+test('missing-builtin: ES2015+ library calls that Jint 2.11 lacks', () => {
+  const play = (body: string) => HEADER + 'Game.Play = function () {\n' + body + '\n};\n';
+  assert.deepEqual(only(play('var o = Object.assign({}, Game);'), 'missing-builtin').map((d) => d.severity), ['error']);
+  assert.deepEqual(only(play('var m = new Map();\nvar a = Array.from([1]);'), 'missing-builtin').length, 2);
+  assert.equal(only(play('var s = Context.StartArguments;\nif (s.includes("-x")) {}'), 'missing-builtin')[0].severity, 'warning');
+  assert.equal(only(play('var b = "abc".startsWith("a");'), 'missing-builtin')[0].severity, 'error');
+  // Fix all rewrites includes/startsWith with indexOf and Number.parseInt with parseInt
+  const out = fixAll(play('var s = "abc";\nif (!s.includes("b") || s.startsWith("a")) { Context.StartArguments = String(Number.parseInt("1")); }')).code;
+  assert.match(out, /!\(s\.indexOf\("b"\) !== -1\) \|\| \(s\.indexOf\("a"\) === 0\)/);
+  assert.match(out, /String\(parseInt\("1"\)\)/);
+  assert.deepEqual(rules(lint(out)), []);
+});
+
+test('missing-builtin: no false positives', () => {
+  const play = (body: string) => HEADER + 'Game.Play = function () {\n' + body + '\n};\n';
+  // ES5 built-ins and padStart exist
+  assert.deepEqual(lint(play('var k = Object.keys({ a: 1 });\nvar j = JSON.stringify(k);\nvar p = "1".padStart(2, "0");\nvar t = " a ".trim();\nvar i = [1].indexOf(1);\nvar x = typeof Map;')), []);
+  // the handler's own methods and variables
+  assert.deepEqual(lint(play('var util = { find: function (x) { return x; } };\nutil.find(1);\nvar Map = {};\nvar m = Map;')), []);
+  assert.deepEqual(lint(play('function Set() {}\nvar s = new Set();')), []);
 });

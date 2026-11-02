@@ -229,6 +229,16 @@
                 "off"
               ]
             },
+            "missing-builtin": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
             "duplicate-assignment": {
               "type": "string",
               "enum": [

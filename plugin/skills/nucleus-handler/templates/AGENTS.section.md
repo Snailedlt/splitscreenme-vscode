@@ -13,7 +13,7 @@ node .claude/skills/nucleus-handler/scripts/nucleus.js hub search <game>        
 ```
 
 Non-negotiable:
-- ES5 JavaScript only (Jint 2.11): no arrow functions, template strings, classes, spread or destructuring. Use `var`.
+- ES5 JavaScript only (Jint 2.11): no arrow functions, template strings, classes, spread or destructuring. Use `var`. No ES2015+ built-ins either (`.includes()`, `.startsWith()`, `.find()`, `Object.assign`, `Map`): use `indexOf` and loops.
 - Only use options that exist (`api` / lint). Misspelled options are silently ignored.
 - `Context`, `Player`, `PlayerList`, `ProtoInput` only inside `Game.Play` or other callbacks.
 - Keep `Game.GameName = "...";` and `Game.ExecutableName = "...";` unindented, double-quoted, and alone on their lines.

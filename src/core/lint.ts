@@ -50,6 +50,10 @@ export const RULES = {
     severity: 'warning',
     description: 'With Proto Input and multiple keyboards/mice, the legacy input options (Game.HookGetCursorPos, Game.SendNormalMouseInput, ...) must be set to false; several default to true and would run alongside Proto Input.',
   },
+  'missing-builtin': {
+    severity: 'error',
+    description: 'Jint 2.x only has the ES5 standard library (plus String padStart/padEnd). Newer built-ins such as `Object.assign`, `Array.from`, `Map`, `"…".includes()` or `[].find()` do not exist and throw when the code runs.',
+  },
   deprecated: { severity: 'hint', description: 'The option is deprecated (setting it to false is fine).' },
 } as const satisfies Record<string, { severity: Severity; description: string }>;
 
@@ -89,6 +93,19 @@ type Node = acorn.Node & Record<string, any>;
 
 const CALLBACK_ONLY = new Set(['Context', 'Player', 'PlayerList', 'Handler', 'ProtoInput']);
 const REQUIRED = ['GUID', 'GameName', 'ExecutableName'] as const;
+
+// Built-ins newer than ES5 that Jint 2.11.58 does not have (each one checked against the
+// real engine: calling it throws "Object has no method '<name>'" or "<name> is not defined").
+const MISSING_STATIC: Record<string, string[]> = {
+  Object: ['assign', 'entries', 'values', 'is', 'fromEntries'],
+  Array: ['from', 'of'],
+  Number: ['isInteger', 'isNaN', 'isFinite', 'parseFloat', 'parseInt'],
+  Math: ['trunc', 'sign', 'log2', 'log10', 'cbrt', 'hypot'],
+  String: ['fromCodePoint'],
+};
+const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Symbol', 'Reflect', 'Proxy']);
+// String/Array methods. The receiver's type is unknown statically, so these are warnings.
+const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
 
 export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -135,6 +152,10 @@ class Analyzer {
   private aliases = new Map<string, Resolved | null>();
   private parentOf = new WeakMap<Node, Node>();
   private shadowed = new Set<string>();
+  /** Every variable/function/parameter name the handler declares or assigns. */
+  private declared = new Set<string>();
+  /** Property names the handler defines itself (`{ find: ... }`, `x.find = ...`). */
+  private ownProps = new Set<string>();
   /** Top-level assignments keyed by chain ("Game.Hook.ForceFocus"). */
   private topAssignments = new Map<string, Node[]>();
   private gameAssignedAnywhere = new Set<string>();
@@ -172,6 +193,11 @@ class Analyzer {
         for (const p of n.params) if (p.type === 'Identifier') add(p.name, null);
       }
     });
+    visit(this.program, (n) => {
+      if (n.type === 'Property' && !n.computed && n.key) this.ownProps.add(n.key.type === 'Identifier' ? n.key.name : String(n.key.value));
+      else if (n.type === 'AssignmentExpression' && n.left.type === 'MemberExpression' && !n.left.computed) this.ownProps.add(n.left.property.name);
+    });
+    for (const name of inits.keys()) this.declared.add(name);
     for (const [name, list] of inits) {
       if (api.globals[name]) {
         this.shadowed.add(name);
@@ -246,8 +272,10 @@ class Analyzer {
     switch (n.type) {
       case 'Identifier':
         this.checkCallbackOnly(n, ctx);
+        this.checkMissingGlobal(n, ctx);
         break;
       case 'MemberExpression':
+        this.checkMissingBuiltin(n, ctx);
         this.checkMember(n, ctx);
         break;
       case 'AssignmentExpression':
@@ -420,6 +448,62 @@ class Analyzer {
       start: n.start,
       end: n.end,
       fixes: fix ? [fix] : undefined,
+    });
+  }
+
+  private checkMissingGlobal(n: Node, ctx: Ctx) {
+    if (!MISSING_GLOBALS.has(n.name) || ctx.inTypeof || this.declared.has(n.name)) return;
+    if (!this.isReference(n, ctx.parent)) return;
+    this.report({
+      rule: 'missing-builtin',
+      message: `\`${n.name}\` does not exist in Nucleus (Jint ${api.jint ?? '2.x'} has only the ES5 built-ins); using it throws "${n.name} is not defined". Use a plain object or array instead.`,
+      start: n.start,
+      end: n.end,
+    });
+  }
+
+  private checkMissingBuiltin(n: Node, ctx: Ctx) {
+    if (n.computed || n.property.type !== 'Identifier') return;
+    const name: string = n.property.name;
+    const engine = `Jint ${api.jint ?? '2.x'}`;
+    const obj = n.object;
+    if (obj.type === 'Identifier' && MISSING_STATIC[obj.name]?.includes(name) && !this.declared.has(obj.name)) {
+      const fixes: Fix[] = [];
+      if (obj.name === 'Number' && (name === 'parseFloat' || name === 'parseInt')) {
+        fixes.push({ title: `Use the global \`${name}\``, edits: [{ start: n.start, end: n.end, text: name }], preferred: true });
+      }
+      this.report({
+        rule: 'missing-builtin',
+        message: `\`${obj.name}.${name}\` does not exist in Nucleus (${engine} has only the ES5 built-ins); calling it throws "Object has no method '${name}'".`,
+        start: n.start,
+        end: n.end,
+        fixes,
+      });
+      return;
+    }
+    const call = ctx.parent;
+    if (!MISSING_METHODS.has(name) || call?.type !== 'CallExpression' || call.callee !== n) return;
+    if (this.ownProps.has(name) || this.resolve(obj)) return; // the handler's own method, or a Nucleus/.NET object
+    if (obj.type === 'Identifier' && (MISSING_STATIC[obj.name] || obj.name === 'Object' || obj.name === 'JSON')) return;
+    const literal = (obj.type === 'Literal' && typeof obj.value === 'string') || obj.type === 'ArrayExpression';
+    const fixes: Fix[] = [];
+    const args = call.arguments as Node[];
+    const recv = this.text.slice(obj.start, obj.end);
+    if ((name === 'includes' || name === 'startsWith') && args.length === 1 && args[0].type !== 'SpreadElement') {
+      const arg = this.text.slice(args[0].start, args[0].end);
+      const text = `(${recv}.indexOf(${arg}) ${name === 'includes' ? '!== -1' : '=== 0'})`;
+      fixes.push({ title: `Use \`indexOf\`: ${text}`, edits: [{ start: call.start, end: call.end, text }], preferred: true });
+    } else if ((name === 'trimStart' || name === 'trimLeft' || name === 'trimEnd') && args.length === 0) {
+      const text = `${recv}.replace(${name === 'trimEnd' ? '/\\s+$/' : '/^\\s+/'}, '')`;
+      fixes.push({ title: `Use \`replace\`: ${text}`, edits: [{ start: call.start, end: call.end, text }], preferred: true });
+    }
+    this.report({
+      rule: 'missing-builtin',
+      severity: literal ? 'error' : 'warning',
+      message: `\`.${name}()\` does not exist on strings or arrays in Nucleus (${engine} has only the ES5 built-ins); calling it throws "Object has no method '${name}'".`,
+      start: n.property.start,
+      end: call.end,
+      fixes,
     });
   }
 
