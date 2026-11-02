@@ -79,6 +79,17 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
 
 The skill loads automatically when you ask about Nucleus handlers.
 
+### Does the skill help? (evals)
+
+`plugin/evals/` holds six cases built from mistakes found in real handlers: write a UE4 handler from facts, fix a handler that doesn't load, the nonexistent `ProtoController5`+, `.includes()` in `Game.Play`, a review where `DPIHandling = true` hides a bug, and Hub-install lines. `claude plugin eval` runs each with and without the plugin. Its graders can only be regexes and model judges, so `scripts/eval-grade.mjs` then grades every handler the agent wrote with the real linter and Try it.
+
+```bash
+claude plugin eval ./plugin --trust-plugin --scaffold --allow-tools Write Edit --runs 2 --keep-temp -j 4 > eval.log 2>&1
+node scripts/eval-grade.mjs eval.log --cleanup
+```
+
+First run (2 runs per case per arm, $1.48): every case scored 1.00 with the plugin; without it, the agent missed the `DPIHandling` bug, told the user to set `ProtoController5`–`8`, and left a handler that still didn't load. Handlers that load and run in Try it: 10/10 with the plugin, 7/10 without. The **Agent evals** workflow runs the same by hand (it needs an `ANTHROPIC_API_KEY` secret).
+
 ### Any agent, in your handler folder
 
 Run **Nucleus: Set Up AI Agent Support** in VS Code, or:

@@ -1,0 +1,48 @@
+name: Agent evals
+# Measures whether the nucleus-handler skill helps an agent (claude plugin eval, with vs without the
+# plugin), then grades every handler the agent wrote with the real linter and Try it
+# (scripts/eval-grade.mjs). Costs API credits: run by hand. Needs the ANTHROPIC_API_KEY secret.
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per case per arm
+        default: '2'
+      max_cost_usd:
+        description: Cost ceiling (USD)
+        default: '6'
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: Run the suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude plugin eval ./plugin --trust-plugin --scaffold --allow-tools Write Edit \
+            --runs "${{ inputs.runs }}" --ablation with-without --max-cost-usd "${{ inputs.max_cost_usd }}" \
+            --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --no-publish --keep-temp -j 4 \
+            > eval.log 2>&1 || status=$?
+          sed -n '/^CASE/,$p' eval.log | tee -a "$GITHUB_STEP_SUMMARY"
+          exit ${status:-0}
+      - name: Grade the handlers with the real linter and Try it
+        if: always()
+        run: node scripts/eval-grade.mjs eval.log --cleanup | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: |
+            eval.log
+            plugin/evals/results/
