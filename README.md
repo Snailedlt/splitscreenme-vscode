@@ -3,14 +3,16 @@
 Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
 
 <p>
-  <img src="docs/images/check.png" width="49%" alt="The checks on Skyrim Together Reborn, a verified Hub handler: five lines set Player.ProtoController5 to 9, which Nucleus doesn't have, each explained with a one-click fix">
-  <img src="docs/images/fix-all.png" width="49%" alt="Fix all: the automatic fixes for a handler with common mistakes, listed and shown as a diff, with the error and warning counts before and after">
+  <img src="docs/images/vscode-problems.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one">
+  <img src="docs/images/vscode-try-it.png" width="49%" alt="VS Code: the Try it panel beside StardewValley.js, showing what Nucleus would set up for each of 4 players">
 </p>
 <p>
-  <img src="docs/images/try-it-panel.png" width="49%" alt="The Try it panel in VS Code for StardewValley with 4 players: each player's window, launch arguments and the settings files Nucleus would change">
+  <img src="docs/images/vscode-hover.png" width="32%" alt="VS Code: hovering Player.ProtoController5 in Skyrim Together Reborn explains that Nucleus and Proto Input take at most four controllers">
+  <img src="docs/images/vscode-completion.png" width="32%" alt="VS Code: completion after Game.Hook. lists the real options with their types">
+  <img src="docs/images/vscode-quickfix.png" width="32%" alt="VS Code: the quick fix that wraps Game.KillMutex's value in an array">
 </p>
 
-*Above: the checks and **Fix all** (shown here in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/), which runs the same code), and the **Try it** panel. Testing it? See [TESTING.md](TESTING.md).*
+*Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/). Testing it? See [TESTING.md](TESTING.md).*
 
 - **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`.
 - **Hover docs** and **signature help** for every `Context` method and its overloads.
