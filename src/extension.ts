@@ -3,6 +3,7 @@ import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, owne
 import { callContextAt, memberContextAt, resolveAt } from './core/complete';
 import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
 import { registerCommands } from './commands';
+import { fixAll } from './core/fix';
 
 const SOURCE = 'nucleus';
 const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
@@ -63,7 +64,21 @@ export function activate(context: vscode.ExtensionContext) {
   const featuresOn = (doc: vscode.TextDocument) => config().get('completion.enable', true) && isHandler(doc);
 
   context.subscriptions.push(
-    vscode.languages.registerCodeActionsProvider(SELECTOR, new FixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
+    vscode.languages.registerCodeActionsProvider(SELECTOR, new FixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix, FIX_ALL_KIND] }),
+    vscode.commands.registerCommand('splitscreenme.fixAll', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isHandler(editor.document)) {
+        vscode.window.showInformationMessage('Open a Nucleus handler to fix it.');
+        return;
+      }
+      const edit = fixAllEdit(editor.document);
+      if (!edit) {
+        vscode.window.showInformationMessage('Nothing to fix automatically.');
+        return;
+      }
+      await vscode.workspace.applyEdit(edit.edit);
+      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
+    }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.'),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
@@ -124,9 +139,30 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
   });
 }
 
+const FIX_ALL_KIND = vscode.CodeActionKind.SourceFixAll.append('nucleus');
+
+/** One edit replacing the document with the result of "Fix all", or undefined if nothing changes. */
+function fixAllEdit(doc: vscode.TextDocument): { edit: vscode.WorkspaceEdit; count: number } | undefined {
+  const text = doc.getText();
+  const r = fixAll(text, { rules: ruleOverrides() });
+  if (r.code === text) return undefined;
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), r.code);
+  return { edit, count: r.applied.length };
+}
+
 class FixProvider implements vscode.CodeActionProvider {
   provideCodeActions(doc: vscode.TextDocument, _range: vscode.Range, ctx: vscode.CodeActionContext): vscode.CodeAction[] {
     const actions: vscode.CodeAction[] = [];
+    // "Fix all" (also runs on save with "editor.codeActionsOnSave": {"source.fixAll.nucleus": "explicit"}).
+    if (ctx.only && FIX_ALL_KIND.intersects(ctx.only)) {
+      if (!isHandler(doc)) return [];
+      const fix = fixAllEdit(doc);
+      if (!fix) return [];
+      const a = new vscode.CodeAction(`Fix ${fix.count} auto-fixable Nucleus problem${fix.count === 1 ? '' : 's'}`, FIX_ALL_KIND);
+      a.edit = fix.edit;
+      return [a];
+    }
     for (const diag of ctx.diagnostics) {
       if (diag.source !== SOURCE) continue;
       for (const fix of fixesByDiagnostic.get(diag) ?? []) {
@@ -136,6 +172,15 @@ class FixProvider implements vscode.CodeActionProvider {
         a.edit = new vscode.WorkspaceEdit();
         for (const e of fix.edits) a.edit.replace(doc.uri, new vscode.Range(doc.positionAt(e.start), doc.positionAt(e.end)), e.text);
         actions.push(a);
+      }
+      if (!actions.some((a) => a.kind === FIX_ALL_KIND) && fixesByDiagnostic.get(diag)?.some((f) => f.preferred)) {
+        const fix = fixAllEdit(doc);
+        if (fix && fix.count > 1) {
+          const a = new vscode.CodeAction(`Fix all ${fix.count} auto-fixable problems`, FIX_ALL_KIND);
+          a.edit = fix.edit;
+          a.diagnostics = [diag];
+          actions.push(a);
+        }
       }
       const rule = typeof diag.code === 'object' ? String(diag.code.value) : String(diag.code);
       if (rule in RULES && rule !== 'syntax-error') {

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { lint, lineOf, lineStart, RULES, RuleId, Severity, LintOptions, looksLikeHandler } from './core/lint';
+import { fixAll } from './core/fix';
 import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
@@ -36,6 +37,8 @@ Lint options:
   --all                       Lint every .js file, not only ones that look like handlers
   --quiet                     Only report errors
   --verbose                   Also report hints (e.g. deprecated options)
+  --fix                       Apply every safe automatic fix and save the files (deterministic, no AI)
+  --fix-dry-run               Show what --fix would change, without saving
 
 Exit code: 1 when lint finds errors or a command fails, 2 on bad usage.`;
 
@@ -45,7 +48,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -111,6 +114,8 @@ function cmdLint(args: Args, json: boolean): number {
   const all = has(args, '--all');
   const quiet = has(args, '--quiet');
   const verbose = has(args, '--verbose');
+  const fixMode = has(args, '--fix-dry-run') ? 'dry' : has(args, '--fix') ? 'write' : null;
+  let fixedCount = 0;
 
   const targets: string[] = [];
   const collect = (p: string, explicit: boolean) => {
@@ -126,29 +131,41 @@ function cmdLint(args: Args, json: boolean): number {
   let linted = 0;
   const out: unknown[] = [];
   for (const file of targets) {
-    const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+    const original = fs.readFileSync(file, 'utf8');
+    let text = original.replace(/^﻿/, '');
     if (!all && !files.includes(file) && !looksLikeHandler(text)) continue;
     linted++;
+    let fixed: { rule: string; title: string; line: number }[] = [];
+    if (fixMode) {
+      const r = fixAll(text, options);
+      fixed = r.applied;
+      if (r.code !== text) {
+        if (fixMode === 'write') fs.writeFileSync(file, (original.startsWith('﻿') ? '﻿' : '') + r.code);
+        text = r.code;
+      }
+    }
     const diags = lint(text, options).filter((d) => (quiet ? d.severity === 'error' : verbose || d.severity !== 'hint'));
     for (const d of diags) {
       if (d.severity === 'error') errors++;
       else if (d.severity === 'warning') warnings++;
     }
     const withPos = diags.map((d) => ({ ...d, line: lineOf(text, d.start) + 1, column: d.start - lineStart(text, d.start) + 1 }));
+    fixedCount += fixed.length;
     if (json) {
-      out.push({ file, diagnostics: withPos });
+      out.push({ file, ...(fixMode ? { fixed } : {}), diagnostics: withPos });
       continue;
     }
-    if (!diags.length) continue;
+    if (!diags.length && !fixed.length) continue;
     console.log(file);
+    for (const f of fixed) console.log(`  ${`${f.line}`.padEnd(9)} ${(fixMode === 'dry' ? 'would fix' : 'fixed').padEnd(8)} ${f.title}  [${f.rule}]`);
     for (const d of withPos) {
       console.log(`  ${`${d.line}:${d.column}`.padEnd(9)} ${d.severity.padEnd(8)} ${d.message}  [${d.rule}]`);
       for (const f of d.fixes ?? []) console.log(`  ${''.padEnd(9)} ${''.padEnd(8)} fix: ${f.title}`);
     }
     console.log();
   }
-  if (json) console.log(JSON.stringify({ files: out, errors, warnings }, null, 2));
-  else console.log(`${linted} handler(s): ${errors} error(s), ${warnings} warning(s)`);
+  if (json) console.log(JSON.stringify({ files: out, errors, warnings, ...(fixMode ? { fixed: fixedCount } : {}) }, null, 2));
+  else console.log(`${linted} handler(s): ${fixMode ? `${fixedCount} problem(s) ${fixMode === 'dry' ? 'would be fixed' : 'fixed'}, ` : ''}${errors} error(s)${fixMode ? ' left' : ''}, ${warnings} warning(s)${fixMode ? ' left' : ''}`);
   return errors ? 1 : 0;
 }
 

@@ -116,3 +116,16 @@ test('features are off for non-handlers and when disabled', () => {
   assert.equal(m.__registered.completion[0].provideCompletionItems(doc, pos), undefined);
   delete m.__config['splitscreenme.completion.enable'];
 });
+
+test('fix-all code action (source.fixAll.nucleus) and in quick fixes', async () => {
+  const src = HEADER + 'Game.KillMutex = "M";\nGame.SymlinkGame = "true";\nGame.DPIHandling = true;\n';
+  const doc = m.makeDocument(src);
+  const provider = m.__registered.codeAction[0];
+  const all = provider.provideCodeActions(doc, null, { diagnostics: [], only: m.CodeActionKind.SourceFixAll });
+  assert.equal(all.length, 1);
+  assert.equal(all[0].kind.value, 'source.fixAll.nucleus');
+  const text = all[0].edit.edits[0].text;
+  assert.match(text, /Game\.KillMutex = \["M"\];\nGame\.SymlinkGame = true;\nGame\.DPIHandling = true;/);
+  // nothing to do on a clean handler
+  assert.deepEqual(provider.provideCodeActions(m.makeDocument(HEADER), null, { diagnostics: [], only: m.CodeActionKind.SourceFixAll }), []);
+});

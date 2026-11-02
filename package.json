@@ -41,6 +41,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.fixAll",
+        "title": "Fix All Auto-fixable Problems",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.packageHandler",
         "title": "Package Handler for the Hub (.nc)",
         "category": "Nucleus"

@@ -15,6 +15,7 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 
 | Command | Use it to |
 | --- | --- |
+| `node .../nucleus.js lint --fix <file.js>` | Apply every safe automatic fix first (ES5 conversions, typos, moving `Context` code into `Game.Play`, ...). It never changes behaviour; what's left needs your judgement. |
 | `node .../nucleus.js lint <file.js>` | **Always run after every edit.** Catches syntax Nucleus can't load, nonexistent options, wrong types, Context used outside `Game.Play`, Hub-install pitfalls. Shows available fixes. |
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |
@@ -46,7 +47,7 @@ If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `#
 4. **Lint** until there are no errors or warnings you can't justify.
 5. **Hand over a test plan.** Install via the VS Code extension or copy `<Name>.js` (and its `<Name>/` folder) into `<Nucleus>/handlers/`. Ask the user to enable debug logging (Settings, or `DebugLog=True` under `[Misc]` in Nucleus' `Settings.ini`), test with 2 players, and send `debug-log.txt` from the Nucleus folder plus what they saw.
 
-**Fixing a handler.** Lint first, then match the user's symptom in [reference/troubleshooting.md](reference/troubleshooting.md). Change one thing at a time and say what each change is for, so test results stay interpretable.
+**Fixing a handler.** Run `lint --fix`, then lint again, then match the user's symptom in [reference/troubleshooting.md](reference/troubleshooting.md). Change one thing at a time and say what each change is for, so test results stay interpretable.
 
 **Reviewing.** Lint, then check the hard rules, then check the handler's logic against the game facts (paths, file formats, arguments).
 

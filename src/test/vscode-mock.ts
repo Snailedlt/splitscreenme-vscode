@@ -19,7 +19,14 @@ export class Diagnostic {
 }
 export class CodeActionKind {
   static QuickFix = new CodeActionKind('quickfix');
+  static SourceFixAll = new CodeActionKind('source.fixAll');
   constructor(public value: string) {}
+  append(part: string) {
+    return new CodeActionKind(`${this.value}.${part}`);
+  }
+  intersects(other: CodeActionKind) {
+    return this.value.startsWith(other.value) || other.value.startsWith(this.value);
+  }
 }
 export class WorkspaceEdit {
   edits: { uri: any; range: Range; text: string }[] = [];
@@ -109,7 +116,9 @@ export const languages = {
   registerSignatureHelpProvider: (_s: any, p: any) => (__registered.signature.push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
 };
+export const __applied: WorkspaceEdit[] = [];
 export const workspace = {
+  applyEdit: async (e: WorkspaceEdit) => (__applied.push(e), true),
   textDocuments: [] as any[],
   workspaceFolders: undefined,
   onDidOpenTextDocument: () => disposable,

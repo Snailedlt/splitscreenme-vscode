@@ -5,6 +5,7 @@ This folder contains Nucleus Co-op (SplitScreen.Me) game handlers: JavaScript fi
 Before writing or changing a handler, read `.claude/skills/nucleus-handler/SKILL.md`. It has the rules, the workflow and links to the reference material. Then use the bundled tool:
 
 ```bash
+node .claude/skills/nucleus-handler/scripts/nucleus.js lint --fix <handler.js>  # apply the safe automatic fixes
 node .claude/skills/nucleus-handler/scripts/nucleus.js lint <handler.js>        # run after every edit
 node .claude/skills/nucleus-handler/scripts/nucleus.js api <Game.Option>        # check an option exists and its type
 node .claude/skills/nucleus-handler/scripts/nucleus.js api --search <words>     # find the right option

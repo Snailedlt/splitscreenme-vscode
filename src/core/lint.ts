@@ -63,6 +63,11 @@ export interface TextEdit {
 export interface Fix {
   title: string;
   edits: TextEdit[];
+  /**
+   * Safe to apply without review ("Fix all", `nucleus lint --fix`, fix-on-save): the
+   * fix keeps the handler's behaviour, or repairs code Nucleus can't load or run.
+   * Fixes that change behaviour or need the author's input leave this unset.
+   */
   preferred?: boolean;
 }
 export interface Diagnostic {
@@ -298,7 +303,7 @@ class Analyzer {
         break;
       }
       case 'ArrowFunctionExpression':
-        es(n.start, n.body.start, 'An arrow function');
+        es(n.start, n.body.start, 'An arrow function', arrowFix(this.text, n));
         break;
       case 'TemplateLiteral':
         if (ctx.parent?.type !== 'TaggedTemplateExpression') {
@@ -319,7 +324,7 @@ class Analyzer {
         es(n.start, n.end, 'A rest parameter (`...`)');
         break;
       case 'AssignmentPattern':
-        es(n.start, n.end, 'A default parameter value');
+        es(n.start, n.end, 'A default parameter value', defaultParamFix(this.text, n, ctx.parent));
         break;
       case 'ObjectPattern':
       case 'ArrayPattern':
@@ -329,8 +334,19 @@ class Analyzer {
         es(n.start, n.start + 3, '`for...of`');
         break;
       case 'Property':
-        if (n.shorthand) es(n.start, n.end, 'Shorthand property syntax');
-        else if (n.method) es(n.key.start, n.key.end, 'Method shorthand syntax');
+        if (n.shorthand) {
+          const fix: Fix[] | undefined =
+            ctx.parent?.type === 'ObjectExpression' && n.key.type === 'Identifier'
+              ? [{ title: `Write \`${n.key.name}: ${n.key.name}\``, edits: [{ start: n.start, end: n.end, text: `${n.key.name}: ${n.key.name}` }], preferred: true }]
+              : undefined;
+          es(n.start, n.end, 'Shorthand property syntax', fix);
+        } else if (n.method) {
+          const fix: Fix[] | undefined =
+            !n.computed && n.kind === 'init' && !n.value.async && !n.value.generator
+              ? [{ title: 'Convert to `name: function () {...}`', edits: [{ start: n.key.end, end: n.value.start, text: ': function ' }], preferred: true }]
+              : undefined;
+          es(n.key.start, n.key.end, 'Method shorthand syntax', fix);
+        }
         else if (n.computed) es(n.key.start - 1, n.key.end + 1, 'A computed property name');
         break;
       case 'FunctionDeclaration':
@@ -342,20 +358,32 @@ class Analyzer {
         es(n.start, n.end, 'Optional chaining (`?.`)');
         break;
       case 'LogicalExpression':
-        if (n.operator === '??') es(n.left.end, n.right.start, 'The `??` operator');
+        if (n.operator === '??') {
+          const L = this.text.slice(n.left.start, n.left.end);
+          const R = this.text.slice(n.right.start, n.right.end);
+          const fix: Fix[] | undefined = isSimpleRef(n.left)
+            ? [{ title: 'Rewrite with `!== null && !== undefined`', edits: [{ start: n.start, end: n.end, text: `(${L} !== null && ${L} !== undefined ? ${L} : ${R})` }], preferred: true }]
+            : undefined;
+          es(n.left.end, n.right.start, 'The `??` operator', fix);
+        }
         break;
       case 'BinaryExpression':
-        if (n.operator === '**') es(n.left.end, n.right.start, 'The `**` operator');
+        if (n.operator === '**') {
+          const L = this.text.slice(n.left.start, n.left.end);
+          const R = this.text.slice(n.right.start, n.right.end);
+          es(n.left.end, n.right.start, 'The `**` operator', [{ title: 'Use `Math.pow(...)`', edits: [{ start: n.start, end: n.end, text: `Math.pow(${L}, ${R})` }], preferred: true }]);
+        }
         break;
       case 'AssignmentExpression':
         if (['**=', '??=', '||=', '&&='].includes(n.operator)) es(n.left.end, n.right.start, `The \`${n.operator}\` operator`);
         break;
       case 'CatchClause':
-        if (!n.param) es(n.start, n.body.start, 'An optional catch binding');
+        if (!n.param) es(n.start, n.body.start, 'An optional catch binding', [{ title: 'Add `(e)`', edits: [{ start: n.start + 5, end: n.body.start, text: ' (e) ' }], preferred: true }]);
         break;
       case 'Literal':
         if (typeof n.bigint === 'string') es(n.start, n.end, 'A BigInt literal');
-        else if (typeof n.value === 'number' && /^0[bBoO]|_/.test(n.raw)) es(n.start, n.end, 'This number literal syntax');
+        else if (typeof n.value === 'number' && /^0[bBoO]|_/.test(n.raw))
+          es(n.start, n.end, 'This number literal syntax', [{ title: `Write it as ${String(n.value)}`, edits: [{ start: n.start, end: n.end, text: String(n.value) }], preferred: true }]);
         else if (n.regex && /[uysd]/.test(n.regex.flags)) es(n.start, n.end, `The regular expression flag(s) "${n.regex.flags.replace(/[gim]/g, '')}"`);
         break;
       case 'AwaitExpression':
@@ -385,12 +413,113 @@ class Analyzer {
     if (ctx.fnDepth > 0 || ctx.inTypeof) return;
     if (!CALLBACK_ONLY.has(n.name) || this.shadowed.has(n.name)) return;
     if (!this.isReference(n, ctx.parent)) return;
+    const fix = this.callbackMoveFix();
     this.report({
       rule: 'callback-only-global',
       message: `\`${n.name}\` is only available inside callbacks such as \`Game.Play = function () { ... }\`. Using it at the top level makes the handler fail to load.`,
       start: n.start,
       end: n.end,
+      fixes: fix ? [fix] : undefined,
     });
+  }
+
+  private moveFix: Fix | null | undefined;
+  /**
+   * One fix that moves every top-level statement using Context/Player/... (and the
+   * top-level statements that depend on them) into Game.Play, in source order.
+   * Variable declarations stay at the top level (only their assignments move), so
+   * other code that refers to the variables keeps working. Not offered when a
+   * statement that would move configures Game.* (that must stay at the top level).
+   */
+  private callbackMoveFix(): Fix | null {
+    if (this.moveFix !== undefined) return this.moveFix;
+    this.moveFix = null;
+    const body: Node[] = this.program.body;
+    const text = this.text;
+    const isPlay = (st: Node) =>
+      st.type === 'ExpressionStatement' && st.expression.type === 'AssignmentExpression' && this.chainOf(st.expression.left) === 'Game.Play';
+    const playStmt = body.find(isPlay);
+    const playFn = playStmt?.expression.right;
+    if (playStmt && !(playFn?.type === 'FunctionExpression' && playFn.body.type === 'BlockStatement')) return null;
+
+    const refsAtTop = (st: Node, names: Set<string>) => {
+      let hit = false;
+      const walk = (x: Node, parent?: Node) => {
+        if (hit || !x || typeof x.type !== 'string') return;
+        if (x.type === 'FunctionExpression' || x.type === 'FunctionDeclaration' || x.type === 'ArrowFunctionExpression') return;
+        if (x.type === 'UnaryExpression' && x.operator === 'typeof') return;
+        if (x.type === 'Identifier' && names.has(x.name) && this.isReference(x, parent)) {
+          hit = true;
+          return;
+        }
+        for (const k of Object.keys(x)) {
+          if (k === 'type' || k === 'start' || k === 'end') continue;
+          const v = x[k];
+          if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === 'string' && walk(c, x));
+          else if (v && typeof v.type === 'string') walk(v, x);
+        }
+      };
+      walk(st);
+      return hit;
+    };
+    const movable = (st: Node) => {
+      if (st.type === 'VariableDeclaration') return st.declarations.every((d: Node) => d.id.type === 'Identifier');
+      if (st.type !== 'ExpressionStatement') return false;
+      // Game option assignments must stay at the top level.
+      const assigns: string[] = [];
+      visit(st, (x) => {
+        if (x.type === 'AssignmentExpression' && x.left.type === 'MemberExpression') {
+          const c = this.chainOf(x.left);
+          if (c?.startsWith('Game.')) assigns.push(c);
+        }
+      });
+      return !assigns.length;
+    };
+
+    const moved = new Set<Node>();
+    const names = new Set<string>(CALLBACK_ONLY);
+    for (const sh of this.shadowed) names.delete(sh);
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const st of body) {
+        if (moved.has(st) || st === playStmt || st.type === 'FunctionDeclaration') continue;
+        if (!refsAtTop(st, names)) continue;
+        if (!movable(st)) return null;
+        moved.add(st);
+        if (st.type === 'VariableDeclaration') st.declarations.forEach((d: Node) => names.add(d.id.name));
+        changed = true;
+      }
+    }
+    if (!moved.size) return null;
+
+    const edits: TextEdit[] = [];
+    const lines: string[] = [];
+    for (const st of body) {
+      if (!moved.has(st)) continue;
+      if (st.type === 'VariableDeclaration') {
+        for (const d of st.declarations) if (d.init) lines.push(`${d.id.name} = ${text.slice(d.init.start, d.init.end)};`);
+        edits.push({ start: st.start, end: st.end, text: `var ${st.declarations.map((d: Node) => d.id.name).join(', ')};` });
+      } else {
+        const src = text.slice(st.start, st.end);
+        lines.push(src.endsWith(';') ? src : `${src};`);
+        const ls = lineStart(text, st.start);
+        const nl = text.indexOf('\n', st.end);
+        const restEmpty = /^[ \t;]*$/.test(text.slice(st.end, nl < 0 ? text.length : nl));
+        const aloneOnLine = text.slice(ls, st.start).trim() === '' && restEmpty;
+        edits.push(aloneOnLine ? { start: ls, end: nl < 0 ? text.length : nl + 1, text: '' } : { start: st.start, end: st.end, text: '' });
+      }
+    }
+    const indentOf = (pos: number) => text.slice(lineStart(text, pos), pos).match(/^\s*/)![0];
+    if (playFn) {
+      const inner = indentOf(playStmt!.start) + '  ';
+      const block = lines.map((l) => inner + l.replace(/\n/g, '\n' + inner)).join('\n');
+      edits.push({ start: playFn.body.start + 1, end: playFn.body.start + 1, text: `\n${block}` });
+    } else {
+      const block = lines.map((l) => '  ' + l.replace(/\n/g, '\n  ')).join('\n');
+      edits.push({ start: text.length, end: text.length, text: `${text.endsWith('\n') ? '' : '\n'}\nGame.Play = function () {\n${block}\n};\n` });
+    }
+    this.moveFix = { title: playFn ? 'Move the code that uses it into Game.Play' : 'Move the code that uses it into a new Game.Play', edits, preferred: true };
+    return this.moveFix;
   }
 
   private checkMember(n: Node, ctx: Ctx) {
@@ -413,7 +542,10 @@ class Analyzer {
         return !isWriteTarget || !cm || (!cm.readonly && cm.kind !== 'method' && cm.kind !== 'object');
       });
       const s = suggest(name, visible.length ? visible : candidates);
-      const fixes: Fix[] | undefined = s && !n.computed ? [{ title: `Change to \`${s}\``, edits: [{ start: n.property.start, end: n.property.end, text: s }], preferred: true }] : undefined;
+      // `preferred` marks fixes safe for "Fix all". A suggestion that only differs in digits
+      // (ProtoController5 -> ProtoController1) is a different member, not a typo.
+      const digitsOnly = !!s && s.replace(/\d+/g, '#') === name.replace(/\d+/g, '#');
+      const fixes: Fix[] | undefined = s && !n.computed ? [{ title: `Change to \`${s}\``, edits: [{ start: n.property.start, end: n.property.end, text: s }], preferred: !digitsOnly }] : undefined;
       if (isWrite && ctx.strict) {
         // Verified with Jint 2.11.58: in strict code the write throws a TypeError.
         this.report({
@@ -554,7 +686,8 @@ class Analyzer {
     if (actualKey && actualKey === meantKey) return; // e.g. SetWindowPosHook: true -> True
     if (!actualKey && !b) return; // false -> 0 with no member: "off"
     const fixes: Fix[] = [];
-    if (meantKey) fixes.push({ title: `Use Nucleus.${enumName}.${meantKey} (what \`${b}\` suggests)`, edits: [{ start: value.start, end: value.end, text: `Nucleus.${enumName}.${meantKey}` }], preferred: true });
+    // Neither fix is applied by "Fix all": both change behaviour, and only the author knows which was meant.
+    if (meantKey) fixes.push({ title: `Use Nucleus.${enumName}.${meantKey} (what \`${b}\` suggests)`, edits: [{ start: value.start, end: value.end, text: `Nucleus.${enumName}.${meantKey}` }] });
     if (actualKey) fixes.push({ title: `Use Nucleus.${enumName}.${actualKey} (keeps the current behaviour)`, edits: [{ start: value.start, end: value.end, text: `Nucleus.${enumName}.${actualKey}` }] });
     this.report({
       rule: 'type-mismatch',
@@ -625,7 +758,8 @@ class Analyzer {
       message: `Missing required option${missing.length > 1 ? 's' : ''}: ${missing.map((k) => `Game.${k}`).join(', ')}. Nucleus cannot load the handler without ${missing.length > 1 ? 'them' : 'it'}.`,
       start: at,
       end: lineEnd(this.text, at),
-      fixes: [{ title: `Add ${missing.map((k) => `Game.${k}`).join(', ')}`, edits: [{ start: at, end: at, text: lines }], preferred: true }],
+      // Not part of "Fix all": it inserts placeholder values only the author can fill in.
+      fixes: [{ title: `Add ${missing.map((k) => `Game.${k}`).join(', ')}`, edits: [{ start: at, end: at, text: lines }] }],
     });
   }
 
@@ -643,7 +777,10 @@ class Analyzer {
           start: n.left.start,
           end: n.end,
           tags: ['unnecessary'],
-          fixes: onlyStatementOnLine ? [{ title: 'Remove this assignment', edits: [{ start: stmtStart, end: stmtEnd, text: '' }] }] : undefined,
+          // Safe to remove automatically when nothing reads the option in between.
+          fixes: onlyStatementOnLine
+            ? [{ title: 'Remove this assignment', edits: [{ start: stmtStart, end: stmtEnd, text: '' }], preferred: !this.text.slice(n.end, nodes[nodes.length - 1].start).includes(chain) }]
+            : undefined,
         });
       }
     }
@@ -679,7 +816,25 @@ class Analyzer {
           const first = line.indexOf('"');
           const last = line.lastIndexOf('"');
           const extracted = line.slice(first + 1, last);
-          if (extracted !== v.value) problems.push(`no other double quotes may appear on the line (Nucleus would read \`${extracted}\`)`);
+          if (extracted !== v.value) {
+            problems.push(`no other double quotes may appear on the line (Nucleus would read \`${extracted}\`)`);
+            // Usually a trailing comment: move it to its own line above.
+            const after = this.text.slice(n.end, le);
+            const ci = after.indexOf('//');
+            if (ci >= 0 && /^[\s;]*$/.test(after.slice(0, ci))) {
+              const cStart = n.end + ci;
+              let trimStart = cStart;
+              while (trimStart > n.end && /[ \t]/.test(this.text[trimStart - 1])) trimStart--;
+              fixes.push({
+                title: 'Move the comment to the line above',
+                edits: [
+                  { start: ls, end: ls, text: `${this.text.slice(cStart, le)}\n` },
+                  { start: trimStart, end: le, text: '' },
+                ],
+                preferred: true,
+              });
+            }
+          }
         }
       }
       if (key === 'ExecutableName') {
@@ -732,7 +887,7 @@ class Analyzer {
       start: proto[1][0].start,
       end: proto[1][0].end,
       fixes: missing.length
-        ? [{ title: 'Turn off the legacy input options', edits: [{ start: at, end: at, text: `// Legacy input options: off when using Proto Input\n${missing.map((k) => `Game.${k} = false;`).join('\n')}\n` }], preferred: true }]
+        ? [{ title: 'Turn off the legacy input options', edits: [{ start: at, end: at, text: `// Legacy input options: off when using Proto Input\n${missing.map((k) => `Game.${k} = false;`).join('\n')}\n` }] }]
         : undefined,
     });
   }
@@ -815,6 +970,79 @@ function literalType(n: Node): LitType | undefined {
 }
 
 const article = (t: LitType) => ({ string: 'a string', number: 'a number', boolean: 'a boolean', array: 'an array', function: 'a function', object: 'an object', null: 'null', expression: 'an expression' })[t];
+
+/** True for `a`, `a.b`, `a.b.c`: safe to evaluate more than once. */
+function isSimpleRef(n: Node): boolean {
+  if (n.type === 'Identifier') return true;
+  return n.type === 'MemberExpression' && !n.computed && isSimpleRef(n.object);
+}
+
+/** Does code use `this` or `arguments` outside nested (non-arrow) functions? */
+function usesThisOrArguments(n: Node): boolean {
+  let hit = false;
+  const walk = (x: Node) => {
+    if (hit || !x || typeof x.type !== 'string') return;
+    if (x.type === 'FunctionExpression' || x.type === 'FunctionDeclaration') return;
+    if (x.type === 'ThisExpression' || x.type === 'Super' || (x.type === 'Identifier' && x.name === 'arguments') || x.type === 'MetaProperty') {
+      hit = true;
+      return;
+    }
+    for (const k of Object.keys(x)) {
+      if (k === 'type' || k === 'start' || k === 'end') continue;
+      const v = x[k];
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v.type === 'string') walk(v);
+    }
+  };
+  walk(n);
+  return hit;
+}
+
+function arrowFix(text: string, n: Node): Fix[] | undefined {
+  if (n.async || usesThisOrArguments(n.body)) return undefined;
+  const params = n.params.length ? text.slice(n.params[0].start, n.params[n.params.length - 1].end) : '';
+  let end = n.end;
+  let bodyText: string;
+  if (n.body.type === 'BlockStatement') {
+    bodyText = text.slice(n.body.start, n.body.end);
+  } else {
+    // `() => (expr)`: acorn drops the parentheses from the body's range.
+    const before = text.slice(0, n.body.start);
+    const open = before.lastIndexOf('=>');
+    let bs = n.body.start;
+    let be = n.body.end;
+    let depth = 0;
+    for (let i = open + 2; i < n.body.start; i++) if (text[i] === '(') depth++;
+    while (depth > 0) {
+      const close = text.indexOf(')', be);
+      if (close < 0) return undefined;
+      be = close + 1;
+      depth--;
+    }
+    if (be > n.body.end) bs = text.indexOf('(', open + 2); // include the opening parenthesis too
+    if (be > end) end = be;
+    bodyText = `{ return ${text.slice(bs, be)}; }`;
+  }
+  return [{ title: 'Convert to `function () {...}`', edits: [{ start: n.start, end, text: `function (${params}) ${bodyText}` }], preferred: true }];
+}
+
+function defaultParamFix(text: string, n: Node, fn?: Node): Fix[] | undefined {
+  if (!fn || !(fn.type === 'FunctionExpression' || fn.type === 'FunctionDeclaration') || !fn.params.includes(n)) return undefined;
+  if (n.left.type !== 'Identifier' || fn.body.type !== 'BlockStatement') return undefined;
+  const name = n.left.name;
+  const ls = text.lastIndexOf('\n', fn.body.start - 1) + 1;
+  const indent = (text.slice(ls, fn.body.start).match(/^\s*/)?.[0] ?? '') + '  ';
+  return [
+    {
+      title: `Set the default inside the function`,
+      edits: [
+        { start: n.start, end: n.end, text: name },
+        { start: fn.body.start + 1, end: fn.body.start + 1, text: `\n${indent}if (${name} === undefined) { ${name} = ${text.slice(n.right.start, n.right.end)}; }` },
+      ],
+      preferred: true,
+    },
+  ];
+}
 
 function templateFix(text: string, n: Node): Fix[] | undefined {
   const parts: string[] = [];
