@@ -2,6 +2,16 @@
 
 Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
 
+<p>
+  <img src="docs/images/check.png" width="49%" alt="The checks on Skyrim Together Reborn, a verified Hub handler: five lines set Player.ProtoController5 to 9, which Nucleus doesn't have, each explained with a one-click fix">
+  <img src="docs/images/fix-all.png" width="49%" alt="Fix all: the automatic fixes for a handler with common mistakes, listed and shown as a diff, with the error and warning counts before and after">
+</p>
+<p>
+  <img src="docs/images/try-it-panel.png" width="49%" alt="The Try it panel in VS Code for StardewValley with 4 players: each player's window, launch arguments and the settings files Nucleus would change">
+</p>
+
+*Above: the checks and **Fix all** (shown here in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/), which runs the same code), and the **Try it** panel. Testing it? See [TESTING.md](TESTING.md).*
+
 - **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`.
 - **Hover docs** and **signature help** for every `Context` method and its overloads.
 - **Linting** for the mistakes that make handlers fail, often silently. See [Lint rules](#lint-rules).
