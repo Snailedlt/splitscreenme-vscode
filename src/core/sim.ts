@@ -16,6 +16,23 @@ export interface SimOptions {
   width: number;
   height: number;
   keyboardPlayer: number; // index of the keyboard/mouse player, -1 for none
+  /** Plugin globals from the handler folder's pluginsInfo.txt (see parsePluginsInfo). */
+  plugins?: Record<string, string[]>;
+}
+
+/**
+ * pluginsInfo.txt in the handler's folder (GenericGameInfo.LoadCustomAssemblies): entries split
+ * by "|", each "#<global name>#<dll>#<Namespace.Type>#...". Nucleus loads the DLL and defines the
+ * global before running the handler, with one property per type, named after the type.
+ */
+export function parsePluginsInfo(text: string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const entry of text.split('|')) {
+    const d = entry.trim().split('#');
+    if (d.length < 3 || !d[1]) continue;
+    out[d[1]] = d.slice(3).map((t) => t.split('.').pop()!).filter(Boolean);
+  }
+  return out;
 }
 
 export interface PlayerRun {
@@ -27,6 +44,8 @@ export interface PlayerRun {
   /** e.g. "left half of the screen, 960 × 1080" */
   window: string;
   error?: string;
+  /** Something about how Nucleus treats this player's setup, e.g. Game.Play running after launch. */
+  note?: string;
 }
 
 export interface SimResult {
@@ -35,8 +54,12 @@ export interface SimResult {
   ignored: string[];
   options: { path: string; value: string }[];
   players: PlayerRun[];
-  callbacks: { name: string; calls: string[]; error?: string }[];
+  callbacks: { name: string; calls: string[]; error?: string; note?: string }[];
   hasPlay: boolean;
+  /** How many players were asked for (players after a failing one aren't in `players`). */
+  playerCount: number;
+  /** An error in Game.Play (or OnFinishedSetup) ends the whole session: later players aren't set up. */
+  sessionEnded?: { player: number; reason: string };
 }
 
 class JintError extends Error {}
@@ -132,9 +155,10 @@ function returnValue(name: string, returns: string, args: unknown[], ctx: Record
   if (returns === 'string') {
     if (name === 'GetFolder') {
       const v = args[0];
+      // FileUtil.GetFolder / GenericGameHandler.jsData
       if (v === api.enums.Folder.values.Documents) return 'C:\\Users\\me\\Documents';
-      if (v === api.enums.Folder.values.MainGameFolder) return 'D:\\Games\\TheGame';
-      return `C:\\Nucleus\\content\\${ctx.__guid}\\Instance${ctx.__player}`;
+      if (v === api.enums.Folder.values.MainGameFolder) return ctx.__mainFolder;
+      return ctx.__instanceFolder;
     }
     return `<${name}>`;
   }
@@ -242,6 +266,30 @@ function nucleusNs(): any {
   return ns;
 }
 
+/** One plain-language line on how the session goes (shared by the CLI, VS Code and the workbench). */
+export function sessionSummary(r: SimResult): string {
+  if (!r.loaded) return "Nucleus can't load this handler, so nothing would start.";
+  const n = r.playerCount;
+  const plural = (k: number) => `${k} player${k === 1 ? '' : 's'}`;
+  if (r.sessionEnded && r.sessionEnded.player >= 0) {
+    const p = r.sessionEnded.player + 1;
+    const rest = p < n ? ` Player${p + 1 < n ? `s ${p + 1}–${n} are` : ` ${n} is`} never set up.` : '';
+    return `Setup fails for player ${p}, so Nucleus ends the session: it shows an error and closes the games it started.${rest}`;
+  }
+  if (r.sessionEnded) return `All ${plural(n)} are set up, but Game.OnFinishedSetup fails, so Nucleus ends the session.`;
+  return `Nucleus would set up all ${plural(n)}.${r.hasPlay ? '' : ' The handler has no Game.Play, so every player gets the same setup.'}`;
+}
+
+/** The `Handler` global (GenericGameHandler): the members handlers use, first letter case-insensitive. */
+function handlerObject(log: string[], values: Record<string, unknown>): unknown {
+  const t: Record<string, unknown> = {
+    ...values,
+    Log: (msg: unknown) => void log.push(`Handler.Log(${fmt(msg)})`),
+    End: (fromStopButton: unknown) => void log.push(`Handler.End(${fmt(fromStopButton)})`),
+  };
+  return new Proxy(t, { get: (o, p) => (typeof p !== 'string' ? undefined : p in o ? o[p] : o[p[0].toUpperCase() + p.slice(1)] ?? o[p[0].toLowerCase() + p.slice(1)]) });
+}
+
 /** A .NET System.Drawing.Rectangle as Jint exposes it (first letter of member names case-insensitive). */
 function rect(x: number, y: number, width: number, height: number): unknown {
   const r: Record<string, unknown> = { X: x, Y: y, Width: width, Height: height, Left: x, Top: y, Right: x + width, Bottom: y + height, IsEmpty: width === 0 && height === 0 };
@@ -313,7 +361,7 @@ function engineError(e: any): string {
 }
 
 export function simulate(src: string, opt: SimOptions): SimResult {
-  const result: SimResult = { loaded: false, ignored: [], options: [], players: [], callbacks: [], hasPlay: false };
+  const result: SimResult = { loaded: false, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opt.players };
   const blocker = lint(src).find((d) => d.severity === 'error' && LOAD_BLOCKERS.has(d.rule));
   if (blocker) {
     result.loadError = `Jint can't parse this handler: ${blocker.message}`;
@@ -337,6 +385,10 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     System: systemNs(loadLog),
     importNamespace: () => systemNs(loadLog, 'ns'),
   };
+  // Plugin DLLs can't run here: their globals record calls instead.
+  for (const [name, types] of Object.entries(opt.plugins ?? {})) {
+    scope[name] = Object.fromEntries(types.map((t) => [t, systemNs(loadLog, `${name}.${t}`)]));
+  }
   const { code, declared } = withoutModernBuiltins(src);
   const missing = [...MISSING_GLOBALS].filter((g) => !declared.has(g));
   const scopeProxy = new Proxy(scope, {
@@ -393,7 +445,8 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       IsRawKeyboard: i === opt.keyboardPlayer,
       IsRawMouse: i === opt.keyboardPlayer,
       IsXInput: i !== opt.keyboardPlayer,
-      GamepadId: i,
+      GamepadId: i === opt.keyboardPlayer ? -1 : i - (opt.keyboardPlayer >= 0 && opt.keyboardPlayer < i ? 1 : 0),
+      SteamID: 76561199000000000 + i, // a .NET long; Jint gives a double, like Context.PlayerSteamID's number
       MonitorBounds: bounds,
       DefaultMonitorBounds: bounds,
       OwnerDisplay: rect(0, 0, opt.width, opt.height),
@@ -405,44 +458,73 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   const protoValues: Record<string, unknown> = {};
   const protoInput = clr('ProtoInputRuntime', 'ProtoInput', protoLog, result.ignored, protoValues);
 
+  // Where things live (GenericGameHandler): the original install, and per-instance copies when
+  // the game is symlinked/hardlinked/copied; otherwise instances run from the original folder.
+  const bin = typeof gameStore.BinariesFolder === 'string' && gameStore.BinariesFolder ? `\\${gameStore.BinariesFolder}` : '';
+  const exe = String(gameStore.ExecutableName ?? 'game.exe');
+  const origRoot = 'D:\\Games\\TheGame';
+  const origExeDir = `${origRoot}${bin}`;
+  const linked = !!(gameStore.SymlinkGame || gameStore.HardcopyGame || gameStore.HardlinkGame);
+  const afterLaunch = gameStore.GamePlayAfterLaunch === true;
+  const playNeverRuns = afterLaunch && gameStore.GamePlayBeforeGameSetup === true;
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+  const ratio = (a: number, b: number) => `${a / gcd(a, b)}:${b / gcd(a, b)}`;
+  let controllers = 0;
+  let lastCtx: { ctx: unknown; calls: string[]; player: unknown } | undefined;
   if (result.hasPlay) {
     for (let i = 0; i < opt.players; i++) {
       const calls: string[] = [];
       const ctxStore: Record<string, unknown> = { __guid: gameStore.GUID ?? 'GUID', __player: i };
-      // GenericGameInfo.CreateContext copies same-named fields from Game.
-      for (const k of Object.keys(api.objects.Context.members)) if (k in gameStore && api.objects.Game.members[k]?.kind !== 'object') ctxStore[k] = gameStore[k];
+      // GenericGameInfo.CreateContext copies Game's values onto same-named Context members of the
+      // same kind (field to field, property to writable property) and type. Objects such as
+      // Game.Hook are copied by reference: Context.Hook IS Game.Hook.
+      for (const [k, cm] of Object.entries(api.objects.Context.members)) {
+        const gm = api.objects.Game.members[k];
+        if (!gm || !(k in gameStore) || cm.kind === 'method' || cm.readonly || gm.csType !== cm.csType) continue;
+        if ((gm.kind === 'property') !== (cm.kind === 'property')) continue;
+        ctxStore[k] = gameStore[k];
+      }
       const w = Math.floor(opt.width / cols);
       const h = Math.floor(opt.height / rows);
       const nick = `Player${i + 1}`;
       Object.assign(ctxStore, {
         PlayerID: i,
-        RootInstallFolder: 'D:\\Games\\TheGame',
-        OrigRootFolder: 'D:\\Games\\TheGame',
-        RootFolder: `C:\\Nucleus\\content\\${ctxStore.__guid}\\Instance${i}`,
-        ExePath: `C:\\Nucleus\\content\\${ctxStore.__guid}\\Instance${i}\\${gameStore.ExecutableName ?? 'game.exe'}`,
+        RootInstallFolder: origExeDir.toLowerCase(),
+        OrigRootFolder: origRoot.toLowerCase(),
+        RootFolder: linked ? `C:\\Nucleus\\content\\${ctxStore.__guid}\\Instance${i}` : origRoot.toLowerCase(),
+        ExePath: linked ? `C:\\Nucleus\\content\\${ctxStore.__guid}\\Instance${i}${bin}\\${exe}` : `${origExeDir}\\${exe}`,
+        __instanceFolder: linked ? `C:\\Nucleus\\content\\${ctxStore.__guid}\\Instance${i}` : origExeDir,
+        __mainFolder: origExeDir,
         CustomUserGeneralValues: ((gameStore.CustomUserGeneralPrompts as string[]) ?? []).map(() => 'answer'),
         CustomUserPlayerValues: ((gameStore.CustomUserPlayerPrompts as string[]) ?? []).map(() => 'answer'),
         CustomUserInstanceValues: ((gameStore.CustomUserInstancePrompts as string[]) ?? []).map(() => 'answer'),
       });
       const options: Record<string, unknown> = {};
-      for (const o of optionsList()) options[o.key] = Array.isArray(o.values) ? o.values[0] : o.values;
+      // A list option gives its first entry; an empty list is free text, "" until the user types.
+      for (const o of optionsList()) options[o.key] = Array.isArray(o.values) ? (o.values.length ? o.values[0] : '') : o.values;
+      const gamepad = i === opt.keyboardPlayer ? -1 : controllers++;
       const computed: Record<string, unknown> = {
         Width: w, Height: h, PosX: (i % cols) * w, PosY: Math.floor(i / cols) * h,
         MonitorWidth: opt.width, MonitorHeight: opt.height, NumberOfPlayers: opt.players,
         Nickname: nick, IsKeyboardPlayer: i === opt.keyboardPlayer, HasKeyboardPlayer: opt.keyboardPlayer >= 0,
-        GamepadId: i + 1, AspectRatioDecimal: w / h, AspectRatio: `${w}:${h}`, OrigAspectRatioDecimal: opt.width / opt.height,
-        OrigAspectRatio: '16:9', Arch: 'x64', Options: options, PlayerSteamID: String(76561199000000000n + BigInt(i)),
+        GamepadId: gamepad + 1, AspectRatioDecimal: w / h, AspectRatio: ratio(w, h), OrigAspectRatioDecimal: opt.width / opt.height,
+        OrigAspectRatio: ratio(opt.width, opt.height), Arch: 'x64', Options: options, PlayerSteamID: String(76561199000000000n + BigInt(i)),
         HandlerGUID: ctxStore.__guid, NucleusFolder: 'C:\\Nucleus', ScriptFolder: 'C:\\Nucleus\\handlers\\MyHandler',
-        DocumentsPlayer: `C:\\Users\\me\\Documents\\NucleusCoop\\${nick}\\Documents\\`, DocumentsRoot: 'C:\\Users\\me\\Documents\\NucleusCoop\\',
+        HandlersFolder: 'C:\\Nucleus\\handlers', UtilFolder: 'C:\\Nucleus\\utils',
+        NucleusEnvironmentRoot: 'C:\\Users\\me', NucleusDocumentsRoot: 'C:\\Users\\me\\Documents',
+        PlayerGameFilesBackupFolder: `C:\\Users\\me\\NucleusCoop\\_Game Files Backup_\\${ctxStore.__guid}\\${nick}`,
+        DocumentsPlayer: `C:\\Users\\me\\NucleusCoop\\${nick}\\Documents\\`, DocumentsRoot: 'C:\\Users\\me\\NucleusCoop\\',
         EnvironmentPlayer: `C:\\Users\\me\\NucleusCoop\\${nick}\\`, EnvironmentRoot: 'C:\\Users\\me\\NucleusCoop\\',
-        NucleusUserRoot: `C:\\Users\\me\\NucleusCoop\\${nick}`, UserName: 'me', LocalIP: '192.168.1.10',
+        NucleusUserRoot: 'C:\\Users\\me', UserName: 'me', LocalIP: '192.168.1.10',
+        GamepadGuid: `00000000-0000-0000-0000-00000000000${i}`, x360ceGamepadGuid: `IG_0000000000000000000000000000000${i}`,
+        RawHID: i === opt.keyboardPlayer ? '\\\\?\\HID#VID_046D&PID_C52B' : '',
         EpicLang: 'en', GogLang: 'english', SteamLang: 'english',
       };
       const ctx = clr('Context', 'Context', calls, result.ignored, ctxStore, computed);
       scope.Context = ctx;
       scope.Player = playerObjs[i];
       scope.PlayerList = playerList;
-      scope.Handler = {};
+      scope.Handler = handlerObject(calls, { TotalPlayers: opt.players, numPlayers: opt.players, plyrIndex: i, exePath: ctxStore.ExePath, instanceExeFolder: ctxStore.__instanceFolder, gameIs64: true, garch: 'x64', HandlerGUID: ctxStore.__guid, UsingNucleusAccounts: false });
       scope.ProtoInput = protoInput;
       const where = (() => {
         const col = i % cols;
@@ -452,22 +534,62 @@ export function simulate(src: string, opt: SimOptions): SimResult {
         return `the ${row === 0 ? 'top' : 'bottom'}-${col === 0 ? 'left' : 'right'} quarter of the screen`;
       })();
       const run: PlayerRun = { index: i, startArguments: '', calls, effects: [], window: `${where}, ${w} × ${h}` };
+      const argsBefore = String(ctxStore.StartArguments ?? '');
       effects = run.effects;
       try {
-        (play as () => void)();
+        if (playNeverRuns) run.note = 'Game.Play never runs: both Game.GamePlayBeforeGameSetup and Game.GamePlayAfterLaunch are true.';
+        else (play as () => void)();
       } catch (e: any) {
         run.error = engineError(e);
       } finally {
         effects = null;
       }
-      run.startArguments = String(ctxStore.StartArguments ?? '');
+      // With GamePlayAfterLaunch the game was started before Game.Play ran.
+      run.startArguments = afterLaunch ? argsBefore : String(ctxStore.StartArguments ?? '');
+      if (afterLaunch && !playNeverRuns) {
+        run.note = `Game.Play runs after this player's game has started (Game.GamePlayAfterLaunch)${String(ctxStore.StartArguments ?? '') !== argsBefore ? ', so the Context.StartArguments it sets have no effect' : ''}.`;
+      }
       run.calls.push(...loadLog.splice(0));
       result.players.push(run);
+      lastCtx = { ctx, calls, player: playerObjs[i] };
+      if (run.error) {
+        // GenericGameHandler.StartPlay: the exception ends the session (error dialog, End()).
+        result.sessionEnded = { player: i, reason: run.error };
+        break;
+      }
     }
   }
 
+  // OnFinishedSetup after the last instance, then OnStop when the session ends; both see the
+  // last player's Context/Player (PrePlay overwrote them for each player).
+  const runCallback = (name: 'OnFinishedSetup' | 'OnStop') => {
+    const cb = gameStore[name];
+    if (typeof cb !== 'function') return;
+    const calls = lastCtx?.calls ?? [];
+    const from = calls.length;
+    const entry: { name: string; calls: string[]; error?: string; note?: string } = { name: `Game.${name}`, calls: [] };
+    if (!lastCtx) {
+      delete scope.Context;
+      delete scope.Player;
+    }
+    try {
+      (cb as () => void)();
+    } catch (e: any) {
+      entry.error = engineError(e);
+      entry.note =
+        name === 'OnStop'
+          ? "Nucleus skips its cleanup after this (leftover processes, registry restore, temporary users, backups)."
+          : 'Nucleus ends the session here.';
+      if (name === 'OnFinishedSetup' && !result.sessionEnded) result.sessionEnded = { player: -1, reason: entry.error };
+    }
+    entry.calls = calls.splice(from);
+    result.callbacks.push(entry);
+  };
+  if (result.hasPlay && !result.sessionEnded) runCallback('OnFinishedSetup');
+
   const gp = gameStore.ProtoInput as any;
   for (const name of ['OnInputLocked', 'OnInputUnlocked']) {
+    if (result.sessionEnded) break; // the end-of-setup lock/unlock is never reached
     const cb = gp?.[name];
     if (typeof cb !== 'function') continue;
     scope.PlayerList = playerList;
@@ -482,6 +604,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     entry.calls = [...protoLog];
     result.callbacks.push(entry);
   }
+  runCallback('OnStop'); // End() runs it, also after an error
   return result;
 
   function optionsList() {

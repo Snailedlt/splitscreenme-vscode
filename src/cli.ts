@@ -8,8 +8,8 @@ import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { SimResult } from './core/sim';
-import { simulateIsolated } from './sandbox';
+import { SimResult, sessionSummary } from './core/sim';
+import { pluginsFor, simulateIsolated } from './sandbox';
 
 const HELP = `Usage: nucleus <command> [options]
 
@@ -191,7 +191,7 @@ function cmdSimulate(args: Args, json: boolean): number {
   const keyboardPlayer = kbArg === 'none' ? -1 : Number(kbArg) - 1;
   if (kbArg !== 'none' && (!Number.isInteger(keyboardPlayer) || keyboardPlayer < 0 || keyboardPlayer >= players)) throw new Usage(`--keyboard must be a player number (1-${players}) or "none"`);
   const src = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
-  const r = simulateIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer });
+  const r = simulateIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(file) });
   const failed = !r.loaded || r.players.some((p) => p.error) || r.callbacks.some((c) => c.error);
   print(json, { file, ...r }, () => formatSimulation(r, keyboardPlayer));
   return failed ? 1 : 0;
@@ -199,28 +199,21 @@ function cmdSimulate(args: Args, json: boolean): number {
 
 export function formatSimulation(r: SimResult, keyboardPlayer: number): string {
   const out: string[] = [];
-  if (!r.loaded) {
-    out.push(`Nucleus can't load this handler, so nothing would start.`, `  ${r.loadError ?? ''}`);
-  } else {
-    const failed = r.players.filter((p) => p.error).length;
-    out.push(
-      failed
-        ? `Setup fails for ${failed} of ${r.players.length} players; those players' games won't start.`
-        : `Nucleus would set up all ${r.players.length} player(s).${r.hasPlay ? '' : ' (No Game.Play, so every player gets the same setup.)'}`,
-    );
-  }
+  out.push(sessionSummary(r));
+  if (!r.loaded) out.push(`  ${r.loadError ?? ''}`);
   const ignored = [...new Set(r.ignored)];
   if (ignored.length) out.push('', `Settings Nucleus skips (${ignored.length}):`, ...ignored.map((s) => `  ${s}`));
   for (const p of r.players) {
     out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer ? 'keyboard & mouse' : 'controller'})`);
     if (p.error) out.push(`  FAILS: ${p.error}`);
+    if (p.note) out.push(`  Note: ${p.note}`);
     out.push(`  Window:       ${p.window}`, `  Starts with:  ${p.startArguments || '(nothing extra)'}`);
     if (p.effects.length) out.push('  Changes before the game starts:', ...p.effects.map((e) => `    - ${e}`));
     if (p.calls.length) out.push('  Recorded calls:', ...p.calls.map((c) => `    ${c}`));
   }
   for (const c of r.callbacks) {
     out.push('', c.name);
-    if (c.error) out.push(`  FAILS: ${c.error}`);
+    if (c.error) out.push(`  FAILS: ${c.error}${c.note ? ` ${c.note}` : ''}`);
     out.push(...c.calls.map((x) => `    ${x}`));
   }
   if (r.options.length) out.push('', `Options set (different from Nucleus' defaults):`, ...r.options.map((o) => `  ${o.path} = ${o.value}`));

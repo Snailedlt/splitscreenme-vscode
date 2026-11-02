@@ -504,7 +504,7 @@ const INTERNAL = {
   ]),
   Context: new Set(['HandlerType', 'bHasKeyboardPlayer', 'searchType', 'Error', 'Interval']),
 };
-const READONLY = { Game: new Set(['Folder', 'EpicLang', 'GogLang', 'SteamLang', 'Hub', 'Hook', 'ProtoInput', 'MetaInfo']) };
+const READONLY = { Game: new Set(['EpicLang', 'GogLang', 'SteamLang', 'Hub', 'Hook', 'ProtoInput', 'MetaInfo']) };
 
 const REQUIRED_GAME = ['GUID', 'GameName', 'ExecutableName'];
 
@@ -586,7 +586,7 @@ const gameDocOverride = {
 const gameExtraDoc = {
   AddOption: 'Adds a user-selectable option to the game profile. Read it back in `Game.Play` with `Context.Options["key"]`.',
   ShowOptionAsStep: 'Shows a previously added option as its own setup step before launching.',
-  Folder: 'Path to this handler\'s own folder (Nucleus-Coop\\handlers\\<handler name>). Set by Nucleus.',
+  Folder: 'Path to this handler\'s own folder (Nucleus-Coop\\handlers\\<handler name>). Set by Nucleus before the handler runs; overwriting it changes where Game.Folder points for the rest of the handler.',
   Hub: 'Hub metadata, filled in by hub.splitscreen.me when the handler is published.',
   Hook: 'Settings for Nucleus\' custom xinput/x360ce hook DLL.',
   ProtoInput: 'Proto Input options (multiple mice/keyboards, focus hooks, input redirection). See https://www.splitscreen.me/docs/protoinput',

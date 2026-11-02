@@ -952,7 +952,8 @@ class Analyzer {
     const reported = new Set<string>();
     const crashed = (['ExecutableName', 'GameName'] as const).find((k) => scan[k]?.crash);
     // When the crashing line is the assignment itself, its own report below (with its fix) says so.
-    const crashNode = crashed && this.topAssignments.get(`Game.${crashed}`)?.at(-1);
+    const crashNodes = crashed ? this.topAssignments.get(`Game.${crashed}`) : undefined;
+    const crashNode = crashNodes?.[crashNodes.length - 1];
     const crashOnAssignment = !!crashNode && lineStart(this.text, crashNode.start) === scan[crashed!]!.offset;
     if (crashed && !crashOnAssignment) {
       const c = scan[crashed]!;

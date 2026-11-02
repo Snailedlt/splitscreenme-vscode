@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { simulate } from '../core/sim';
+import { simulate, sessionSummary, parsePluginsInfo } from '../core/sim';
 import { simulateIsolated } from '../sandbox';
 
 const HEADER = 'Game.GUID = "My Game";\nGame.GameName = "My Game";\nGame.ExecutableName = "game.exe";\n';
@@ -95,4 +95,68 @@ test('nucleus simulate (CLI)', () => {
   assert.equal(j.status, 1);
   assert.equal(JSON.parse(j.stdout).players[0].error, "Jint: Object has no method 'find'");
   assert.equal(spawnSync(process.execPath, [cli, 'simulate', ok, '--keyboard', '5'], { encoding: 'utf8' }).status, 2);
+});
+
+test('simulate: an error in Game.Play ends the session; OnStop still runs, OnFinishedSetup does not', () => {
+  const r = simulateIsolated(
+    HEADER + 'Game.Play = function () { if (Context.PlayerID === 1) { Context.GetFolder(); } };\nGame.OnFinishedSetup = function () {};\nGame.OnStop = function () { Context.StartArguments = "x"; };\n',
+    { ...OPTS, players: 4 },
+  );
+  assert.deepEqual(r.sessionEnded?.player, 1);
+  assert.equal(r.players.length, 2);
+  assert.match(sessionSummary(r), /player 2.*Players 3–4 are never set up/);
+  assert.deepEqual(r.callbacks.map((c) => c.name), ['Game.OnStop']);
+});
+
+test('simulate: OnFinishedSetup/OnStop see the last player; an OnStop error skips cleanup', () => {
+  const r = simulateIsolated(HEADER + 'Game.Play = function () {};\nGame.OnFinishedSetup = function () { Context.Log("last", Context.PlayerID); };\nGame.OnStop = function () { null.x; };\n', OPTS);
+  assert.equal(r.sessionEnded, undefined);
+  assert.deepEqual(r.callbacks.map((c) => c.name), ['Game.OnFinishedSetup', 'Game.OnStop']);
+  assert.deepEqual(r.callbacks[0].calls, ['Context.Log("last", 1)']);
+  assert.match(r.callbacks[1].note!, /skips its cleanup/);
+});
+
+test('simulate: Game.Play timing flags', () => {
+  const after = simulateIsolated(HEADER + 'Game.GamePlayAfterLaunch = true;\nGame.Play = function () { Context.StartArguments = "-late"; };\n', OPTS);
+  assert.equal(after.players[0].startArguments, '');
+  assert.match(after.players[0].note!, /no effect/);
+  const never = simulateIsolated(HEADER + 'Game.GamePlayAfterLaunch = true;\nGame.GamePlayBeforeGameSetup = true;\nGame.Play = function () { Context.StartArguments = "-x"; };\n', OPTS);
+  assert.equal(never.players[0].startArguments, '');
+  assert.match(never.players[0].note!, /never runs/);
+});
+
+test('simulate: Context values as Nucleus computes them', () => {
+  const v = (expr: string, extra = '') => simulateIsolated(HEADER + extra + `Game.Play = function () { Context.StartArguments = String(${expr}); };\n`, OPTS).players[0].startArguments;
+  assert.equal(v('Context.AspectRatio'), '8:9');
+  assert.equal(v('Context.OrigAspectRatio'), '16:9');
+  assert.equal(v('Context.DocumentsPlayer'), 'C:\\Users\\me\\NucleusCoop\\Player1\\Documents\\');
+  assert.equal(v('Context.NucleusUserRoot'), 'C:\\Users\\me');
+  assert.equal(v('Context.HandlersFolder'), 'C:\\Nucleus\\handlers');
+  // without symlinking/copying, instances run from the original install
+  assert.equal(v('Context.GetFolder(Nucleus.Folder.InstancedGameFolder)', 'Game.BinariesFolder = "bin";\n'), 'D:\\Games\\TheGame\\bin');
+  assert.equal(v('Context.ExePath', 'Game.SymlinkGame = true;\nGame.BinariesFolder = "bin";\n'), 'C:\\Nucleus\\content\\My Game\\Instance0\\bin\\game.exe');
+  assert.equal(v('Context.GetFolder(Nucleus.Folder.InstancedGameFolder)', 'Game.SymlinkGame = true;\n'), 'C:\\Nucleus\\content\\My Game\\Instance0');
+  // Context.Hook is Game.Hook; keyboard player's gamepad id; Handler
+  assert.equal(v('Context.Hook.ForceFocus', 'Game.Hook.ForceFocus = true;\n'), 'true');
+  assert.equal(v('Context.GamepadId + "," + Player.GamepadId'), '0,-1');
+  assert.equal(v('Handler.TotalPlayers'), '2');
+  // AddOption with [] is free text: "" until the user types
+  assert.equal(v('Context.Options["name"]', 'Game.AddOption("Name", "", "name", []);\n'), '');
+});
+
+test('simulate: plugin globals from pluginsInfo.txt record their calls', () => {
+  assert.deepEqual(parsePluginsInfo('#TriggerFix#HLT.dll#XToKey.Sender|#Other#o.dll#A.B#A.C'), { TriggerFix: ['Sender'], Other: ['B', 'C'] });
+  const src = HEADER + 'Game.Play = function () { TriggerFix.Sender.PushKey("k"); };\n';
+  assert.match(simulateIsolated(src, OPTS).players[0].error!, /TriggerFix is not defined/);
+  const r = simulateIsolated(src, { ...OPTS, plugins: { TriggerFix: ['Sender'] } });
+  assert.equal(r.players[0].error, undefined);
+  assert.ok(r.players[0].calls.includes('TriggerFix.Sender.PushKey("k")'), r.players[0].calls.join(' | '));
+  // the CLI reads <handler>/pluginsInfo.txt next to the handler file
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-plugin-'));
+  fs.writeFileSync(path.join(dir, 'Game.js'), src);
+  fs.mkdirSync(path.join(dir, 'Game'));
+  fs.writeFileSync(path.join(dir, 'Game', 'pluginsInfo.txt'), '#TriggerFix#HLT.dll#XToKey.Sender');
+  const out = spawnSync(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'simulate', path.join(dir, 'Game.js')], { encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(out.stdout, /TriggerFix\.Sender\.PushKey\("k"\)/);
 });

@@ -4,8 +4,21 @@
 // there is no host object to climb out through (`x.constructor.constructor("return process")`
 // only finds the context's own Function). Only strings go in and come out. A time limit stops
 // handlers that never finish.
+import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
+import { parsePluginsInfo } from './core/sim';
 import type { SimOptions, SimResult } from './core/sim';
+
+/** Plugin globals for a handler file: <handler folder>/pluginsInfo.txt, where Game.Folder points. */
+export function pluginsFor(handlerFile: string): Record<string, string[]> | undefined {
+  const file = path.join(path.dirname(handlerFile), path.basename(handlerFile, path.extname(handlerFile)), 'pluginsInfo.txt');
+  try {
+    return parsePluginsInfo(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
 
 declare const __SIM_SANDBOX__: string; // the bundled src/sim-sandbox-entry.ts, injected by scripts/build.mjs
 
@@ -33,7 +46,7 @@ export function simulateIsolated(src: string, opts: SimOptions, timeoutMs = SIM_
     // Timeouts (and anything else that escapes the simulator) become a load failure.
     context = undefined; // start from a clean context next time
     const msg = /timed out/i.test(String(e?.message)) ? `The handler did not finish within ${timeoutMs / 1000} s (an endless loop?). Nucleus would hang here.` : String(e?.message ?? e);
-    return { loaded: false, loadError: msg, ignored: [], options: [], players: [], callbacks: [], hasPlay: false };
+    return { loaded: false, loadError: msg, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opts.players };
   } finally {
     if (context) {
       delete g.__src;

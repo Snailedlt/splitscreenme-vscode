@@ -276,7 +276,7 @@ interface Game {
    * Path to the game handler folder (Nucleus-Coop\handlers\handler_folder).
    * @example Game.Folder
    */
-  readonly Folder: string;
+  Folder: string;
   /**
    * Enable or disable hooks to trick the game into thinking it has focus | default: false.
    * @example Game.HookFocus = true;

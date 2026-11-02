@@ -382,8 +382,8 @@ Additional Tools
 (undocumented)
 
 ### Game.Folder
-`(read-only) Folder: string`
-read-only · Path variables
+`Folder: string`
+Path variables
 Path to the game handler folder (Nucleus-Coop\handlers\handler_folder).
 Example: `Game.Folder`
 

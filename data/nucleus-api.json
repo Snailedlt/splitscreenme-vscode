@@ -646,7 +646,6 @@
      "csType": "string",
      "type": "string",
      "ts": "string",
-     "readonly": true,
      "doc": "Path to the game handler folder (Nucleus-Coop\\handlers\\handler_folder).",
      "example": "Game.Folder",
      "category": "Path variables"

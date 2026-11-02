@@ -3,8 +3,8 @@
 // from VS Code and Node (src/sandbox.ts). The webview has scripts disabled; its controls are
 // command links.
 import * as vscode from 'vscode';
-import { SimOptions, SimResult } from './core/sim';
-import { simulateIsolated } from './sandbox';
+import { SimOptions, SimResult, sessionSummary } from './core/sim';
+import { pluginsFor, simulateIsolated } from './sandbox';
 
 export interface TryItState {
   players: number;
@@ -37,25 +37,21 @@ export function renderTryIt(r: SimResult, state: TryItState, title: string): str
   if (!r.loaded) {
     out.push(`<div class="banner error"><strong>Nucleus can't load this handler, so nothing would start.</strong> <a href="${cmd('workbench.actions.view.problems')}">Fix the problems</a> first.<div class="mono small">${esc(r.loadError ?? '')}</div></div>`);
   } else {
-    const failed = r.players.filter((p) => p.error).length;
-    out.push(
-      failed
-        ? `<div class="banner error"><strong>Setup fails for ${failed} of ${r.players.length} players.</strong> Those players' games won't start.</div>`
-        : `<div class="banner ok"><strong>Nucleus would set up all ${r.players.length} player${r.players.length === 1 ? '' : 's'}.</strong>${r.hasPlay ? '' : ' The handler has no <code>Game.Play</code>, so every player gets the same setup.'}</div>`,
-    );
+    out.push(`<div class="banner ${r.sessionEnded ? 'error' : 'ok'}"><strong>${esc(sessionSummary(r))}</strong></div>`);
   }
   const ignored = [...new Set(r.ignored)];
   if (ignored.length) out.push(`<h3>Settings Nucleus skips (${ignored.length})</h3><ul class="mono warn">${ignored.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`);
   for (const p of r.players) {
     out.push(`<section><h3>Player ${p.index + 1} <span class="tag">${p.index === state.keyboardPlayer ? 'keyboard &amp; mouse' : 'controller'}</span></h3>
-      ${p.error ? `<div class="banner error">Setting up this player's game fails here, so this player's window won't start.<div class="mono small">${esc(p.error)}</div></div>` : ''}
+      ${p.error ? `<div class="banner error">Setting up this player fails here, and Nucleus ends the session.<div class="mono small">${esc(p.error)}</div></div>` : ''}
+      ${p.note ? `<p class="muted">${esc(p.note)}</p>` : ''}
       <table><tr><th>Window</th><td>${esc(p.window)}</td></tr>
       <tr><th>Starts the game with</th><td class="mono">${p.startArguments ? esc(p.startArguments) : '<span class="muted">(nothing extra)</span>'}</td></tr>
       <tr><th>Changes before the game starts</th><td>${p.effects.length ? `<ul>${p.effects.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : '<span class="muted">(none)</span>'}</td></tr></table>
       ${p.calls.length ? `<details><summary>${p.calls.length} recorded call${p.calls.length === 1 ? '' : 's'}</summary><ul class="mono">${p.calls.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></details>` : ''}</section>`);
   }
   for (const c of r.callbacks) {
-    out.push(`<section><h3>${esc(c.name)}</h3>${c.error ? `<div class="banner error mono small">${esc(c.error)}</div>` : ''}<details><summary>${c.calls.length} recorded call${c.calls.length === 1 ? '' : 's'}</summary><ul class="mono">${c.calls.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details></section>`);
+    out.push(`<section><h3>${esc(c.name)}</h3>${c.error ? `<div class="banner error">${esc(c.note ?? '')}<div class="mono small">${esc(c.error)}</div></div>` : ''}<details><summary>${c.calls.length} recorded call${c.calls.length === 1 ? '' : 's'}</summary><ul class="mono">${c.calls.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details></section>`);
   }
   if (r.options.length) {
     out.push(`<details><summary>${r.options.length} option${r.options.length === 1 ? '' : 's'} set (different from Nucleus' defaults)</summary><table>${r.options.map((o) => `<tr><td class="mono">${esc(o.path)}</td><td class="mono">${esc(o.value.length > 120 ? o.value.slice(0, 117) + '…' : o.value)}</td></tr>`).join('')}</table></details>`);
@@ -98,7 +94,7 @@ export function registerTryIt(context: vscode.ExtensionContext, isHandler: (doc:
 
   const render = () => {
     if (!panel || !doc) return;
-    const opts: SimOptions = { players: state.players, width: state.width, height: state.height, keyboardPlayer: state.keyboardPlayer };
+    const opts: SimOptions = { players: state.players, width: state.width, height: state.height, keyboardPlayer: state.keyboardPlayer, plugins: doc.isUntitled ? undefined : pluginsFor(doc.fileName) };
     const title = doc.isUntitled ? 'Untitled' : doc.fileName.split(/[\\/]/).pop()!;
     panel.title = `Try it: ${title}`;
     panel.webview.html = renderTryIt(simulateIsolated(doc.getText(), opts), state, title);
