@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
 import { lint, Diagnostic, Fix, looksLikeHandler } from '../core/lint';
 import { fixAll } from '../core/fix';
+import { membersOf } from '../core/api';
+import { memberContextAt } from '../core/complete';
 
 const HEADER = `Game.GUID = "My Game";
 Game.GameName = "My Game";
@@ -368,4 +370,23 @@ test('callback-misuse', () => {
   assert.match(keys[0].message, /OnCustomHotKey_2/);
   // fine
   assert.deepEqual(lint(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.Play = function () { Context.StartArguments = "-x"; };\nGame.CustomHotkeys = ["Ctrl+F1"];\nGame.OnCustomHotKey_1 = function () {};\n'), []);
+});
+
+test('Nucleus classes: constructors, Globals, IniFile, ModifySaveFile entries', () => {
+  const play = (body: string) => HEADER + 'Game.Play = function () {\n' + body + '\n};\n';
+  assert.deepEqual(lint(play('var s = new Nucleus.SaveInfo();\nvar r = Nucleus.Globals.NucleusInstallRoot + Nucleus.Globals.userDocumentsRoot;\nvar ini = new Nucleus.IniFile(r);\nini.IniWriteValue("Video", "Width", Context.Width);\nvar v = ini.IniReadValue("Video", "Width");')), []);
+  assert.equal(only(play('new Nucleus.Globals();'), 'wrong-arguments').length, 1);
+  assert.equal(only(play('new Nucleus.IniSaveInfo("a");'), 'wrong-arguments').length, 1);
+  assert.equal(only(play('var x = Nucleus.Globals.InstallRoot;'), 'unknown-member').length, 1);
+  assert.equal(only(play('var ini = new Nucleus.IniFile("a.ini");\nini.IniWriteValue("a", "b");'), 'wrong-arguments').length, 1);
+  const cfg = only(play('Context.ModifySaveFile("a", "a", Nucleus.SaveType.INI, [new Nucleus.CfgSaveInfo("s", "k", "v"), new Nucleus.IniSaveInfo("s", "k", "v")]);'), 'type-mismatch');
+  assert.equal(cfg.length, 1);
+  assert.equal(cfg[0].fixes![0].preferred, undefined); // changes behaviour: not for Fix all
+});
+
+test('Hub.* lines are known (no warnings) but not offered in completion', () => {
+  assert.deepEqual(lint(HEADER + 'Hub.Handler.Version = 3;\nHub.Handler.Id = "x";\nHub.Maintainer.Name = "me";\nHub.Maintainer.Id = "y";\n'), []);
+  for (const t of ['Hub.', 'Hub.Handler.']) assert.deepEqual(membersOf(memberContextAt(t, t.length)!.base), []);
+  assert.ok(!membersOf(memberContextAt('Game.', 5)!.base).some((m) => m.name === 'Hub'));
+  assert.ok(membersOf(memberContextAt('Nucleus.Globals.', 16)!.base).some((m) => m.name === 'NucleusInstallRoot'));
 });

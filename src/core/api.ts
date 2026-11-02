@@ -47,10 +47,25 @@ export interface ApiObject {
   doc: string;
   members: Record<string, Member>;
 }
+export interface NucleusClass {
+  doc: string;
+  /** Parameters of the (first) constructor. */
+  params: string[];
+  /** All constructors, when there is more than one (or none: a static class). */
+  constructors?: string[][];
+  /** Static members, as an object in `objects` (Nucleus.Globals). */
+  statics?: string;
+  /** What `new` returns, as an object in `objects` (Nucleus.IniFile). */
+  instance?: string;
+}
+export const constructorsOf = (c: NucleusClass): string[][] => c.constructors ?? [c.params];
+
 export interface GlobalInfo {
   type: string;
   doc: string;
   topLevel: boolean;
+  /** Known (no lint warnings) but not offered in completion, e.g. Hub: written by the Hub on upload. */
+  hidden?: boolean;
 }
 export interface EnumInfo {
   doc?: string;
@@ -62,7 +77,7 @@ export interface ApiModel {
   globals: Record<string, GlobalInfo>;
   objects: Record<string, ApiObject>;
   enums: Record<string, EnumInfo>;
-  nucleusClasses: Record<string, { doc: string; params: string[] }>;
+  nucleusClasses: Record<string, NucleusClass>;
 }
 
 export const api = raw as unknown as ApiModel;
@@ -144,6 +159,14 @@ export function resolveMember(base: Resolved, name: string): StepResult {
       if (!(name in e.values)) return { unknown: { owner: `Nucleus.${base.name}`, ownerLabel: `Nucleus.${base.name}`, candidates: Object.keys(e.values) } };
       return { resolved: { kind: 'enumValue', enumName: base.name, value: name } };
     }
+    case 'nucleusClass': {
+      const statics = api.nucleusClasses[base.name].statics;
+      if (statics) {
+        const r = resolveMember({ kind: 'object', type: statics }, name);
+        return r.unknown ? { unknown: { ...r.unknown, ownerLabel: `Nucleus.${base.name}` } } : r;
+      }
+      return { resolved: { kind: 'opaque' } };
+    }
     default:
       return { resolved: { kind: 'opaque' } };
   }
@@ -176,6 +199,10 @@ export function membersOf(base: Resolved): { name: string; member?: Member; enum
       ];
     case 'enum':
       return Object.entries(api.enums[base.name].values).map(([name, v]) => ({ name, enumValue: v, detail: `= ${v}` }));
+    case 'nucleusClass': {
+      const statics = api.nucleusClasses[base.name].statics;
+      return statics ? membersOf({ kind: 'object', type: statics }) : [];
+    }
     default:
       return [];
   }
@@ -255,6 +282,8 @@ export function ownerLabel(owner: string): string {
       return 'Hub.Maintainer';
     case 'HubHandler':
       return 'Hub.Handler';
+    case 'NucleusGlobals':
+      return 'Nucleus.Globals';
     default:
       return owner;
   }

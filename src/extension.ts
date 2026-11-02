@@ -277,7 +277,7 @@ function globalCompletions(doc: vscode.TextDocument, pos: vscode.Position): vsco
   // only at the start of an expression
   const charBefore = range && range.start.character > 0 ? doc.lineAt(pos.line).text[range.start.character - 1] : '';
   if (charBefore === '.') return undefined;
-  return Object.entries(api.globals).map(([name, g]) => {
+  return Object.entries(api.globals).filter(([, g]) => !g.hidden).map(([name, g]) => {
     const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Variable);
     item.detail = `${name}: ${g.type}`;
     item.documentation = markdown(g.doc + (g.topLevel ? '' : '\n\n_Only available inside callbacks such as `Game.Play`._'));

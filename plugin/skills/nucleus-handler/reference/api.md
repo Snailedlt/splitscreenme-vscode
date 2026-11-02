@@ -761,11 +761,6 @@ Support for multiple mice and keyboards
 This is the main switch for legacy input.
 Example: `Game.HookUseLegacyInput = false;`
 
-### Game.Hub
-`(read-only) Hub: Hub`
-read-only · default `new Hub()`
-Hub metadata, filled in by hub.splitscreen.me when the handler is published.
-
 ### Game.IdealProcessor
 `IdealProcessor: number`
 Extra
@@ -3712,25 +3707,9 @@ default `(uint)ProtoHookIDs.XinputHookID`
 
 Hub handler identity.
 
-### Hub.Handler.Id
-`Id: string`
-Handler id on hub.splitscreen.me.
-
-### Hub.Handler.Version
-`Version: number`
-Published version number. Nucleus compares it with the hub to offer updates.
-
 ## Hub.Maintainer
 
 Hub maintainer.
-
-### Hub.Maintainer.Id
-`Id: string`
-Maintainer user id on the hub.
-
-### Hub.Maintainer.Name
-`Name: string`
-Maintainer display name.
 
 ## Nucleus enums
 
@@ -3794,5 +3773,13 @@ A key in a CFG file, for `Context.ModifySaveFile(..., Nucleus.SaveType.CFG, [...
 
 ### Nucleus.SaveInfo
 `new Nucleus.SaveInfo(section, key, value)`
-Base class of save file entries.
+Base class of save file entries. `Context.ModifySaveFile` skips plain `SaveInfo` entries: use `IniSaveInfo` for INI files and `CfgSaveInfo` for CFG files.
+
+### Nucleus.IniFile
+`new Nucleus.IniFile(path)`
+Reads and writes keys in an INI file directly (Nucleus.Gaming.IniFile): `var ini = new Nucleus.IniFile(path); ini.IniWriteValue("Section", "Key", "Value");`
+
+### Nucleus.Globals
+`new Nucleus.Globals()`
+Nucleus' global paths (static class Nucleus.Gaming.Globals): `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, ...
 

@@ -7,7 +7,7 @@
 //
 // This runs the handler's code. Browsers sandbox it already; in Node (CLI, VS Code) use
 // simulateIsolated() from src/sandbox.ts, which runs it in a separate realm with no Node access.
-import { api, Member, jintMemberName } from './api';
+import { api, Member, jintMemberName, constructorsOf } from './api';
 import { lint, MISSING_GLOBALS, MISSING_METHODS, MISSING_STATIC } from './lint';
 import * as acorn from 'acorn';
 
@@ -51,6 +51,11 @@ export interface PlayerRun {
 export interface SimResult {
   loaded: boolean;
   loadError?: string;
+  /**
+   * The handler threw while loading, but after setting Game.GUID: Nucleus shows the error, yet
+   * still lists the game (GameManager adds it anyway), configured only up to the failing line.
+   */
+  partialLoad?: boolean;
   ignored: string[];
   options: { path: string; value: string }[];
   players: PlayerRun[];
@@ -71,6 +76,8 @@ const plainValue = (v: unknown) => (typeof v === 'string' ? v : v && typeof v ==
 /** A plain-language line for calls that change something on disk or start/stop programs. */
 function describeCall(label: string, name: string, args: unknown[]): string | null {
   const a = args;
+  const ini = label.match(/^new Nucleus\.IniFile\("(.*)"\)$/);
+  if (ini && name === 'IniWriteValue') return `Changes ${base(ini[1].replace(/\\\\/g, '\\'))}: ${plainValue(a[1])} = ${plainValue(a[2])}`;
   if (label === 'Context') {
     switch (name) {
       case 'ModifySaveFile': {
@@ -153,6 +160,7 @@ function returnValue(name: string, returns: string, args: unknown[], ctx: Record
   if (returns === 'boolean') return true;
   if (returns === 'number') return name === 'FindLineNumberInTextFile' ? 5 : 0;
   if (returns === 'string') {
+    if (name === 'IniReadValue') return ''; // as if the key isn't in the file
     if (name === 'GetFolder') {
       const v = args[0];
       // FileUtil.GetFolder / GenericGameHandler.jsData
@@ -251,12 +259,27 @@ function systemNs(log: string[], path = 'System'): any {
   });
 }
 
-function nucleusNs(): any {
+function nucleusNs(log: string[], ignored: string[]): any {
   const ns: Record<string, unknown> = {};
   for (const [name, e] of Object.entries(api.enums)) ns[name] = Object.freeze({ ...e.values });
   for (const [name, c] of Object.entries(api.nucleusClasses)) {
+    if (c.statics) {
+      ns[name] = clr(c.statics, `Nucleus.${name}`, log, ignored, {
+        NucleusInstallRoot: 'C:\\Nucleus', UserEnvironmentRoot: 'C:\\Users\\me', UserDocumentsRoot: 'C:\\Users\\me\\Documents',
+        GameProfilesFolder: 'C:\\Nucleus\\game profiles', NucleusMaxPlayers: 32, IsOneDriveEnabled: false,
+      });
+      continue;
+    }
+    if (c.instance) {
+      const type = c.instance;
+      ns[name] = function (...args: unknown[]) {
+        if (args.length !== c.params.length) throw new JintError('No public methods with the specified arguments were found.');
+        return clr(type, `new Nucleus.${name}(${args.map(fmt).join(', ')})`, log, ignored, { Path: args[0] });
+      };
+      continue;
+    }
     ns[name] = function (this: any, ...args: unknown[]) {
-      if (args.length !== c.params.length) throw new JintError('No public methods with the specified arguments were found.');
+      if (!constructorsOf(c).some((ps) => ps.length === args.length)) throw new JintError('No public methods with the specified arguments were found.');
       this.Section = args[0];
       this.Key = args[1];
       this.Value = args[2];
@@ -268,6 +291,9 @@ function nucleusNs(): any {
 
 /** One plain-language line on how the session goes (shared by the CLI, VS Code and the workbench). */
 export function sessionSummary(r: SimResult): string {
+  if (!r.loaded && r.partialLoad) {
+    return 'Nucleus shows an error while loading this handler, but still lists the game, set up only up to the failing line. Starting it would use that half-finished setup.';
+  }
   if (!r.loaded) return "Nucleus can't load this handler, so nothing would start.";
   const n = r.playerCount;
   const plural = (k: number) => `${k} player${k === 1 ? '' : 's'}`;
@@ -381,7 +407,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   const scope: Record<string, unknown> = {
     Game: game,
     Hub: hub,
-    Nucleus: nucleusNs(),
+    Nucleus: nucleusNs(loadLog, result.ignored),
     System: systemNs(loadLog),
     importNamespace: () => systemNs(loadLog, 'ns'),
   };
@@ -413,6 +439,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     result.loaded = true;
   } catch (e: any) {
     result.loadError = engineError(e);
+    if (typeof gameStore.GUID === 'string' && gameStore.GUID) result.partialLoad = true;
     return result;
   }
 

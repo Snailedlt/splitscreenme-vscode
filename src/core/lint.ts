@@ -8,6 +8,7 @@ import {
   resolveGlobal,
   resolveIndex,
   resolveMember,
+  constructorsOf,
   ownerLabel,
   suggest,
   SimpleType,
@@ -239,6 +240,12 @@ class Analyzer {
       }
       return resolveMember(base, node.property.name).resolved;
     }
+    if (node.type === 'NewExpression') {
+      // `new Nucleus.IniFile(path)` gives an object whose calls can be checked.
+      const c = this.resolve(node.callee, useAliases);
+      const instance = c?.kind === 'nucleusClass' ? api.nucleusClasses[c.name].instance : undefined;
+      if (instance) return { kind: 'object', type: instance };
+    }
     return undefined;
   }
 
@@ -290,6 +297,7 @@ class Analyzer {
       case 'CallExpression':
         this.checkCall(n);
         this.checkOptionCall(n);
+        this.checkSaveEntries(n);
         break;
       case 'NewExpression':
         this.checkNew(n);
@@ -841,11 +849,16 @@ class Analyzer {
   private checkNew(n: Node) {
     const r = this.resolve(n.callee);
     if (r?.kind !== 'nucleusClass') return;
-    const expected = api.nucleusClasses[r.name].params.length;
-    if (n.arguments.length !== expected) {
+    const ctors = constructorsOf(api.nucleusClasses[r.name]);
+    if (!ctors.length) {
+      this.report({ rule: 'wrong-arguments', message: `\`Nucleus.${r.name}\` is a static class: use its members directly (\`Nucleus.${r.name}.X\`) instead of \`new\`.`, start: n.start, end: n.end });
+      return;
+    }
+    if (!ctors.some((ps) => ps.length === n.arguments.length)) {
+      const forms = ctors.map((ps) => `(${ps.join(', ')})`).join(' or ');
       this.report({
         rule: 'wrong-arguments',
-        message: `\`new Nucleus.${r.name}(...)\` takes ${expected} arguments (${api.nucleusClasses[r.name].params.join(', ')}), but ${n.arguments.length} ${n.arguments.length === 1 ? 'was' : 'were'} given.`,
+        message: `\`new Nucleus.${r.name}\` takes ${forms}, but ${n.arguments.length} argument${n.arguments.length === 1 ? ' was' : 's were'} given. Jint throws "No public methods with the specified arguments were found".`,
         start: n.start,
         end: n.end,
       });
@@ -1099,6 +1112,29 @@ class Analyzer {
         message: `No option with the key \`${keyText}\` was added before this line. Call \`Game.AddOption(..., "${keyText}", ...)\` first: otherwise Nucleus throws and the handler fails to load.`,
         start: key.start,
         end: key.end,
+      });
+    }
+  }
+
+  /** Context.ModifySaveFile writes only IniSaveInfo entries to INI files and CfgSaveInfo to CFG files. */
+  private checkSaveEntries(n: Node) {
+    const r = this.resolve(n.callee);
+    if (r?.kind !== 'member' || r.owner !== 'Context' || r.name !== 'ModifySaveFile') return;
+    const t = n.arguments[2] && this.resolve(n.arguments[2]);
+    if (t?.kind !== 'enumValue' || t.enumName !== 'SaveType' || (t.value !== 'INI' && t.value !== 'CFG')) return;
+    const want = t.value === 'INI' ? 'IniSaveInfo' : 'CfgSaveInfo';
+    const entries: Node[] = n.arguments[3]?.type === 'ArrayExpression' ? n.arguments[3].elements : n.arguments.slice(3);
+    for (const e of entries) {
+      if (e?.type !== 'NewExpression') continue;
+      const c = this.resolve(e.callee);
+      if (c?.kind !== 'nucleusClass' || c.name === want || !/SaveInfo$/.test(c.name)) continue;
+      this.report({
+        rule: 'type-mismatch',
+        message: `Nucleus skips \`Nucleus.${c.name}\` entries when writing a ${t.value} file: only \`Nucleus.${want}\` entries are written.`,
+        start: e.callee.start,
+        end: e.callee.end,
+        // Not for "Fix all": the entry starts being written, which changes what the handler does.
+        fixes: [{ title: `Use Nucleus.${want}`, edits: [{ start: e.callee.property.start, end: e.callee.property.end, text: want }] }],
       });
     }
   }

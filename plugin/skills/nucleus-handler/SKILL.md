@@ -61,6 +61,8 @@ See [reference/recipes.md](reference/recipes.md) for tested patterns: INI/XML/te
 - `Context.Width` / `Context.Height`: this instance's window size. `Context.PlayerID`: 0-based instance index. `Context.Nickname`: player name.
 - `Context.GetFolder(Nucleus.Folder.InstancedGameFolder)`: this instance's copy of the game. `Game.Folder`: the handler's own asset folder (`handlers/<Name>/`).
 - `Context.StartArguments = "..."` in `Game.Play` sets this instance's command line.
+- `Context.ModifySaveFile(..., Nucleus.SaveType.INI, [new Nucleus.IniSaveInfo(section, key, value)])` edits INI files (use `CfgSaveInfo` for CFG; other entry types are skipped). For several reads/writes, `var ini = new Nucleus.IniFile(path); ini.IniWriteValue(section, key, value); ini.IniReadValue(section, key)`.
+- `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, `Nucleus.Globals.UserEnvironmentRoot`: Nucleus' install folder and the user's Documents and profile folders.
 - Use `\\` in path strings. `System.IO.*` (.NET) is available for files and folders.
 - `Context.Log("...")` writes to Nucleus' debug log; use it to confirm what `Game.Play` computed.
 

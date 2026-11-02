@@ -14,7 +14,7 @@ interface DotNetList<T> { Count: number; [index: number]: T; }
  */
 interface Game {
   /**
-   * Hub metadata, filled in by hub.splitscreen.me when the handler is published.
+   * Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    * @default new Hub()
    */
   readonly Hub: Hub;
@@ -2915,15 +2915,15 @@ interface PlayerInfo {
 }
 
 /**
- * Hub metadata.
+ * Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
  */
 interface Hub {
   /**
-   * Handler maintainer on hub.splitscreen.me.
+   * Handler maintainer on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Maintainer: HubMaintainer;
   /**
-   * Handler identity on hub.splitscreen.me, used for update checks.
+   * Handler identity on hub.splitscreen.me, used for update checks. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Handler: HubHandler;
 }
@@ -2933,11 +2933,11 @@ interface Hub {
  */
 interface HubMaintainer {
   /**
-   * Maintainer display name.
+   * Maintainer display name. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Name: string;
   /**
-   * Maintainer user id on the hub.
+   * Maintainer user id on the hub. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Id: string;
 }
@@ -2947,11 +2947,11 @@ interface HubMaintainer {
  */
 interface HubHandler {
   /**
-   * Published version number. Nucleus compares it with the hub to offer updates.
+   * Published version number. Nucleus compares it with the hub to offer updates. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Version: number;
   /**
-   * Handler id on hub.splitscreen.me.
+   * Handler id on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
    */
   Id: string;
 }
@@ -3170,6 +3170,54 @@ interface UserInfo {
   GetLocalIP(): string;
 }
 
+/**
+ * Nucleus' global paths and settings.
+ */
+interface NucleusGlobals {
+  /**
+   * The Nucleus install folder (where NucleusCoop.exe is).
+   */
+  readonly NucleusInstallRoot: string;
+  /**
+   * The user's profile folder, e.g. `C:\Users\me`.
+   */
+  readonly UserEnvironmentRoot: string;
+  /**
+   * The user's Documents folder.
+   */
+  UserDocumentsRoot: string;
+  /**
+   * Folder where Nucleus keeps saved game profiles.
+   */
+  readonly GameProfilesFolder: string;
+  /**
+   * Maximum number of players Nucleus supports (32).
+   */
+  readonly NucleusMaxPlayers: number;
+  /**
+   * True if the Documents folder is inside OneDrive.
+   */
+  IsOneDriveEnabled: boolean;
+}
+
+/**
+ * An INI file opened with `new Nucleus.IniFile(path)`.
+ */
+interface IniFile {
+  /**
+   * The file's path.
+   */
+  readonly Path: string;
+  /**
+   * Sets `Key` in `[Section]` (creating them if needed) and saves the file.
+   */
+  IniWriteValue(Section: string | number | boolean, Key: string | number | boolean, Value: string | number | boolean): void;
+  /**
+   * Reads `Key` from `[Section]`; an empty string if it isn't there.
+   */
+  IniReadValue(Section: string | number | boolean, Key: string | number | boolean): string;
+}
+
 declare namespace Nucleus {
   /**
    * Location of a folder used by `Context.GetFolder(...)`.
@@ -3384,16 +3432,26 @@ declare namespace Nucleus {
     LMenu = 164,
     RMenu = 165,
   }
-  /** Base class of save file entries. */
-  class SaveInfo { constructor(section: string, key: string, value: string); }
   /**
    * A key in an INI file, for `Context.ModifySaveFile(..., Nucleus.SaveType.INI, [...])`.
    */
-  class IniSaveInfo extends SaveInfo { constructor(section: string, key: string, value: string | number | boolean); Section: string; Key: string; Value: string; }
+  class IniSaveInfo extends SaveInfo { constructor(section: string | number | boolean, key: string | number | boolean, value: string | number | boolean); Section: string; Key: string; Value: string; }
   /**
    * A key in a CFG file, for `Context.ModifySaveFile(..., Nucleus.SaveType.CFG, [...])`.
    */
-  class CfgSaveInfo extends SaveInfo { constructor(section: string, key: string, value: string | number | boolean); Section: string; Key: string; Value: string; }
+  class CfgSaveInfo extends SaveInfo { constructor(section: string | number | boolean, key: string | number | boolean, value: string | number | boolean); Section: string; Key: string; Value: string; }
+  /**
+   * Base class of save file entries. `Context.ModifySaveFile` skips plain `SaveInfo` entries: use `IniSaveInfo` for INI files and `CfgSaveInfo` for CFG files.
+   */
+  class SaveInfo { constructor(section: string | number | boolean, key: string | number | boolean, value: string | number | boolean); constructor(); Section: string; Key: string; Value: string; }
+  /**
+   * Reads and writes keys in an INI file directly (Nucleus.Gaming.IniFile): `var ini = new Nucleus.IniFile(path); ini.IniWriteValue("Section", "Key", "Value");`
+   */
+  const IniFile: new (path: string) => globalThis.IniFile;
+  /**
+   * Nucleus' global paths (static class Nucleus.Gaming.Globals): `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, ...
+   */
+  const Globals: globalThis.NucleusGlobals;
 }
 
 /**
@@ -3401,7 +3459,7 @@ declare namespace Nucleus {
  */
 declare const Game: Game;
 /**
- * Hub metadata (filled in when published on hub.splitscreen.me).
+ * Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
  */
 declare const Hub: Hub;
 /**

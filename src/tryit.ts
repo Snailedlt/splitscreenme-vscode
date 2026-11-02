@@ -35,7 +35,7 @@ export function renderTryIt(r: SimResult, state: TryItState, title: string): str
 
   const out: string[] = [];
   if (!r.loaded) {
-    out.push(`<div class="banner error"><strong>Nucleus can't load this handler, so nothing would start.</strong> <a href="${cmd('workbench.actions.view.problems')}">Fix the problems</a> first.<div class="mono small">${esc(r.loadError ?? '')}</div></div>`);
+    out.push(`<div class="banner error"><strong>${esc(sessionSummary(r))}</strong> <a href="${cmd('workbench.actions.view.problems')}">Fix the problems</a> first.<div class="mono small">${esc(r.loadError ?? '')}</div></div>`);
   } else {
     out.push(`<div class="banner ${r.sessionEnded ? 'error' : 'ok'}"><strong>${esc(sessionSummary(r))}</strong></div>`);
   }

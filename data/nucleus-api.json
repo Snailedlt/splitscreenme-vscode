@@ -13,8 +13,9 @@
   },
   "Hub": {
    "type": "Hub",
-   "doc": "Hub metadata (filled in when published on hub.splitscreen.me).",
-   "topLevel": true
+   "doc": "Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.",
+   "topLevel": true,
+   "hidden": true
   },
   "Nucleus": {
    "type": "Nucleus",
@@ -69,7 +70,8 @@
      "ref": "Hub",
      "default": "new Hub()",
      "readonly": true,
-     "doc": "Hub metadata, filled in by hub.splitscreen.me when the handler is published."
+     "internal": true,
+     "doc": "Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     },
     "Hook": {
      "kind": "object",
@@ -7253,21 +7255,23 @@
    }
   },
   "Hub": {
-   "doc": "Hub metadata.",
+   "doc": "Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.",
    "members": {
     "Maintainer": {
      "kind": "object",
      "ref": "HubMaintainer",
      "type": "any",
      "ts": "HubMaintainer",
-     "doc": "Handler maintainer on hub.splitscreen.me."
+     "internal": true,
+     "doc": "Handler maintainer on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     },
     "Handler": {
      "kind": "object",
      "ref": "HubHandler",
      "type": "any",
      "ts": "HubHandler",
-     "doc": "Handler identity on hub.splitscreen.me, used for update checks."
+     "internal": true,
+     "doc": "Handler identity on hub.splitscreen.me, used for update checks. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     }
    }
   },
@@ -7278,13 +7282,15 @@
      "kind": "field",
      "type": "string",
      "ts": "string",
-     "doc": "Maintainer display name."
+     "internal": true,
+     "doc": "Maintainer display name. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     },
     "Id": {
      "kind": "field",
      "type": "string",
      "ts": "string",
-     "doc": "Maintainer user id on the hub."
+     "internal": true,
+     "doc": "Maintainer user id on the hub. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     }
    }
   },
@@ -7295,13 +7301,15 @@
      "kind": "field",
      "type": "number",
      "ts": "number",
-     "doc": "Published version number. Nucleus compares it with the hub to offer updates."
+     "internal": true,
+     "doc": "Published version number. Nucleus compares it with the hub to offer updates. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     },
     "Id": {
      "kind": "field",
      "type": "string",
      "ts": "string",
-     "doc": "Handler id on hub.splitscreen.me."
+     "internal": true,
+     "doc": "Handler id on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
     }
    }
   },
@@ -9163,6 +9171,117 @@
      ]
     }
    }
+  },
+  "NucleusGlobals": {
+   "doc": "Nucleus' global paths and settings.",
+   "members": {
+    "NucleusInstallRoot": {
+     "kind": "property",
+     "csType": "string",
+     "type": "string",
+     "ts": "string",
+     "readonly": true,
+     "doc": "The Nucleus install folder (where NucleusCoop.exe is)."
+    },
+    "UserEnvironmentRoot": {
+     "kind": "property",
+     "csType": "string",
+     "type": "string",
+     "ts": "string",
+     "readonly": true,
+     "doc": "The user's profile folder, e.g. `C:\\Users\\me`."
+    },
+    "UserDocumentsRoot": {
+     "kind": "field",
+     "csType": "string",
+     "type": "string",
+     "ts": "string",
+     "doc": "The user's Documents folder."
+    },
+    "GameProfilesFolder": {
+     "kind": "property",
+     "csType": "string",
+     "type": "string",
+     "ts": "string",
+     "readonly": true,
+     "doc": "Folder where Nucleus keeps saved game profiles."
+    },
+    "NucleusMaxPlayers": {
+     "kind": "field",
+     "csType": "int",
+     "type": "number",
+     "ts": "number",
+     "readonly": true,
+     "doc": "Maximum number of players Nucleus supports (32)."
+    },
+    "IsOneDriveEnabled": {
+     "kind": "field",
+     "csType": "bool",
+     "type": "boolean",
+     "ts": "boolean",
+     "doc": "True if the Documents folder is inside OneDrive."
+    }
+   }
+  },
+  "IniFile": {
+   "doc": "An INI file opened with `new Nucleus.IniFile(path)`.",
+   "members": {
+    "Path": {
+     "kind": "property",
+     "csType": "string",
+     "type": "string",
+     "ts": "string",
+     "readonly": true,
+     "doc": "The file's path."
+    },
+    "IniWriteValue": {
+     "kind": "method",
+     "doc": "Sets `Key` in `[Section]` (creating them if needed) and saves the file.",
+     "overloads": [
+      {
+       "returns": "void",
+       "params": [
+        {
+         "name": "Section",
+         "type": "string | number | boolean",
+         "csType": "string"
+        },
+        {
+         "name": "Key",
+         "type": "string | number | boolean",
+         "csType": "string"
+        },
+        {
+         "name": "Value",
+         "type": "string | number | boolean",
+         "csType": "string"
+        }
+       ]
+      }
+     ]
+    },
+    "IniReadValue": {
+     "kind": "method",
+     "doc": "Reads `Key` from `[Section]`; an empty string if it isn't there.",
+     "overloads": [
+      {
+       "returns": "string",
+       "params": [
+        {
+         "name": "Section",
+         "type": "string | number | boolean",
+         "csType": "string"
+        },
+        {
+         "name": "Key",
+         "type": "string | number | boolean",
+         "csType": "string"
+        }
+       ]
+      }
+     ]
+    }
+   }
   }
  },
  "enums": {
@@ -9398,12 +9517,33 @@
    ]
   },
   "SaveInfo": {
-   "doc": "Base class of save file entries.",
+   "doc": "Base class of save file entries. `Context.ModifySaveFile` skips plain `SaveInfo` entries: use `IniSaveInfo` for INI files and `CfgSaveInfo` for CFG files.",
    "params": [
     "section",
     "key",
     "value"
+   ],
+   "constructors": [
+    [
+     "section",
+     "key",
+     "value"
+    ],
+    []
    ]
+  },
+  "IniFile": {
+   "doc": "Reads and writes keys in an INI file directly (Nucleus.Gaming.IniFile): `var ini = new Nucleus.IniFile(path); ini.IniWriteValue(\"Section\", \"Key\", \"Value\");`",
+   "params": [
+    "path"
+   ],
+   "instance": "IniFile"
+  },
+  "Globals": {
+   "doc": "Nucleus' global paths (static class Nucleus.Gaming.Globals): `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, ...",
+   "params": [],
+   "constructors": [],
+   "statics": "NucleusGlobals"
   }
  }
 }

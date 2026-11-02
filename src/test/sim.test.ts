@@ -160,3 +160,14 @@ test('simulate: plugin globals from pluginsInfo.txt record their calls', () => {
   assert.equal(out.status, 0, out.stdout);
   assert.match(out.stdout, /TriggerFix\.Sender\.PushKey\("k"\)/);
 });
+
+test('simulate: Nucleus.Globals, Nucleus.IniFile and a partly loaded handler', () => {
+  const r = simulateIsolated(HEADER + 'Game.Play = function () {\n  var ini = new Nucleus.IniFile(Nucleus.Globals.UserDocumentsRoot + "\\\\My Game\\\\settings.ini");\n  ini.IniWriteValue("Video", "Width", Context.Width);\n  Context.StartArguments = Nucleus.Globals.NucleusInstallRoot + "|" + ini.IniReadValue("Video", "Width") + "|";\n};\n', OPTS);
+  assert.equal(r.players[0].error, undefined);
+  assert.equal(r.players[0].startArguments, 'C:\\Nucleus||');
+  assert.deepEqual(r.players[0].effects, ['Changes settings.ini: Width = 960']);
+  const partial = simulateIsolated(HEADER + 'Game.KillMutex = "x";\n', OPTS);
+  assert.equal(partial.partialLoad, true);
+  assert.match(sessionSummary(partial), /still lists the game/);
+  assert.equal(simulateIsolated('Game.KillMutex = "x";\n' + HEADER, OPTS).partialLoad, undefined);
+});

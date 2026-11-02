@@ -11,6 +11,8 @@ First release.
 - Try it follows Nucleus' session flow and paths: errors end the session, OnFinishedSetup/OnStop run, Play timing flags, instance paths per copy mode and BinariesFolder, Context.Hook shared with Game.Hook, `Handler`, plugin globals from pluginsInfo.txt.
 - Try it: simulate a handler for 1–4 players (window, launch arguments, file changes, skipped options, errors), in a panel beside the editor and as `nucleus simulate`. It emulates Nucleus' Jint engine, matches the real engine on all 106 testbench probes, and runs the handler isolated from Node and your files.
 - Checked against the Nucleus source: the Hub install's exact line scan, `ExecutableName` needed for "Search disks", `AddOption` values and duplicate keys, `ShowOptionAsStep` keys, file-name-only `ExecutableName`, callbacks Nucleus never runs or calls unchecked (`callback-misuse`), required C# default parameters, strings continued with `\`.
+- `Nucleus.Globals` and `Nucleus.IniFile` are modelled (completion, hover, lint, Try it); `new Nucleus.SaveInfo()` is valid; wrong `SaveInfo` kinds in `ModifySaveFile` are flagged. `Hub.*` lines are written by hub.splitscreen.me on upload: the linter knows them, completion no longer offers them.
+- Try it reports a handler that fails part-way through loading but still appears in Nucleus' game list.
 - Snippets for common handler tasks.
 - Rule severities and enum handling verified against Jint 2.11.58 itself (probe handlers run with Nucleus' engine setup).
 - `missing-builtin`: flags ES2015+ library calls (`.includes()`, `Object.assign`, `Map`, ...) that Jint 2.11 lacks and that throw at run time; each one checked against the real engine.

@@ -497,7 +497,7 @@ function tsType(cs) {
 // from completion and marked as read-only where appropriate.
 const INTERNAL = {
   Game: new Set([
-    'UpdateAvailable', 'Favorite', 'Options', 'CustomSteps', 'JsFileName', 'HandlerType', 'MetaInfo', 'IsUpdateAvailable',
+    'UpdateAvailable', 'Hub', 'Favorite', 'Options', 'CustomSteps', 'JsFileName', 'HandlerType', 'MetaInfo', 'IsUpdateAvailable',
     'LoadCustomAssemblies', 'SetPlayerList', 'SetProtoInputValues', 'PrePlay', 'CreateContext', 'SaveType', 'SavePath',
     'Profiles_ConfigPath', 'Profiles_SavePath', 'Profiles_Documents_ConfigPath', 'Profiles_Documents_SavePath',
     'Players_BackupPath', 'Content_Folder', 'HandlerId',
@@ -587,7 +587,7 @@ const gameExtraDoc = {
   AddOption: 'Adds a user-selectable option to the game profile. Read it back in `Game.Play` with `Context.Options["key"]`.',
   ShowOptionAsStep: 'Shows a previously added option as its own setup step before launching.',
   Folder: 'Path to this handler\'s own folder (Nucleus-Coop\\handlers\\<handler name>). Set by Nucleus before the handler runs; overwriting it changes where Game.Folder points for the rest of the handler.',
-  Hub: 'Hub metadata, filled in by hub.splitscreen.me when the handler is published.',
+  Hub: 'Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.',
   Hook: 'Settings for Nucleus\' custom xinput/x360ce hook DLL.',
   ProtoInput: 'Proto Input options (multiple mice/keyboards, focus hooks, input redirection). See https://www.splitscreen.me/docs/protoinput',
   OnCustomHotKey_1: 'Called when the first custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
@@ -649,7 +649,9 @@ const model = {
   jint: jintVersion(),
   globals: {
     Game: { type: 'Game', doc: 'The handler being defined. Set options on it at the top level of the file; define `Game.Play` to customise each instance.', topLevel: true },
-    Hub: { type: 'Hub', doc: 'Hub metadata (filled in when published on hub.splitscreen.me).', topLevel: true },
+    // Hub.* lines are written by hub.splitscreen.me on upload: known to the linter (no warnings on
+    // published handlers) but not offered in completion.
+    Hub: { type: 'Hub', doc: 'Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.', topLevel: true, hidden: true },
     Nucleus: { type: 'Nucleus', doc: 'The `Nucleus.Gaming` .NET namespace: enums such as `Nucleus.Folder` and helper classes such as `Nucleus.IniSaveInfo`.', topLevel: true },
     System: { type: 'any', doc: '.NET `System` namespace (e.g. `System.IO.File.Copy`, `System.IO.Path.Combine`).', topLevel: true },
     importNamespace: { type: 'function', doc: 'Imports a .NET namespace, e.g. `importNamespace("System.IO")`.', topLevel: true },
@@ -669,24 +671,24 @@ const model = {
       members: buildObject('PlayerInfo', 'Player', playerParsed.filter((m) => m.name !== 'Image')),
     },
     Hub: {
-      doc: 'Hub metadata.',
+      doc: 'Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.',
       members: {
-        Maintainer: { kind: 'object', ref: 'HubMaintainer', type: 'any', ts: 'HubMaintainer', doc: 'Handler maintainer on hub.splitscreen.me.' },
-        Handler: { kind: 'object', ref: 'HubHandler', type: 'any', ts: 'HubHandler', doc: 'Handler identity on hub.splitscreen.me, used for update checks.' },
+        Maintainer: { kind: 'object', ref: 'HubMaintainer', type: 'any', ts: 'HubMaintainer', internal: true, doc: 'Handler maintainer on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
+        Handler: { kind: 'object', ref: 'HubHandler', type: 'any', ts: 'HubHandler', internal: true, doc: 'Handler identity on hub.splitscreen.me, used for update checks. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
       },
     },
     HubMaintainer: {
       doc: 'Hub maintainer.',
       members: {
-        Name: { kind: 'field', type: 'string', ts: 'string', doc: 'Maintainer display name.' },
-        Id: { kind: 'field', type: 'string', ts: 'string', doc: 'Maintainer user id on the hub.' },
+        Name: { kind: 'field', type: 'string', ts: 'string', internal: true, doc: 'Maintainer display name. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
+        Id: { kind: 'field', type: 'string', ts: 'string', internal: true, doc: 'Maintainer user id on the hub. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
       },
     },
     HubHandler: {
       doc: 'Hub handler identity.',
       members: {
-        Version: { kind: 'field', type: 'number', ts: 'number', doc: 'Published version number. Nucleus compares it with the hub to offer updates.' },
-        Id: { kind: 'field', type: 'string', ts: 'string', doc: 'Handler id on hub.splitscreen.me.' },
+        Version: { kind: 'field', type: 'number', ts: 'number', internal: true, doc: 'Published version number. Nucleus compares it with the hub to offer updates. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
+        Id: { kind: 'field', type: 'string', ts: 'string', internal: true, doc: 'Handler id on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.' },
       },
     },
     ProtoInputRuntime: {
@@ -698,12 +700,35 @@ const model = {
     },
     ProtoInputValues: { doc: 'Proto Input hook/filter ids.', members: buildObject('ProtoInputValues', 'ProtoInput.Values', exposedParsed) },
     UserInfo: { doc: 'User info.', members: { GetLocalIP: { kind: 'method', doc: 'Local IP address.', overloads: [{ returns: 'string', params: [] }] } } },
+    // Globals.cs / IO/IniFile.cs (hand-picked: the members useful to handlers).
+    NucleusGlobals: {
+      doc: 'Nucleus\' global paths and settings.',
+      members: {
+        NucleusInstallRoot: { kind: 'property', csType: 'string', type: 'string', ts: 'string', readonly: true, doc: 'The Nucleus install folder (where NucleusCoop.exe is).' },
+        UserEnvironmentRoot: { kind: 'property', csType: 'string', type: 'string', ts: 'string', readonly: true, doc: 'The user\'s profile folder, e.g. `C:\\Users\\me`.' },
+        UserDocumentsRoot: { kind: 'field', csType: 'string', type: 'string', ts: 'string', doc: 'The user\'s Documents folder.' },
+        GameProfilesFolder: { kind: 'property', csType: 'string', type: 'string', ts: 'string', readonly: true, doc: 'Folder where Nucleus keeps saved game profiles.' },
+        NucleusMaxPlayers: { kind: 'field', csType: 'int', type: 'number', ts: 'number', readonly: true, doc: 'Maximum number of players Nucleus supports (32).' },
+        IsOneDriveEnabled: { kind: 'field', csType: 'bool', type: 'boolean', ts: 'boolean', doc: 'True if the Documents folder is inside OneDrive.' },
+      },
+    },
+    IniFile: {
+      doc: 'An INI file opened with `new Nucleus.IniFile(path)`.',
+      members: {
+        Path: { kind: 'property', csType: 'string', type: 'string', ts: 'string', readonly: true, doc: 'The file\'s path.' },
+        IniWriteValue: { kind: 'method', doc: 'Sets `Key` in `[Section]` (creating them if needed) and saves the file.', overloads: [{ returns: 'void', params: [{ name: 'Section', type: 'string | number | boolean', csType: 'string' }, { name: 'Key', type: 'string | number | boolean', csType: 'string' }, { name: 'Value', type: 'string | number | boolean', csType: 'string' }] }] },
+        IniReadValue: { kind: 'method', doc: 'Reads `Key` from `[Section]`; an empty string if it isn\'t there.', overloads: [{ returns: 'string', params: [{ name: 'Section', type: 'string | number | boolean', csType: 'string' }, { name: 'Key', type: 'string | number | boolean', csType: 'string' }] }] },
+      },
+    },
   },
   enums,
   nucleusClasses: {
     IniSaveInfo: { doc: 'A key in an INI file, for `Context.ModifySaveFile(..., Nucleus.SaveType.INI, [...])`.', params: ['section', 'key', 'value'] },
     CfgSaveInfo: { doc: 'A key in a CFG file, for `Context.ModifySaveFile(..., Nucleus.SaveType.CFG, [...])`.', params: ['section', 'key', 'value'] },
-    SaveInfo: { doc: 'Base class of save file entries.', params: ['section', 'key', 'value'] },
+    // Context.ModifySaveFile skips entries that aren't IniSaveInfo (INI) / CfgSaveInfo (CFG).
+    SaveInfo: { doc: 'Base class of save file entries. `Context.ModifySaveFile` skips plain `SaveInfo` entries: use `IniSaveInfo` for INI files and `CfgSaveInfo` for CFG files.', params: ['section', 'key', 'value'], constructors: [['section', 'key', 'value'], []] },
+    IniFile: { doc: 'Reads and writes keys in an INI file directly (Nucleus.Gaming.IniFile): `var ini = new Nucleus.IniFile(path); ini.IniWriteValue("Section", "Key", "Value");`', params: ['path'], instance: 'IniFile' },
+    Globals: { doc: 'Nucleus\' global paths (static class Nucleus.Gaming.Globals): `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, ...', params: [], constructors: [], statics: 'NucleusGlobals' },
   },
 };
 
@@ -779,10 +804,15 @@ for (const [name, e] of Object.entries(enums)) {
   dts += jsdoc(e.doc);
   dts += `  enum ${name} {\n${Object.entries(e.values).map(([k, v]) => `    ${k} = ${v},`).join('\n')}\n  }\n`;
 }
-dts += `  /** Base class of save file entries. */\n  class SaveInfo { constructor(section: string, key: string, value: string); }\n`;
 for (const [name, c] of Object.entries(model.nucleusClasses)) {
-  if (name === 'SaveInfo') continue;
-  dts += jsdoc(c.doc) + `  class ${name} extends SaveInfo { constructor(section: string, key: string, value: string | number | boolean); Section: string; Key: string; Value: string; }\n`;
+  if (c.statics) {
+    dts += jsdoc(c.doc) + `  const ${name}: globalThis.${c.statics};\n`;
+  } else if (c.instance) {
+    dts += jsdoc(c.doc) + `  const ${name}: new (${c.params.map((p) => `${p}: string`).join(', ')}) => globalThis.${c.instance};\n`;
+  } else {
+    const ctors = (c.constructors ?? [c.params]).map((ps) => `constructor(${ps.map((p) => `${p}: string | number | boolean`).join(', ')});`).join(' ');
+    dts += jsdoc(c.doc) + `  class ${name}${name === 'SaveInfo' ? '' : ' extends SaveInfo'} { ${ctors} Section: string; Key: string; Value: string; }\n`;
+  }
 }
 dts += `}\n\n`;
 
