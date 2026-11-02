@@ -8,7 +8,7 @@ import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { SimResult, sessionSummary } from './core/sim';
+import { SimResult, sessionSummary, groupIgnored } from './core/sim';
 import { pluginsFor, simulateIsolated } from './sandbox';
 
 const HELP = `Usage: nucleus <command> [options]
@@ -201,7 +201,7 @@ export function formatSimulation(r: SimResult, keyboardPlayer: number): string {
   const out: string[] = [];
   out.push(sessionSummary(r));
   if (!r.loaded) out.push(`  ${r.loadError ?? ''}`);
-  const ignored = [...new Set(r.ignored)];
+  const ignored = groupIgnored(r.ignored);
   if (ignored.length) out.push('', `Settings Nucleus skips (${ignored.length}):`, ...ignored.map((s) => `  ${s}`));
   for (const p of r.players) {
     out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer ? 'keyboard & mouse' : 'controller'})`);

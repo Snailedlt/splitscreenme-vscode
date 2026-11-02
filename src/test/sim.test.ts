@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { simulate, sessionSummary, parsePluginsInfo } from '../core/sim';
+import { simulate, sessionSummary, parsePluginsInfo, groupIgnored } from '../core/sim';
 import { simulateIsolated } from '../sandbox';
 
 const HEADER = 'Game.GUID = "My Game";\nGame.GameName = "My Game";\nGame.ExecutableName = "game.exe";\n';
@@ -170,4 +170,13 @@ test('simulate: Nucleus.Globals, Nucleus.IniFile and a partly loaded handler', (
   assert.equal(partial.partialLoad, true);
   assert.match(sessionSummary(partial), /still lists the game/);
   assert.equal(simulateIsolated('Game.KillMutex = "x";\n' + HEADER, OPTS).partialLoad, undefined);
+});
+
+test('groupIgnored: per-player duplicates merge, numbered runs collapse', () => {
+  const r = simulateIsolated(HEADER + 'Game.IgnoreWindowBordercheck = true;\nGame.Play = function () { for (var i = 0; i < PlayerList.Count; i++) { var p = PlayerList[i]; for (var c = 5; c <= 16; c++) p["ProtoController" + c] = 0; p.ProtoController20 = 0; } };\n', { ...OPTS, players: 4 });
+  assert.equal(r.ignored.length, 1 + 4 * 4 * 13);
+  assert.deepEqual(groupIgnored(r.ignored), [
+    'Game.IgnoreWindowBordercheck (no such member; Nucleus ignores it)',
+    'Player.ProtoController5–16, 20 (no such member; Nucleus ignores it)',
+  ]);
 });

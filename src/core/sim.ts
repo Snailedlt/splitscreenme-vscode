@@ -289,6 +289,45 @@ function nucleusNs(log: string[], ignored: string[]): any {
   return ns;
 }
 
+/**
+ * The skipped settings, grouped for reading: per-player duplicates merge (PlayerList[0..n] -> Player)
+ * and numbered runs collapse (Player.ProtoController5 ... 16 -> Player.ProtoController5–16).
+ */
+export function groupIgnored(ignored: string[]): string[] {
+  const byKey = new Map<string, { base: string; num?: number; reason: string }>();
+  for (const e of ignored) {
+    const m = /^(.+?) = .* \(([^()]*)\)$/.exec(e);
+    if (!m) {
+      byKey.set(e, { base: e, reason: '' });
+      continue;
+    }
+    const path = m[1].replace(/^PlayerList\[\d+\]/, 'Player');
+    const n = /^(.*?)(\d+)$/.exec(path);
+    const key = `${path}|${m[2]}`;
+    if (!byKey.has(key)) byKey.set(key, n ? { base: n[1], num: Number(n[2]), reason: m[2] } : { base: path, reason: m[2] });
+  }
+  const out: string[] = [];
+  const runs = new Map<string, number[]>();
+  for (const v of byKey.values()) {
+    if (!v.reason) out.push(v.base);
+    else if (v.num === undefined) out.push(`${v.base} (${v.reason})`);
+    else runs.set(`${v.base}|${v.reason}`, [...(runs.get(`${v.base}|${v.reason}`) ?? []), v.num]);
+  }
+  for (const [k, nums] of runs) {
+    const [base, reason] = k.split('|');
+    nums.sort((a, b) => a - b);
+    const parts: string[] = [];
+    for (let i = 0; i < nums.length; i++) {
+      let j = i;
+      while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++;
+      parts.push(j > i ? `${nums[i]}–${nums[j]}` : String(nums[i]));
+      i = j;
+    }
+    out.push(`${base}${parts.join(', ')} (${reason})`);
+  }
+  return out;
+}
+
 /** One plain-language line on how the session goes (shared by the CLI, VS Code and the workbench). */
 export function sessionSummary(r: SimResult): string {
   if (!r.loaded && r.partialLoad) {

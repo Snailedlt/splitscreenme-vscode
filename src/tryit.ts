@@ -3,7 +3,7 @@
 // from VS Code and Node (src/sandbox.ts). The webview has scripts disabled; its controls are
 // command links.
 import * as vscode from 'vscode';
-import { SimOptions, SimResult, sessionSummary } from './core/sim';
+import { SimOptions, SimResult, sessionSummary, groupIgnored } from './core/sim';
 import { pluginsFor, simulateIsolated } from './sandbox';
 
 export interface TryItState {
@@ -39,7 +39,7 @@ export function renderTryIt(r: SimResult, state: TryItState, title: string): str
   } else {
     out.push(`<div class="banner ${r.sessionEnded ? 'error' : 'ok'}"><strong>${esc(sessionSummary(r))}</strong></div>`);
   }
-  const ignored = [...new Set(r.ignored)];
+  const ignored = groupIgnored(r.ignored);
   if (ignored.length) out.push(`<h3>Settings Nucleus skips (${ignored.length})</h3><ul class="mono warn">${ignored.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`);
   for (const p of r.players) {
     out.push(`<section><h3>Player ${p.index + 1} <span class="tag">${p.index === state.keyboardPlayer ? 'keyboard &amp; mouse' : 'controller'}</span></h3>
