@@ -305,7 +305,12 @@ function parseHandlerApiMdx() {
       category = h[1].trim();
       flush();
     } else if (/^---\s*$/.test(line)) flush();
-    else prose.push(line);
+    else if (/^Game(\.\w+)+\s*;?\s*\/\//.test(line)) {
+      // A bare `Game.X; // description` line outside a code block (handler-api.mdx has one for
+      // GamePlayAfterLaunch): its own doc, not prose for the next block.
+      const m = line.match(/^(Game(?:\.\w+)*)\.(\w+)\s*;?\s*\/\/\s*(.*)$/);
+      if (m) setDoc(`${m[1]}.${m[2]}`, { doc: m[3].trim(), category });
+    } else prose.push(line);
   }
 }
 
@@ -505,7 +510,7 @@ const REQUIRED_GAME = ['GUID', 'GameName', 'ExecutableName'];
 
 const looseParam = (t) => (t === 'string' ? 'string | number | boolean' : t);
 
-function buildObject(objName, docPrefix, parsed, extraDoc = {}) {
+function buildObject(objName, docPrefix, parsed, extraDoc = {}, override = {}) {
   const result = {};
   for (const m of parsed) {
     if (m.isStatic && m.kind !== 'method') continue;
@@ -515,7 +520,7 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}) {
     if (m.kind === 'method') {
       const entry = (result[m.name] ??= {
         kind: 'method',
-        doc: d.doc || m.sourceDoc || extraDoc[m.name] || '',
+        doc: override[m.name] || d.doc || m.sourceDoc || extraDoc[m.name] || '',
         overloads: [],
         ...(internal ? { internal } : {}),
         ...(d.category ? { category: d.category } : {}),
@@ -528,7 +533,10 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}) {
           type: looseParam(p.rest ? tsType(p.csType.replace(/\[\]$/, '')) : tsType(p.csType)),
           csType: p.csType,
           ...(p.rest ? { rest: true } : {}),
-          ...(p.optional ? { optional: true } : {}),
+          // C# default values don't make a parameter optional in Jint 2.11: it only matches
+          // overloads with exactly as many parameters as arguments (testbench probe 110:
+          // Context.RandomString(8) throws, RandomString(8, false) works). So they're required.
+          ...(p.optional ? { csDefault: p.default } : {}),
         })),
       });
       continue;
@@ -544,7 +552,7 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}) {
       ...(m.default !== undefined ? { default: m.default } : {}),
       ...(m.readonly || READONLY[objName]?.has(m.name) ? { readonly: true } : {}),
       ...(internal ? { internal } : {}),
-      doc: d.doc || m.sourceDoc || extraDoc[m.name] || '',
+      doc: override[m.name] || d.doc || m.sourceDoc || extraDoc[m.name] || '',
       ...(d.example ? { example: d.example } : {}),
       ...(d.category ? { category: d.category } : {}),
       ...(d.deprecated ? { deprecated: d.deprecated } : {}),
@@ -566,20 +574,25 @@ const protoRtParsed = members(findTypeBody(protoRtText, 'class', 'ProtoInput'))
   .filter((m) => m && m.kind === 'method');
 const exposedParsed = parseClass('Coop/ProtoInput/ProtoInput.cs', 'ExposedValues');
 
+// Facts checked in the Nucleus source; these replace the docs site's text.
+const gameDocOverride = {
+  Play: 'Called once per instance (player), in player order. By default it runs after Nucleus has set up the instance (Goldberg, XInput DLLs, ...) and before the game starts, and `Context.StartArguments` is read after it. `Game.GamePlayBeforeGameSetup` runs it before that setup; `Game.GamePlayAfterLaunch` runs it after the game has started (then `Context.StartArguments` has no effect). If both are true it never runs. `Context`, `Player`, `PlayerList`, `Handler` and `ProtoInput` are available inside it. An error thrown here ends the whole session.',
+  GamePlayAfterLaunch: 'Run `Game.Play` after the instance has been launched instead of before. Changes to `Context.StartArguments` then have no effect. Don\'t combine with `Game.GamePlayBeforeGameSetup`: if both are true, `Game.Play` never runs.',
+  GamePlayBeforeGameSetup: 'Run `Game.Play` before the majority of the instance is set up (Goldberg, XInput DLLs, ...) instead of after it. Don\'t combine with `Game.GamePlayAfterLaunch`: if both are true, `Game.Play` never runs.',
+  OnStop: 'Called when the session ends, with the last player\'s `Context`/`Player`. If it throws, Nucleus skips its cleanup (leftover processes, registry restore, temporary users, backups), so keep it error-free. `Context` is undefined if the session ends before the first instance was set up.',
+  OnFinishedSetup: 'Called once after all instances have been set up and started, with the last player\'s `Context`/`Player`. An error thrown here ends the session.',
+  SetupSse: 'Never called by Nucleus (declared but unused): assigning it has no effect.',
+};
 const gameExtraDoc = {
-  Play: 'Called once per instance, right before the game process is started. `Context`, `Player`, `PlayerList` and `Handler` are available inside this function.',
-  OnStop: 'Called when the session is stopped.',
-  OnFinishedSetup: 'Called once all instances have been set up.',
-  SetupSse: 'Called to set up Smart Steam Emulator.',
   AddOption: 'Adds a user-selectable option to the game profile. Read it back in `Game.Play` with `Context.Options["key"]`.',
   ShowOptionAsStep: 'Shows a previously added option as its own setup step before launching.',
   Folder: 'Path to this handler\'s own folder (Nucleus-Coop\\handlers\\<handler name>). Set by Nucleus.',
   Hub: 'Hub metadata, filled in by hub.splitscreen.me when the handler is published.',
   Hook: 'Settings for Nucleus\' custom xinput/x360ce hook DLL.',
   ProtoInput: 'Proto Input options (multiple mice/keyboards, focus hooks, input redirection). See https://www.splitscreen.me/docs/protoinput',
-  OnCustomHotKey_1: 'Called when the first custom hotkey from `Game.CustomHotkeys` is pressed.',
-  OnCustomHotKey_2: 'Called when the second custom hotkey from `Game.CustomHotkeys` is pressed.',
-  OnCustomHotKey_3: 'Called when the third custom hotkey from `Game.CustomHotkeys` is pressed.',
+  OnCustomHotKey_1: 'Called when the first custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
+  OnCustomHotKey_2: 'Called when the second custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
+  OnCustomHotKey_3: 'Called when the third custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
   Description: 'Text shown to the user when the game is selected in Nucleus (setup notes, known issues, ...).',
   ExecutableNames: 'Alternative executable names this handler matches (e.g. different store versions).',
   Debug: 'Writes a detailed debug log while the handler runs.',
@@ -647,7 +660,7 @@ const model = {
     ProtoInput: { type: 'ProtoInputRuntime', doc: 'Proto Input runtime API (install hooks, toggle message filters). Only available inside callbacks such as `Game.ProtoInput.OnInputLocked`.', topLevel: false },
   },
   objects: {
-    Game: { doc: 'Handler definition (`GenericGameInfo`).', members: buildObject('Game', 'Game', gameParsed, gameExtraDoc) },
+    Game: { doc: 'Handler definition (`GenericGameInfo`).', members: buildObject('Game', 'Game', gameParsed, gameExtraDoc, gameDocOverride) },
     GameHook: { doc: 'Custom xinput/x360ce hook settings (`Game.Hook`).', members: buildObject('GameHook', 'Game.Hook', hookParsed) },
     GameProtoInput: { doc: 'Proto Input options (`Game.ProtoInput`).', members: buildObject('GameProtoInput', 'Game.ProtoInput', protoOptParsed) },
     Context: { doc: 'Per-instance context (`GenericContext`).', members: buildObject('Context', 'Context', contextParsed, contextExtraDoc) },

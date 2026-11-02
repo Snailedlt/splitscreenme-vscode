@@ -54,6 +54,10 @@ export const RULES = {
     severity: 'error',
     description: 'Jint 2.x only has the ES5 standard library (plus String padStart/padEnd). Newer built-ins such as `Object.assign`, `Array.from`, `Map`, `"…".includes()` or `[].find()` do not exist and throw when the code runs.',
   },
+  'callback-misuse': {
+    severity: 'warning',
+    description: 'Callbacks Nucleus never runs or calls without checking: `Game.SetupSse` (never called), `Game.Play` with both `GamePlayBeforeGameSetup` and `GamePlayAfterLaunch` (never runs), `Context.StartArguments` set in a `Game.Play` that runs after launch (no effect), and `Game.CustomHotkeys` entries without their `Game.OnCustomHotKey_N` (Nucleus crashes when the hotkey is pressed).',
+  },
   deprecated: { severity: 'hint', description: 'The option is deprecated (setting it to false is fine).' },
 } as const satisfies Record<string, { severity: Severity; description: string }>;
 
@@ -172,6 +176,8 @@ class Analyzer {
     this.checkRequired();
     this.checkDuplicates();
     this.checkHubInstall();
+    this.checkCallbacks();
+    this.checkExeName();
     this.checkProtoInputLegacy();
     this.checkGuid();
   }
@@ -283,6 +289,7 @@ class Analyzer {
         break;
       case 'CallExpression':
         this.checkCall(n);
+        this.checkOptionCall(n);
         break;
       case 'NewExpression':
         this.checkNew(n);
@@ -412,9 +419,9 @@ class Analyzer {
         // Nucleus rebuilds the file line by line ("\r\n" + line + "\r\n", GenericGameInfo's
         // constructor), so a backslash line continuation inside a string is followed by an
         // extra line break, and Jint stops with "Unexpected token ILLEGAL".
-        if (typeof n.value === 'string' && /[\r\n\u2028\u2029]/.test(n.raw)) {
+        if (typeof n.value === 'string' && /[\r\n]/.test(n.raw)) {
           const raw: string = n.raw;
-          const joined = raw.replace(/\\(\r\n|[\r\n\u2028\u2029])/g, '');
+          const joined = raw.replace(/\\(\r\n|[\r\n])/g, ''); // StreamReader.ReadLine doesn't split on U+2028/2029
           this.report({
             rule: 'syntax-error',
             message: 'Nucleus can\'t load a string that continues onto the next line with `\\` (it adds line breaks when it reads the file, which Jint rejects). Keep the string on one line, or join parts with `+`.',
@@ -848,12 +855,26 @@ class Analyzer {
   private checkRequired() {
     // Only meaningful for files that actually define a handler.
     if (![...this.gameAssignedAnywhere].length) return;
-    const missing = REQUIRED.filter((k) => {
-      if (this.gameAssignedAnywhere.has(`Game.${k}`)) return false;
-      if (k === 'ExecutableName' && (this.gameAssignedAnywhere.has('Game.ExecutableNames') || this.gameAssignedAnywhere.has('Game.ExecutableToLaunch'))) return false;
-      return true;
-    });
+    // ExecutableName is needed even with ExecutableNames/ExecutableToLaunch: GameManager.AnyGame
+    // (Search disks) reads it without a null check. ExecutableNames alone lets the game be added,
+    // so that case is only a warning.
+    const missing = REQUIRED.filter((k) => !this.gameAssignedAnywhere.has(`Game.${k}`));
     if (!missing.length) return;
+    const names = this.topAssignments.get('Game.ExecutableNames');
+    const first = names?.[names.length - 1]?.right?.elements?.[0];
+    if (missing.length === 1 && missing[0] === 'ExecutableName' && first?.type === 'Literal' && typeof first.value === 'string') {
+      const at = lineStart(this.text, names![names!.length - 1].start);
+      this.report({
+        rule: 'missing-required',
+        // Adding the game by its .exe checks ExecutableNames, but GameManager.AnyGame doesn't.
+        severity: 'warning',
+        message: 'Also set `Game.ExecutableName`: Nucleus\' "Search disks" reads it without checking, so while this handler is installed, searching disks stops with an error for every game.',
+        start: names![names!.length - 1].start,
+        end: names![names!.length - 1].end,
+        fixes: [{ title: `Add Game.ExecutableName = ${JSON.stringify(first.value)}`, edits: [{ start: at, end: at, text: `Game.ExecutableName = ${JSON.stringify(first.value)};\n` }], preferred: true }],
+      });
+      return;
+    }
     const firstGame = [...this.topAssignments.values()][0]?.[0];
     const at = firstGame ? lineStart(this.text, firstGame.start) : 0;
     const lines = missing.map((k) => `Game.${k} = "${k === 'ExecutableName' ? 'Game.exe' : 'My Game'}";`).join('\n') + '\n';
@@ -890,11 +911,75 @@ class Analyzer {
     }
   }
 
+  /**
+   * Replays DownloadPrompt.ExtractHandler (and the in-app Hub browser and drag & drop, which
+   * do the same) on the raw text: every physical line, comments and function bodies included;
+   * `line.ToLower().StartsWith("game.executablename")` else ("game.gamename"); the value is
+   * `line.Substring(first '"' + 1, last - first - 1)`, which throws with fewer than two '"';
+   * each match overwrites the previous one; it stops after two matches.
+   */
+  private hubScan() {
+    const result: Record<'ExecutableName' | 'GameName', { value: string | null; line: number; offset: number; crash: boolean } | undefined> & { matched: number[] } = {
+      ExecutableName: undefined,
+      GameName: undefined,
+      matched: [],
+    };
+    let found = 0;
+    let offset = 0;
+    const lines = this.text.split(/\r\n|\n|\r/);
+    const ends = this.text.match(/\r\n|\n|\r/g) ?? [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lower = line.toLowerCase();
+      const key = lower.startsWith('game.executablename') ? 'ExecutableName' : lower.startsWith('game.gamename') ? 'GameName' : null;
+      if (key) {
+        const first = line.indexOf('"');
+        const last = line.lastIndexOf('"');
+        const crash = first < 0 || last === first;
+        result[key] = { value: crash ? null : line.slice(first + 1, last), line: i, offset, crash };
+        result.matched.push(i + 1);
+        found++;
+        if (crash || found === 2) break; // a crash ends the install
+      }
+      offset += line.length + (ends[i]?.length ?? 0);
+    }
+    return result;
+  }
+
   private checkHubInstall() {
-    // Mirrors DownloadPrompt.ExtractHandler in Nucleus: for each line,
-    // `line.ToLower().StartsWith("game.executablename")` / ("game.gamename"),
-    // then the value is the text between the first and the last '"'.
+    // See hubScan(): what Nucleus reads when installing from the Hub.
+    const scan = this.hubScan();
+    const reported = new Set<string>();
+    const crashed = (['ExecutableName', 'GameName'] as const).find((k) => scan[k]?.crash);
+    // When the crashing line is the assignment itself, its own report below (with its fix) says so.
+    const crashNode = crashed && this.topAssignments.get(`Game.${crashed}`)?.at(-1);
+    const crashOnAssignment = !!crashNode && lineStart(this.text, crashNode.start) === scan[crashed!]!.offset;
+    if (crashed && !crashOnAssignment) {
+      const c = scan[crashed]!;
+      const le = lineEnd(this.text, c.offset);
+      this.report({
+        rule: 'hub-install-parse',
+        severity: 'error',
+        message: `Installing this handler from the Hub fails ("Something went wrong"): this line starts with \`Game.${crashed}\`, so Nucleus reads its value from between the first and last double quote, and there aren't two. Put the value in double quotes${crashed === 'GameName' ? '' : ', or move this line below the real `Game.ExecutableName` line'}.`,
+        start: c.offset,
+        end: le,
+      });
+      reported.add(crashed);
+    } else if (!crashed && this.gameAssignedAnywhere.size && !scan.ExecutableName) {
+      this.report({
+        rule: 'hub-install-parse',
+        severity: 'error',
+        message:
+          scan.matched.length === 2
+            ? `Installing this handler from the Hub fails: Nucleus stops after the first two lines that start with \`Game.GameName\` or \`Game.ExecutableName\` (lines ${scan.matched.join(' and ')}, comments included) and never reads \`Game.ExecutableName\`. Remove the extra line.`
+            : 'Installing this handler from the Hub fails: Nucleus looks for a line that starts with `Game.ExecutableName` (no indentation) and finds none.',
+        start: 0,
+        end: lineEnd(this.text, 0),
+      });
+      reported.add('ExecutableName');
+    }
     for (const key of ['ExecutableName', 'GameName'] as const) {
+      if (reported.has(key)) continue;
       const nodes = this.topAssignments.get(`Game.${key}`);
       if (!nodes?.length) continue;
       const n = nodes[nodes.length - 1];
@@ -948,12 +1033,134 @@ class Analyzer {
         if (m && m.index < ls) problems.push('`Game.ExecutableNames` appears before it, and Nucleus would read that line instead');
       }
       if (problems.length) {
+        const fails = crashOnAssignment && key === crashed;
         this.report({
           rule: 'hub-install-parse',
-          message: `When installed from the Hub, Nucleus will not read \`Game.${key}\` correctly: ${problems.join('; ')}.`,
+          ...(fails ? { severity: 'error' as const } : {}),
+          message: fails
+            ? `Installing this handler from the Hub fails ("Something went wrong"): Nucleus reads \`Game.${key}\` from between the first and last double quote on this line, and there aren't two. ${problems.join('; ').replace(/^./, (c) => c.toUpperCase())}.`
+            : `When installed from the Hub, Nucleus will not read \`Game.${key}\` correctly: ${problems.join('; ')}.`,
           start: n.start,
           end: n.end,
           fixes: fixes.length ? fixes : undefined,
+        });
+        continue;
+      }
+      // The line itself is fine, but Nucleus may read a different one (an earlier commented-out
+      // or duplicate line, or it stopped after two matches before reaching this one).
+      const got = scan[key];
+      if (crashed) continue; // the install already failed above
+      if (v.type === 'Literal' && typeof v.value === 'string' && got?.value !== v.value) {
+        const where = got ? `line ${got.line + 1}, which gives \`${got.value}\`` : 'no line: it stops after the first two lines that start with `Game.ExecutableName` or `Game.GameName`';
+        this.report({
+          rule: 'hub-install-parse',
+          message: `When installed from the Hub, Nucleus reads \`Game.${key}\` from ${where}, not from this line. ${key === 'GameName' ? 'The installed handler gets the wrong name.' : 'Nucleus may not find the game.'} Remove or move the other line(s).`,
+          start: n.start,
+          end: n.end,
+        });
+      }
+    }
+  }
+
+  /** Game.AddOption / Game.ShowOptionAsStep, checked against GameOption and the options screen. */
+  private optionKeys = new Set<string>();
+  private checkOptionCall(n: Node) {
+    const r = this.resolve(n.callee);
+    if (r?.kind !== 'member' || r.owner !== 'Game' || n.arguments.some((a: Node) => a.type === 'SpreadElement')) return;
+    const key = n.arguments[r.name === 'AddOption' ? 2 : 0];
+    const keyText = key?.type === 'Literal' && typeof key.value === 'string' ? key.value : undefined;
+    if (r.name === 'AddOption') {
+      const value = n.arguments[3];
+      if (value && ((value.type === 'Literal' && !value.regex) || value.type === 'ObjectExpression')) {
+        this.report({
+          rule: 'type-mismatch',
+          severity: 'error',
+          message: 'The values of `Game.AddOption` must be a list, e.g. `["Low", "High"]` (or `[]` for free text, or a `Nucleus.*` enum value). With anything else, Nucleus\' options screen fails when it shows this option.',
+          start: value.start,
+          end: value.end,
+        });
+      }
+      if (keyText !== undefined) {
+        if (this.optionKeys.has(keyText)) {
+          this.report({
+            rule: 'duplicate-assignment',
+            severity: 'error',
+            message: `An option with the key \`${keyText}\` was already added. Option keys must be unique: Nucleus fails when it builds the game profile.`,
+            start: key.start,
+            end: key.end,
+          });
+        }
+        this.optionKeys.add(keyText);
+      }
+    } else if (r.name === 'ShowOptionAsStep' && keyText !== undefined && !this.optionKeys.has(keyText)) {
+      this.report({
+        rule: 'wrong-arguments',
+        message: `No option with the key \`${keyText}\` was added before this line. Call \`Game.AddOption(..., "${keyText}", ...)\` first: otherwise Nucleus throws and the handler fails to load.`,
+        start: key.start,
+        end: key.end,
+      });
+    }
+  }
+
+  /** Callbacks Nucleus never runs, or runs without checking they exist (GenericGameHandler, HotkeyListener). */
+  private checkCallbacks() {
+    const last = (chain: string) => {
+      const nodes = this.topAssignments.get(chain);
+      return nodes?.[nodes.length - 1];
+    };
+    const isTrue = (n: Node | undefined) => n?.right?.type === 'Literal' && n.right.value === true;
+    const sse = last('Game.SetupSse');
+    if (sse) {
+      this.report({ rule: 'callback-misuse', message: '`Game.SetupSse` is never called by Nucleus, so this function never runs.', start: sse.left.start, end: sse.left.end, tags: ['unnecessary'] });
+    }
+    const before = last('Game.GamePlayBeforeGameSetup');
+    const after = last('Game.GamePlayAfterLaunch');
+    if (isTrue(before) && isTrue(after)) {
+      const later = before!.start > after!.start ? before! : after!;
+      this.report({ rule: 'callback-misuse', message: 'With both `Game.GamePlayBeforeGameSetup` and `Game.GamePlayAfterLaunch` set to true, Nucleus never runs `Game.Play`. Keep only one.', start: later.start, end: later.end });
+    } else if (isTrue(after)) {
+      const play = last('Game.Play')?.right;
+      if (play?.type === 'FunctionExpression') {
+        visit(play, (x) => {
+          if (x.type !== 'AssignmentExpression' || x.left.type !== 'MemberExpression') return;
+          const r = this.resolve(x.left);
+          if (r?.kind === 'member' && r.owner === 'Context' && r.name === 'StartArguments') {
+            this.report({ rule: 'callback-misuse', message: 'With `Game.GamePlayAfterLaunch = true`, `Game.Play` runs after the game has started, so setting `Context.StartArguments` here has no effect. Set the arguments with `Game.StartArguments`, or remove `Game.GamePlayAfterLaunch`.', start: x.start, end: x.end });
+          }
+        });
+      }
+    }
+    const hotkeys = last('Game.CustomHotkeys')?.right;
+    if (hotkeys?.type === 'ArrayExpression') {
+      hotkeys.elements.slice(0, 3).forEach((el: Node | null, i: number) => {
+        if (!el || this.gameAssignedAnywhere.has(`Game.OnCustomHotKey_${i + 1}`)) return;
+        this.report({
+          rule: 'callback-misuse',
+          severity: 'error',
+          message: `Custom hotkey ${i + 1} has no \`Game.OnCustomHotKey_${i + 1}\` function. Nucleus calls it without checking, so pressing the hotkey crashes Nucleus.`,
+          start: el.start,
+          end: el.end,
+        });
+      });
+    }
+  }
+
+  /** Nucleus compares Game.ExecutableName(s) with the file name of the exe the user picks. */
+  private checkExeName() {
+    for (const chain of ['Game.ExecutableName', 'Game.ExecutableNames']) {
+      const nodes = this.topAssignments.get(chain);
+      const v = nodes?.[nodes.length - 1]?.right;
+      const values: Node[] = v?.type === 'ArrayExpression' ? v.elements.filter(Boolean) : v ? [v] : [];
+      for (const e of values) {
+        if (e.type !== 'Literal' || typeof e.value !== 'string' || !/[\\/]/.test(e.value)) continue;
+        const file = e.value.split(/[\\/]/).pop()!;
+        this.report({
+          rule: 'type-mismatch',
+          severity: 'error',
+          message: `\`${chain}\` must be the file name only (\`${file}\`): Nucleus compares it with the file name of the game's .exe, so a path never matches and the game can't be added. Use \`Game.BinariesFolder\` for the folder.`,
+          start: e.start,
+          end: e.end,
+          fixes: file ? [{ title: `Use ${JSON.stringify(file)}`, edits: [{ start: e.start, end: e.end, text: JSON.stringify(file) }] }] : undefined,
         });
       }
     }

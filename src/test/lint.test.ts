@@ -130,8 +130,13 @@ test('missing required options produce an error with a fix', () => {
   assert.equal(d.length, 1);
   assert.match(d[0].message, /GUID.*GameName.*ExecutableName/);
   assert.deepEqual(only(apply(src, d[0].fixes![0]), 'missing-required'), []);
-  // ExecutableNames is an accepted alternative
-  assert.deepEqual(only('Game.GUID = "a";\nGame.GameName = "a";\nGame.ExecutableNames = ["a.exe"];\n', 'missing-required'), []);
+  // with only ExecutableNames the game can be added, but "Search disks" fails: a warning; the fix adds it
+  const names = 'Game.GUID = "a";\nGame.GameName = "a";\nGame.ExecutableNames = ["a.exe", "b.exe"];\n';
+  const n = only(names, 'missing-required');
+  assert.equal(n.length, 1);
+  assert.equal(n[0].severity, 'warning');
+  assert.equal(n[0].fixes![0].preferred, true);
+  assert.match(apply(names, n[0].fixes![0]), /^Game\.ExecutableName = "a\.exe";$/m);
   // Plain scripts are not handlers
   assert.deepEqual(lint('var x = 1;\n'), []);
 });
@@ -313,4 +318,54 @@ test('a string continued with a backslash fails to load in Nucleus (it re-joins 
   assert.deepEqual(rules(lint(out)), []);
   // ordinary strings, and escapes like \n, are fine
   assert.deepEqual(lint(HEADER + 'Game.Play = function () { Context.StartArguments = "a\\nb" + \'c\\\\\'; };\n'), []);
+});
+
+test('hub install: the exact line scan Nucleus does (crashes, wrong line read)', () => {
+  // the value comes from a variable: no quotes on the line, the install crashes
+  const v = only('var n = "My Game";\nGame.GUID = "a";\nGame.GameName = n;\nGame.ExecutableName = "game.exe";\n', 'hub-install-parse');
+  assert.equal(v[0].severity, 'error');
+  // a commented-out duplicate at column 0 earlier in the file is what Nucleus reads
+  const dup = only('Game.ExecutableName = "game.exe";\n/*\nGame.GameName = "Old Name";\n*/\nGame.GUID = "a";\nGame.GameName = "My Game";\n', 'hub-install-parse');
+  assert.equal(dup.length, 1);
+  assert.match(dup[0].message, /line 3, which gives `Old Name`/);
+  // ...and if both GameName lines come first, Nucleus never reaches ExecutableName: the install fails
+  const twice = only('/*\nGame.GameName = "Old Name";\n*/\nGame.GUID = "a";\nGame.GameName = "My Game";\nGame.ExecutableName = "game.exe";\n', 'hub-install-parse');
+  assert.ok(twice.some((d) => d.severity === 'error' && /lines 2 and 5/.test(d.message)));
+  // ExecutableNames + ExecutableName above GameName: Nucleus stops before reaching GameName
+  const stop = only('Game.GUID = "a";\nGame.ExecutableNames = ["a.exe"];\nGame.ExecutableName = "a.exe";\nGame.GameName = "My Game";\n', 'hub-install-parse');
+  assert.ok(stop.some((d) => /GameName.*stops after the first two/.test(d.message)));
+  // ExecutableName only inside a function: the install finds no line
+  const none = only('Game.GUID = "a";\nGame.GameName = "x";\nif (true) {\n  Game.ExecutableName = "x.exe";\n}\n', 'hub-install-parse');
+  assert.ok(none.some((d) => d.severity === 'error' && /finds none/.test(d.message)));
+  assert.deepEqual(only(HEADER, 'hub-install-parse'), []);
+});
+
+test('options: AddOption values, duplicate keys, ShowOptionAsStep', () => {
+  const add = (args: string) => HEADER + `Game.AddOption(${args});\n`;
+  assert.equal(only(add('"Speed", "", "speed", true'), 'type-mismatch')[0].severity, 'error');
+  assert.equal(only(add('"Name", "", "name", "Player"'), 'type-mismatch').length, 1);
+  assert.deepEqual(lint(add('"Speed", "", "speed", ["Low", "High"]') + 'var opts = ["a"];\nGame.AddOption("B", "", "b", opts);\nGame.AddOption("C", "", "c", []);\n'), []);
+  const dup = only(add('"A", "", "k", ["x"]') + 'Game.AddOption("B", "", "k", ["y"]);\n', 'duplicate-assignment');
+  assert.equal(dup[0].severity, 'error');
+  assert.equal(only(HEADER + 'Game.ShowOptionAsStep("k", true, "Pick");\n', 'wrong-arguments').length, 1);
+  assert.deepEqual(lint(add('"A", "", "k", [{ Name: "x" }]') + 'Game.ShowOptionAsStep("k", true, "Pick");\n'), []);
+});
+
+test('ExecutableName must be a file name, not a path', () => {
+  const d = only('Game.GUID = "a";\nGame.GameName = "a";\nGame.ExecutableName = "bin\\\\x64\\\\game.exe";\n', 'type-mismatch');
+  assert.equal(d[0].severity, 'error');
+  assert.equal(d[0].fixes![0].edits[0].text, '"game.exe"');
+});
+
+test('callback-misuse', () => {
+  assert.equal(only(HEADER + 'Game.SetupSse = function () {};\n', 'callback-misuse').length, 1);
+  assert.equal(only(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.GamePlayAfterLaunch = true;\n', 'callback-misuse').length, 1);
+  const after = HEADER + 'Game.GamePlayAfterLaunch = true;\nGame.Play = function () {\n  Context.StartArguments = "-x";\n};\n';
+  assert.match(only(after, 'callback-misuse')[0].message, /no effect/);
+  const keys = only(HEADER + 'Game.CustomHotkeys = ["Ctrl+F1", "Ctrl+F2"];\nGame.OnCustomHotKey_1 = function () {};\n', 'callback-misuse');
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].severity, 'error');
+  assert.match(keys[0].message, /OnCustomHotKey_2/);
+  // fine
+  assert.deepEqual(lint(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.Play = function () { Context.StartArguments = "-x"; };\nGame.CustomHotkeys = ["Ctrl+F1"];\nGame.OnCustomHotKey_1 = function () {};\n'), []);
 });

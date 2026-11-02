@@ -248,19 +248,19 @@ interface Game {
    */
   LauncherTitle: string;
   /**
-   * Called once per instance, right before the game process is started. `Context`, `Player`, `PlayerList` and `Handler` are available inside this function.
+   * Called once per instance (player), in player order. By default it runs after Nucleus has set up the instance (Goldberg, XInput DLLs, ...) and before the game starts, and `Context.StartArguments` is read after it. `Game.GamePlayBeforeGameSetup` runs it before that setup; `Game.GamePlayAfterLaunch` runs it after the game has started (then `Context.StartArguments` has no effect). If both are true it never runs. `Context`, `Player`, `PlayerList`, `Handler` and `ProtoInput` are available inside it. An error thrown here ends the whole session.
    */
   Play: (() => void) | null;
   /**
-   * Called to set up Smart Steam Emulator.
+   * Never called by Nucleus (declared but unused): assigning it has no effect.
    */
   SetupSse: (() => void) | null;
   /**
-   * Called when the session is stopped.
+   * Called when the session ends, with the last player's `Context`/`Player`. If it throws, Nucleus skips its cleanup (leftover processes, registry restore, temporary users, backups), so keep it error-free. `Context` is undefined if the session ends before the first instance was set up.
    */
   OnStop: (() => void) | null;
   /**
-   * Called once all instances have been set up.
+   * Called once after all instances have been set up and started, with the last player's `Context`/`Player`. An error thrown here ends the session.
    */
   OnFinishedSetup: (() => void) | null;
   /**
@@ -298,7 +298,6 @@ interface Game {
    */
   UseProcessor: string;
   /**
-   * Game.WriteToProcessMemory 				//(undocumented)
    * Sets the overall priority category for the associated process. Can be "AboveNormal", "High" or "RealTime" | default: "Normal".
    * @example Game.ProcessorPriorityClass = "Normal";
    */
@@ -833,7 +832,13 @@ interface Game {
    * @example Game.LaunchAsDifferentUsersAlt = false;
    */
   LaunchAsDifferentUsersAlt: boolean;
+  /**
+   * An alternative method to changing IP per instance | this method will create loopback adapters for each player and assign them a static ip on the same subnet mask as your main network interface.
+   */
   ChangeIPPerInstanceAlt: boolean;
+  /**
+   * Run `Game.Play` after the instance has been launched instead of before. Changes to `Context.StartArguments` then have no effect. Don't combine with `Game.GamePlayBeforeGameSetup`: if both are true, `Game.Play` never runs.
+   */
   GamePlayAfterLaunch: boolean;
   /**
    * Do not copy files from original UserProfileConfigPath if using Nucleus Environment.
@@ -941,6 +946,9 @@ interface Game {
    */
   ForceProcessSearch: boolean;
   IgnoreWindowBorderCheck: boolean;
+  /**
+   * (undocumented)
+   */
   WriteToProcessMemory: string;
   /**
    * Automatically set up Nemirtinga's Epic Emulator in Nucleus
@@ -988,8 +996,7 @@ interface Game {
    */
   HardlinkFoldersTo: string[];
   /**
-   * Game.GamePlayAfterLaunch;				//Call the Game.Play function after the call has launched.
-   * Execute Game.Play function (context) before the majority of the game is setup.
+   * Run `Game.Play` before the majority of the instance is set up (Goldberg, XInput DLLs, ...) instead of after it. Don't combine with `Game.GamePlayAfterLaunch`: if both are true, `Game.Play` never runs.
    * @example Game.GamePlayBeforeGameSetup = false;
    */
   GamePlayBeforeGameSetup: boolean;
@@ -1084,6 +1091,9 @@ interface Game {
    * @example Game.DocumentsSavePathNoCopy = false;
    */
   DocumentsSavePathNoCopy: boolean;
+  /**
+   * (undocumented)
+   */
   FlawlessWidescreenPluginPath: string;
   /**
    * When using Game.XInputPlusDll, you can specify to use the previous version instead of latest (needed for some games).
@@ -1325,15 +1335,15 @@ interface Game {
   ToggleUnfocusOnInputsLock: boolean;
   CustomHotkeys: string[];
   /**
-   * Called when the first custom hotkey from `Game.CustomHotkeys` is pressed.
+   * Called when the first custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
    */
   OnCustomHotKey_1: (() => void) | null;
   /**
-   * Called when the second custom hotkey from `Game.CustomHotkeys` is pressed.
+   * Called when the second custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
    */
   OnCustomHotKey_2: (() => void) | null;
   /**
-   * Called when the third custom hotkey from `Game.CustomHotkeys` is pressed.
+   * Called when the third custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
    */
   OnCustomHotKey_3: (() => void) | null;
   readonly HandlerType: any;
@@ -2036,7 +2046,6 @@ interface Context {
    */
   UseProcessor: string;
   /**
-   * Game.WriteToProcessMemory 				//(undocumented)
    * Sets the overall priority category for the associated process. Can be "AboveNormal", "High" or "RealTime" | default: "Normal".
    *
    * Copied from `Game.ProcessorPriorityClass` for the current instance.
@@ -2609,7 +2618,7 @@ interface Context {
   /**
    * Returns a random alphanumeric string of the given length.
    */
-  RandomString(size: number, lowerCase?: boolean): string;
+  RandomString(size: number, lowerCase: boolean): string;
   ConvertToInt(num: string | number | boolean): number;
   ConvertToInt(num: any): number;
   ConvertToString(str: any): string;
