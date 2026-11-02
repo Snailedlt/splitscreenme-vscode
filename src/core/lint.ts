@@ -96,16 +96,16 @@ const REQUIRED = ['GUID', 'GameName', 'ExecutableName'] as const;
 
 // Built-ins newer than ES5 that Jint 2.11.58 does not have (each one checked against the
 // real engine: calling it throws "Object has no method '<name>'" or "<name> is not defined").
-const MISSING_STATIC: Record<string, string[]> = {
+export const MISSING_STATIC: Record<string, string[]> = {
   Object: ['assign', 'entries', 'values', 'is', 'fromEntries'],
   Array: ['from', 'of'],
-  Number: ['isInteger', 'isNaN', 'isFinite', 'parseFloat', 'parseInt'],
+  Number: ['isInteger', 'isNaN', 'isFinite', 'parseFloat', 'parseInt', 'EPSILON'],
   Math: ['trunc', 'sign', 'log2', 'log10', 'cbrt', 'hypot'],
   String: ['fromCodePoint'],
 };
-const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Symbol', 'Reflect', 'Proxy']);
+export const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Symbol', 'Reflect', 'Proxy']);
 // String/Array methods. The receiver's type is unknown statically, so these are warnings.
-const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
+export const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
 
 export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -474,7 +474,10 @@ class Analyzer {
       }
       this.report({
         rule: 'missing-builtin',
-        message: `\`${obj.name}.${name}\` does not exist in Nucleus (${engine} has only the ES5 built-ins); calling it throws "Object has no method '${name}'".`,
+        message:
+          ctx.parent?.type === 'CallExpression' && ctx.parent.callee === n
+            ? `\`${obj.name}.${name}\` does not exist in Nucleus (${engine} has only the ES5 built-ins); calling it throws "Object has no method '${name}'".`
+            : `\`${obj.name}.${name}\` is \`undefined\` in Nucleus (${engine} has only the ES5 built-ins).`,
         start: n.start,
         end: n.end,
         fixes,
