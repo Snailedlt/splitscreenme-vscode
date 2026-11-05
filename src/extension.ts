@@ -6,6 +6,7 @@ import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULE
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
 import { fixAll } from './core/fix';
+import { lintPluginsFor } from './plugins';
 
 const SOURCE = 'nucleus';
 const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
@@ -60,7 +61,7 @@ export function activate(context: vscode.ExtensionContext) {
           collection.delete(doc.uri);
           return;
         }
-        collection.set(doc.uri, toVsDiagnostics(doc, lint(doc.getText(), { rules: ruleOverrides() })));
+        collection.set(doc.uri, toVsDiagnostics(doc, lint(doc.getText(), { rules: ruleOverrides(), plugins: doc.uri.scheme === 'file' ? lintPluginsFor(doc.uri.fsPath) : undefined })));
       }, delay),
     );
   };
@@ -106,7 +107,7 @@ export function activate(context: vscode.ExtensionContext) {
     lintFiles: (entries) => {
       for (const { uri, text } of entries) {
         const fake = { getText: () => text, positionAt: offsetToPosition(text) } as unknown as vscode.TextDocument;
-        collection.set(uri, toVsDiagnostics(fake, lint(text, { rules: ruleOverrides() })));
+        collection.set(uri, toVsDiagnostics(fake, lint(text, { rules: ruleOverrides(), plugins: uri.scheme === 'file' ? lintPluginsFor(uri.fsPath) : undefined })));
       }
     },
   });

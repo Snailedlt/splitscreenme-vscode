@@ -81,6 +81,10 @@ export const RULES = {
     severity: 'warning',
     description: 'With Proto Input and multiple keyboards/mice, the legacy input options (Game.HookGetCursorPos, Game.SendNormalMouseInput, ...) must be set to false; several default to true and would run alongside Proto Input.',
   },
+  'undefined-name': {
+    severity: 'error',
+    description: 'A name the handler never declares and Nucleus doesn\'t provide (a typo, a stray word, a variable from another handler). Reading it throws "<name> is not defined": at the top level Nucleus can\'t load the handler, inside a callback it stops there.',
+  },
   'missing-builtin': {
     severity: 'error',
     description: 'Jint 2.x only has the ES5 standard library (plus String padStart/padEnd). Newer built-ins such as `Object.assign`, `Array.from`, `Map`, `"…".includes()` or `[].find()` do not exist and throw when the code runs.',
@@ -122,6 +126,21 @@ export interface Diagnostic {
 export interface LintOptions {
   /** Per-rule severity override, or 'off'. */
   rules?: Partial<Record<RuleId, Severity | 'off'>>;
+  /** The globals the handler's plugins add (pluginGlobals() of its `<Game.Folder>/pluginsInfo.txt`), when
+   *  the host can see that folder. Undefined: unknown, so an unknown `Name.Member` is only a warning. */
+  plugins?: string[];
+}
+
+/** Nucleus loads the DLLs a handler lists in `<Game.Folder>/pluginsInfo.txt` and adds each as a global
+ *  (GenericGameInfo.LoadCustomAssemblies): entries split by "|", fields by "#", the name is field 1
+ *  ("#TriggerFix#HLT.dll#XToKey.Sender" adds `TriggerFix`, with `TriggerFix.Sender`). */
+export function pluginGlobals(pluginsInfo: string): string[] {
+  // The same parse as core/sim.ts parsePluginsInfo (which Try it uses): an entry needs a name and a DLL.
+  return pluginsInfo
+    .split('|')
+    .map((e) => e.trim().split('#'))
+    .filter((d) => d.length >= 3 && !!d[1])
+    .map((d) => d[1]);
 }
 
 type Node = acorn.Node & Record<string, any>;
@@ -138,6 +157,15 @@ export const MISSING_STATIC: Record<string, string[]> = {
   Math: ['trunc', 'sign', 'log2', 'log10', 'cbrt', 'hypot'],
   String: ['fromCodePoint'],
 };
+// What a handler can name without declaring it: the ES5 globals Jint 2.x has (plus `arguments` in a
+// function), on top of what Nucleus provides (api.globals: Game, Context, Nucleus, System, ...).
+const ES5_GLOBALS = new Set([
+  'Object', 'Function', 'Array', 'String', 'Boolean', 'Number', 'Math', 'Date', 'RegExp', 'JSON',
+  'Error', 'EvalError', 'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent',
+  'escape', 'unescape', 'eval', 'undefined', 'NaN', 'Infinity', 'arguments',
+]);
+
 export const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Symbol', 'Reflect', 'Proxy']);
 // String/Array methods. The receiver's type is unknown statically, so these are warnings.
 export const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
@@ -166,7 +194,7 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
     return finalize(out, text, comments, options);
   }
 
-  new Analyzer(text, program, out).run();
+  new Analyzer(text, program, out, options.plugins).run();
   return finalize(out, text, comments, options);
 }
 
@@ -193,6 +221,8 @@ class Analyzer {
   private declared = new Set<string>();
   /** Property names the handler defines itself (`{ find: ... }`, `x.find = ...`). */
   private ownProps = new Set<string>();
+  /** Names of named function expressions (`var f = function g() { g(); }`): only visible inside. */
+  private fnExprNames = new Set<string>();
   /** Top-level assignments keyed by chain ("Game.Hook.ForceFocus"). */
   private topAssignments = new Map<string, Node[]>();
   private gameAssignedAnywhere = new Set<string>();
@@ -201,6 +231,7 @@ class Analyzer {
     private text: string,
     private program: Node,
     private out: Diagnostic[],
+    private plugins?: string[],
   ) {}
 
   run() {
@@ -227,7 +258,10 @@ class Analyzer {
     visit(this.program, (n) => {
       if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier') add(n.id.name, n.init);
       else if (n.type === 'AssignmentExpression' && n.operator === '=' && n.left.type === 'Identifier') add(n.left.name, n.right);
-      else if ((n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') && n.params) {
+      else if (n.type === 'CatchClause' && n.param?.type === 'Identifier') add(n.param.name, null);
+      else if ((n.type === 'ForInStatement' || n.type === 'ForOfStatement') && n.left.type === 'Identifier') add(n.left.name, null);
+      else if (n.type === 'FunctionExpression' && n.id?.type === 'Identifier') this.fnExprNames.add(n.id.name);
+      if ((n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') && n.params) {
         if (n.id?.type === 'Identifier' && n.type === 'FunctionDeclaration') add(n.id.name, null);
         for (const p of n.params) if (p.type === 'Identifier') add(p.name, null);
       }
@@ -319,6 +353,7 @@ class Analyzer {
       case 'Identifier':
         this.checkCallbackOnly(n, ctx);
         this.checkMissingGlobal(n, ctx);
+        this.checkUndefinedName(n, ctx);
         break;
       case 'MemberExpression':
         this.checkMissingBuiltin(n, ctx);
@@ -524,6 +559,41 @@ class Analyzer {
       message: `\`${n.name}\` does not exist in Nucleus (Jint ${api.jint ?? '2.x'} has only the ES5 built-ins); using it throws "${n.name} is not defined". Use a plain object or array instead.`,
       start: n.start,
       end: n.end,
+    });
+  }
+
+  /** `"system.cfg", sdfsdf`: a name nothing declares. Jint throws "sdfsdf is not defined". */
+  private checkUndefinedName(n: Node, ctx: Ctx) {
+    const name: string = n.name;
+    if (ctx.inTypeof || this.declared.has(name) || this.fnExprNames.has(name)) return;
+    if (api.globals[name] || ES5_GLOBALS.has(name) || MISSING_GLOBALS.has(name) || this.plugins?.includes(name)) return;
+    if (!this.isReference(n, ctx.parent)) return;
+    // `TriggerFix.Sender.PushKey(...)`: with the handler's folder out of sight, it may be a plugin.
+    const asObject = ctx.parent?.type === 'MemberExpression' && ctx.parent.object === n;
+    const maybePlugin = asObject && this.plugins === undefined;
+    // `x = 1` makes a global (outside strict mode); collectBindings already counts it as declared.
+    const s = suggest(name, [...this.declared, ...this.fnExprNames, ...Object.keys(api.globals).filter((g) => !api.globals[g].hidden)]);
+    const where =
+      ctx.fnDepth === 0
+        ? 'Nucleus runs this line when it loads the handler, so the handler fails to load'
+        : 'Nucleus stops with an error when this line runs (in `Game.Play`, that ends the session)';
+    if (maybePlugin) {
+      this.report({
+        rule: 'undefined-name',
+        severity: 'warning',
+        message: `\`${name}\` is not defined in the handler and Nucleus doesn't provide it, unless it's a plugin: one listed in \`pluginsInfo.txt\` in the handler's folder ("#${name}#MyLib.dll#MyLib.MyClass"). If it isn't, using it throws "${name} is not defined". ${where}.${s ? ` Did you mean \`${s}\`?` : ''}`,
+        start: n.start,
+        end: n.end,
+      });
+      return;
+    }
+    this.report({
+      rule: 'undefined-name',
+      message: `\`${name}\` is not defined anywhere: nothing in the handler declares it and Nucleus doesn't provide it. Reading it throws "${name} is not defined". ${where}.${s ? ` Did you mean \`${s}\`?` : ' Remove it, or declare it with `var`.'}`,
+      start: n.start,
+      end: n.end,
+      // A guess, so never applied by Fix all.
+      fixes: s ? [{ title: `Change to ${s}`, edits: [{ start: n.start, end: n.end, text: s }] }] : undefined,
     });
   }
 

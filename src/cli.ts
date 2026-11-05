@@ -1,5 +1,6 @@
 // `nucleus`: command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
 // `nucleus-lint <paths>` is kept as a shortcut for `nucleus lint <paths>`.
+import { lintPluginsFor } from './plugins';
 import fs from 'node:fs';
 import path from 'node:path';
 import { lint, lineOf, lineStart, RULES, RuleId, Severity, LintOptions, looksLikeHandler } from './core/lint';
@@ -160,15 +161,16 @@ function cmdLint(args: Args, json: boolean): number {
     if (!all && !files.includes(file) && !looksLikeHandler(text)) continue;
     linted++;
     let fixed: { rule: string; title: string; line: number }[] = [];
+    const fileOptions = { ...options, plugins: lintPluginsFor(file) };
     if (fixMode) {
-      const r = fixAll(text, options);
+      const r = fixAll(text, fileOptions);
       fixed = r.applied;
       if (r.code !== text) {
         if (fixMode === 'write') fs.writeFileSync(file, (original.startsWith('﻿') ? '﻿' : '') + r.code);
         text = r.code;
       }
     }
-    const diags = lint(text, options).filter((d) => (quiet ? d.severity === 'error' : verbose || d.severity !== 'hint'));
+    const diags = lint(text, fileOptions).filter((d) => (quiet ? d.severity === 'error' : verbose || d.severity !== 'hint'));
     for (const d of diags) {
       if (d.severity === 'error') errors++;
       else if (d.severity === 'warning') warnings++;

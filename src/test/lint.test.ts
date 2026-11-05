@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
-import { lint, Diagnostic, Fix, looksLikeHandler } from '../core/lint';
+import { lint, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
 import { fixAll } from '../core/fix';
 import { membersOf } from '../core/api';
 import { memberContextAt } from '../core/complete';
@@ -489,4 +489,39 @@ test('a historical option from the original Nucleus Coop: a warning that says so
   assert.deepEqual(d[0].tags, ['deprecated']);
   assert.doesNotMatch(d[0].message, /Did you mean/);
   assert.equal(apply(`${HEADER}Game.ForceFinishOnPlay = true;\n`, d[0].fixes![0]), HEADER);
+});
+
+test('undefined-name: a stray word in a list, at the top level and in Game.Play', () => {
+  const top = only(`${HEADER}Game.FileSymlinkCopyInstead = [\n  "system.cfg",sdfsdf\n];\n`, 'undefined-name');
+  assert.equal(top.length, 1);
+  assert.equal(top[0].severity, 'error');
+  assert.match(top[0].message, /sdfsdf is not defined/);
+  assert.match(top[0].message, /fails to load/);
+  const inPlay = only(`${HEADER}Game.Play = function () {\n  Context.StartArguments = argz;\n};\n`, 'undefined-name');
+  assert.equal(inPlay.length, 1);
+  assert.match(inPlay[0].message, /ends the session/);
+});
+
+test('undefined-name: a typo of a variable suggests it, but Fix all leaves it alone', () => {
+  const code = `${HEADER}Game.Play = function () {\n  var args = "-w";\n  Context.StartArguments = arsg;\n};\n`;
+  const d = only(code, 'undefined-name');
+  assert.match(d[0].message, /Did you mean `args`/);
+  assert.equal(d[0].fixes![0].preferred, undefined);
+  assert.equal(fixAll(code).code, code);
+});
+
+test('undefined-name: no false positives', () => {
+  const code = `${HEADER}var list = [];\nfunction helper(a) { return a + 1; }\nvar f = function self(n) { return n ? self(n - 1) : 0; };\nfor (k in { a: 1 }) list.push(k);\ntry { helper(1); } catch (e) { list.push(e.message); }\nif (typeof maybe === "undefined") list.push(Math.max(1, parseInt("2")));\nglobalThing = 1;\nlist.push(globalThing, JSON.stringify(list), isNaN(NaN), undefined, Infinity);\nGame.Play = function () { var n = arguments.length; Context.StartArguments = String(n) + System.IO.Path.Combine("a", "b"); };\n`;
+  assert.deepEqual(only(code, 'undefined-name'), []);
+});
+
+test('undefined-name: plugins from pluginsInfo.txt are globals; unseen ones are only a warning', () => {
+  const code = `${HEADER}Game.Play = function () {\n  TriggerFix.Sender.PushKey(Game.Folder);\n};\n`;
+  assert.deepEqual(pluginGlobals('#TriggerFix#HLT.dll#XToKey.Sender|#Other#B.dll#B.C'), ['TriggerFix', 'Other']);
+  assert.deepEqual(lint(code, { plugins: ['TriggerFix'] }).filter((d) => d.rule === 'undefined-name'), []);
+  const unseen = lint(code).filter((d) => d.rule === 'undefined-name');
+  assert.equal(unseen.length, 1);
+  assert.equal(unseen[0].severity, 'warning');
+  assert.match(unseen[0].message, /pluginsInfo\.txt/);
+  assert.equal(lint(code, { plugins: [] }).filter((d) => d.rule === 'undefined-name')[0].severity, 'error');
 });
