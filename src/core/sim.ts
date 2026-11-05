@@ -450,6 +450,20 @@ function engineError(e: any): string {
   return `${e?.name ?? 'Error'}: ${msg}`;
 }
 
+/** The folder a Hub install gives the handler (DownloadPrompt.ExtractHandler): `handlers\<GameName>`, from the
+ *  first raw line starting with game.gamename, between its first and last ", minus / : * ? " < > |.
+ *  A handler copied by hand into handlers\ gets its .js file name instead. */
+export function hubFolderName(src: string): string {
+  for (const line of src.split(/\r?\n/)) {
+    if (!line.toLowerCase().startsWith('game.gamename')) continue;
+    const a = line.indexOf('"');
+    const b = line.lastIndexOf('"');
+    const name = a >= 0 && b > a ? line.slice(a + 1, b).replace(/[\/:*?"<>|]/g, '') : '';
+    return name || 'MyHandler';
+  }
+  return 'MyHandler';
+}
+
 export function simulate(src: string, opt: SimOptions): SimResult {
   const result: SimResult = { loaded: false, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opt.players };
   const blocker = lint(src).find((d) => d.severity === 'error' && LOAD_BLOCKERS.has(d.rule));
@@ -465,7 +479,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     AddOption: (name: string, desc: string, key: string, value: unknown) => {
       options.push({ key, values: value });
     },
-    Folder: 'C:\\Nucleus\\handlers\\MyHandler',
+    Folder: `C:\\Nucleus\\handlers\\${hubFolderName(src)}`,
   });
   const hub = gameStore.Hub;
   const scope: Record<string, unknown> = {
@@ -632,7 +646,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
         Nickname: nick, IsKeyboardPlayer: isKb(i), HasKeyboardPlayer: everyKb || opt.keyboardPlayer >= 0,
         GamepadId: gamepad + 1, AspectRatioDecimal: w / h, AspectRatio: ratio(w, h), OrigAspectRatioDecimal: opt.width / opt.height,
         OrigAspectRatio: ratio(opt.width, opt.height), Arch: 'x64', Options: options, PlayerSteamID: String(76561199000000000n + BigInt(i)),
-        HandlerGUID: ctxStore.__guid, NucleusFolder: 'C:\\Nucleus', ScriptFolder: 'C:\\Nucleus\\handlers\\MyHandler',
+        HandlerGUID: ctxStore.__guid, NucleusFolder: 'C:\\Nucleus', ScriptFolder: `C:\\Nucleus\\handlers\\${hubFolderName(src)}`,
         HandlersFolder: 'C:\\Nucleus\\handlers', UtilFolder: 'C:\\Nucleus\\utils',
         NucleusEnvironmentRoot: 'C:\\Users\\me', NucleusDocumentsRoot: 'C:\\Users\\me\\Documents',
         PlayerGameFilesBackupFolder: `C:\\Users\\me\\NucleusCoop\\_Game Files Backup_\\${ctxStore.__guid}\\${nick}`,

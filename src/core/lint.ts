@@ -81,6 +81,14 @@ export const RULES = {
     severity: 'warning',
     description: 'With Proto Input and multiple keyboards/mice, the legacy input options (Game.HookGetCursorPos, Game.SendNormalMouseInput, ...) must be set to false; several default to true and would run alongside Proto Input.',
   },
+  'guid-changed': {
+    severity: 'warning',
+    description: 'Game.GUID differs from the version published on the Hub. Nucleus keys a user\'s game, its profiles, cover and content folder by GUID, so updating drops the game from their list and loses their profiles.',
+  },
+  'file-encoding': {
+    severity: 'warning',
+    description: 'The file isn\'t valid UTF-8 (often an ANSI / Windows-1252 file with accented letters). Nucleus reads handlers as UTF-8, so those characters arrive as \u{FFFD} in names, paths and messages.',
+  },
   'undefined-name': {
     severity: 'error',
     description: 'A name the handler never declares and Nucleus doesn\'t provide (a typo, a stray word, a variable from another handler). Reading it throws "<name> is not defined": at the top level Nucleus can\'t load the handler, inside a callback it stops there.',
@@ -129,6 +137,8 @@ export interface LintOptions {
   /** The globals the handler's plugins add (pluginGlobals() of its `<Game.Folder>/pluginsInfo.txt`), when
    *  the host can see that folder. Undefined: unknown, so an unknown `Name.Member` is only a warning. */
   plugins?: string[];
+  /** The version of this handler published on the Hub (same Hub.Handler.Id), when the host has it. */
+  published?: { version?: number; guid?: string };
 }
 
 /** Nucleus loads the DLLs a handler lists in `<Game.Folder>/pluginsInfo.txt` and adds each as a global
@@ -194,7 +204,7 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
     return finalize(out, text, comments, options);
   }
 
-  new Analyzer(text, program, out, options.plugins).run();
+  new Analyzer(text, program, out, options.plugins, options.published).run();
   return finalize(out, text, comments, options);
 }
 
@@ -232,6 +242,7 @@ class Analyzer {
     private program: Node,
     private out: Diagnostic[],
     private plugins?: string[],
+    private published?: LintOptions['published'],
   ) {}
 
   run() {
@@ -244,6 +255,36 @@ class Analyzer {
     this.checkExeName();
     this.checkProtoInputLegacy();
     this.checkGuid();
+    this.checkPublishedGuid();
+    this.checkEncoding();
+  }
+
+  /** U+FFFD: what invalid UTF-8 turns into when the file is read (Nucleus reads handlers as UTF-8). */
+  private checkEncoding() {
+    const i = this.text.indexOf('\uFFFD');
+    if (i < 0) return;
+    const count = this.text.split('\uFFFD').length - 1;
+    this.report({
+      rule: 'file-encoding',
+      message: `This file has ${count === 1 ? "a character that isn't" : `${count} characters that aren't`} valid UTF-8 (\`\u{FFFD}\`), usually because it was saved as ANSI / Windows-1252. Nucleus reads handlers as UTF-8, so accented letters in names, paths and messages arrive broken. Save the file as UTF-8 and retype them.`,
+      start: i,
+      end: i + 1,
+    });
+  }
+
+  /** A changed GUID drops the game for everyone who updates (GameManager keys user games by GUID). */
+  private checkPublishedGuid() {
+    const was = this.published?.guid;
+    const nodes = this.topAssignments.get('Game.GUID');
+    const n = nodes?.[nodes.length - 1];
+    if (!was || !n || n.right.type !== 'Literal' || typeof n.right.value !== 'string' || n.right.value === was) return;
+    this.report({
+      rule: 'guid-changed',
+      message: `\`Game.GUID\` was ${JSON.stringify(was)} in the version on the Hub${this.published?.version ? ` (v${this.published.version})` : ''}. Nucleus keys a user's game, its profiles, cover and content folder by GUID: after this update their game disappears from the list and their profiles are lost. Keep the old GUID unless you mean to start over.`,
+      start: n.right.start,
+      end: n.right.end,
+      fixes: [{ title: `Keep the published GUID (${was})`, edits: [{ start: n.right.start, end: n.right.end, text: JSON.stringify(was) }] }],
+    });
   }
 
   // ---- bindings / aliases ------------------------------------------------
@@ -1219,6 +1260,19 @@ class Analyzer {
       });
       reported.add('ExecutableName');
     }
+    // DownloadPrompt.ExtractHandler names the file and folder handlers\<GameName>(.js), removing only
+    // / : * ? " < > | (a raw line value, so `\\` in the source is two backslashes).
+    const gn = scan.GameName;
+    if (gn?.value && !reported.has('GameName') && gn.value.includes('\\')) {
+      this.report({
+        rule: 'hub-install-parse',
+        severity: 'error',
+        message: `Installing this handler from the Hub fails: Nucleus names the handler file after \`Game.GameName\` (\`handlers\\${gn.value}.js\`) and removes only / : * ? " < > |, so the backslash makes a folder that doesn't exist. Leave backslashes out of the game name.`,
+        start: gn.offset,
+        end: lineEnd(this.text, gn.offset),
+      });
+      reported.add('GameName');
+    }
     for (const key of ['ExecutableName', 'GameName'] as const) {
       if (reported.has(key)) continue;
       const nodes = this.topAssignments.get(`Game.${key}`);
@@ -1319,6 +1373,17 @@ class Analyzer {
           message: 'The values of `Game.AddOption` must be a list, e.g. `["Low", "High"]` (or `[]` for free text, or a `Nucleus.*` enum value). With anything else, Nucleus\' options screen fails when it shows this option.',
           start: value.start,
           end: value.end,
+        });
+      }
+      // GameProfile.LoadGameProfile reads options back with JToken.ToString(): true becomes "True", 2 "2".
+      const nonText = value?.type === 'ArrayExpression' ? value.elements.find((el: Node | null) => el && el.type === 'Literal' && (typeof el.value === 'boolean' || typeof el.value === 'number')) : undefined;
+      if (nonText) {
+        const shown = value.elements.map((el: Node | null) => (el?.type === 'Literal' && typeof el.value === 'boolean' ? (el.value ? 'True' : 'False') : el?.type === 'Literal' ? String(el.value) : '…'));
+        this.report({
+          rule: 'type-mismatch',
+          message: `With a saved profile, Nucleus gives this option back as text (${shown.map((x: string) => JSON.stringify(x)).join(', ')}): a profile stores every option with ToString(). So \`Context.Options["${keyText ?? 'key'}"] == ${nonText.raw}\` works the first time and stops matching once players use a profile. Use text values, e.g. \`["Yes", "No"]\`, and compare with the text.`,
+          start: nonText.start,
+          end: nonText.end,
         });
       }
       if (keyText !== undefined) {

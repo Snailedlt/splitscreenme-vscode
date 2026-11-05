@@ -7,6 +7,7 @@ import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
 import { fixAll } from './core/fix';
 import { lintPluginsFor } from './plugins';
+import { publishedNow } from './published';
 
 const SOURCE = 'nucleus';
 const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
@@ -61,7 +62,10 @@ export function activate(context: vscode.ExtensionContext) {
           collection.delete(doc.uri);
           return;
         }
-        collection.set(doc.uri, toVsDiagnostics(doc, lint(doc.getText(), { rules: ruleOverrides(), plugins: doc.uri.scheme === 'file' ? lintPluginsFor(doc.uri.fsPath) : undefined })));
+        const text = doc.getText();
+        // The Hub's published version, for guid-changed: fetched once (cached), then this runs again.
+        const published = config().get('lint.compareWithHub', true) ? publishedNow(text, () => refresh(doc, 0)) : undefined;
+        collection.set(doc.uri, toVsDiagnostics(doc, lint(text, { rules: ruleOverrides(), plugins: doc.uri.scheme === 'file' ? lintPluginsFor(doc.uri.fsPath) : undefined, published })));
       }, delay),
     );
   };

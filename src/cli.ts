@@ -1,6 +1,7 @@
 // `nucleus`: command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
 // `nucleus-lint <paths>` is kept as a shortcut for `nucleus lint <paths>`.
 import { lintPluginsFor } from './plugins';
+import { publishedFor } from './published';
 import fs from 'node:fs';
 import path from 'node:path';
 import { lint, lineOf, lineStart, RULES, RuleId, Severity, LintOptions, looksLikeHandler } from './core/lint';
@@ -57,6 +58,7 @@ Lint options:
   --verbose                   Also report hints (e.g. deprecated options)
   --fix                       Apply every safe automatic fix and save the files (deterministic, no AI)
   --fix-dry-run               Show what --fix would change, without saving
+  --hub                       Compare Game.GUID with the version on the Hub (handlers with a Hub.Handler.Id; cached)
 
 Exit code: 1 when lint finds errors, a simulated handler fails to load or run, or a command
 fails; 2 on bad usage.`;
@@ -67,7 +69,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -127,7 +129,7 @@ async function main(argv: string[]): Promise<number> {
 
 // ---------------------------------------------------------------------------
 
-function cmdLint(args: Args, json: boolean): number {
+async function cmdLint(args: Args, json: boolean): Promise<number> {
   const options: LintOptions = { rules: {} };
   for (const r of args.flags.get('--rule') ?? []) {
     const [id, sev] = r.split('=');
@@ -161,7 +163,7 @@ function cmdLint(args: Args, json: boolean): number {
     if (!all && !files.includes(file) && !looksLikeHandler(text)) continue;
     linted++;
     let fixed: { rule: string; title: string; line: number }[] = [];
-    const fileOptions = { ...options, plugins: lintPluginsFor(file) };
+    const fileOptions = { ...options, plugins: lintPluginsFor(file), published: has(args, '--hub') ? await publishedFor(text) : undefined };
     if (fixMode) {
       const r = fixAll(text, fileOptions);
       fixed = r.applied;

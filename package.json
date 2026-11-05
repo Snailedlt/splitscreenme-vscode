@@ -181,6 +181,11 @@
           "default": true,
           "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, \u2026)."
         },
+        "splitscreenme.lint.compareWithHub": {
+          "type": "boolean",
+          "default": true,
+          "description": "For a handler with a Hub.Handler.Id line, compare Game.GUID with the version published on hub.splitscreen.me (guid-changed). Downloads that version once and keeps it in the cache."
+        },
         "splitscreenme.lint.rules": {
           "type": "object",
           "default": {},
@@ -297,6 +302,26 @@
               ]
             },
             "callback-misuse": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "guid-changed": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "file-encoding": {
               "type": "string",
               "enum": [
                 "error",

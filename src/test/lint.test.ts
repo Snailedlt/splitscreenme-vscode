@@ -525,3 +525,36 @@ test('undefined-name: plugins from pluginsInfo.txt are globals; unseen ones are 
   assert.match(unseen[0].message, /pluginsInfo\.txt/);
   assert.equal(lint(code, { plugins: [] }).filter((d) => d.rule === 'undefined-name')[0].severity, 'error');
 });
+
+test('AddOption with true/false or numbers: a saved profile gives them back as text', () => {
+  const d = only(`${HEADER}Game.AddOption("Split", "", "split", [true, false]);\n`, 'type-mismatch');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /"True", "False"/);
+  assert.deepEqual(only(`${HEADER}Game.AddOption("Split", "", "split", ["Yes", "No"]);\n`, 'type-mismatch'), []);
+});
+
+test('hub-install-parse: a backslash in GameName breaks the Hub install', () => {
+  const code = HEADER.replace(/Game\.GameName = "[^"]*";/, 'Game.GameName = "My\\\\Game";');
+  const d = only(code, 'hub-install-parse');
+  assert.equal(d.length, 1);
+  assert.equal(d[0].severity, 'error');
+  assert.match(d[0].message, /backslash/);
+});
+
+test('file-encoding: text that was not valid UTF-8', () => {
+  const d = only(`${HEADER}Game.Description = "Caf�";\n`, 'file-encoding');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /UTF-8/);
+  assert.deepEqual(only(`${HEADER}Game.Description = "Café";\n`, 'file-encoding'), []);
+});
+
+test('guid-changed: compared with the published version when the host has it', () => {
+  const code = `Hub.Handler.Id = "abc123";\n${HEADER}`;
+  const guid = /Game\.GUID = "([^"]*)"/.exec(HEADER)![1];
+  const d = lint(code, { published: { version: 3, guid: 'Old Guid' } }).filter((x) => x.rule === 'guid-changed');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /"Old Guid".*v3/);
+  assert.equal(apply(code, d[0].fixes![0]).includes('Game.GUID = "Old Guid"'), true);
+  assert.deepEqual(lint(code, { published: { guid } }).filter((x) => x.rule === 'guid-changed'), []);
+  assert.deepEqual(lint(code).filter((x) => x.rule === 'guid-changed'), []);
+});

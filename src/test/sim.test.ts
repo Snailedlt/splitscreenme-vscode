@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { simulate, sessionSummary, parsePluginsInfo, groupIgnored } from '../core/sim';
+import { simulate, sessionSummary, parsePluginsInfo, groupIgnored, hubFolderName } from '../core/sim';
 import { simulateIsolated } from '../sandbox';
 
 const HEADER = 'Game.GUID = "My Game";\nGame.GameName = "My Game";\nGame.ExecutableName = "game.exe";\n';
@@ -250,4 +250,9 @@ Game.Play = function () {
 `;
   const r = simulateIsolated(code, { players: 1, width: 1920, height: 1080, keyboardPlayer: -1 });
   assert.equal(r.players[0].startArguments, 'My Games\\Foo|My Games\\Foo|true|AppData\\Local\\Foo');
+});
+
+test('Game.Folder is the Hub install folder: handlers\\<GameName> without / : * ? " < > |', () => {
+  assert.equal(hubFolderName('Game.GUID = "x";\nGame.GameName = "Halo: The Master Chief Collection";\n'), 'Halo The Master Chief Collection');
+  assert.equal(hubFolderName('Game.GUID = "x";\n'), 'MyHandler');
 });

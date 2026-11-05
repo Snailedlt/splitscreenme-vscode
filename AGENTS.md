@@ -51,7 +51,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - Jint 2.11.58 only matches overloads with exactly as many parameters as arguments: C# default values are ignored, so the generator marks no parameter optional (probe 110).
 - The Hub install (DownloadPrompt.ExtractHandler; also HubWebView and drag & drop) scans raw lines, comments included, for `line.ToLower().StartsWith("game.executablename" / "game.gamename")`, takes the text between the first and last `"`, stops after two matches, and throws on a matched line with fewer than two `"`. `GameManager.AnyGame` (Search disks) reads `Game.ExecutableName` without a null check.
 - `Hub.*` lines (`Hub.Handler.Id/Version`, `Hub.Maintainer.*`) are written by hub.splitscreen.me on upload. Authors don't add or edit them: the model marks them `internal`/`hidden` (no completion), and the linter must stay quiet on them.
-- `.nc` packages: `handler.js` at the root, plus top-level folders that need **explicit directory entries**. `Game.Folder` is `handlers/<js file name without .js>/`.
+- `.nc` packages: `handler.js` at the root, plus top-level folders that need **explicit directory entries**. `Game.Folder` is `handlers/<js file name without .js>/`. A Hub install (DownloadPrompt.ExtractHandler) names that file after `Game.GameName` (raw line value, minus `/ : * ? " < > |`; a backslash stays and breaks the install) and merges the contents of every top-level folder of the package into `handlers/<GameName>/`; other files at the zip root are dropped. A saved profile gives every `Game.AddOption` value back as text (`GameProfile.LoadGameProfile`: `JToken.ToString()`), and Nucleus reads handlers as UTF-8. The simulator uses the Hub install's folder name.
 
 ## Changing lint rules
 
