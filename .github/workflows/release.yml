@@ -36,4 +36,5 @@ jobs:
         run: |
           case "$VERSION" in v*) ;; *) echo "Version must start with v"; exit 1;; esac
           pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
-          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes $pre
+          cp dist/cli.js nucleus.js
+          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js --target "$GITHUB_SHA" --title "$VERSION" --generate-notes $pre

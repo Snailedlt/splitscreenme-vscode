@@ -30,6 +30,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
+- `src/mcp.ts`: `nucleus mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
 - `plugin/`: the Claude Code plugin (`.claude-plugin/plugin.json`, `skills/nucleus-handler/`). `.claude-plugin/marketplace.json` at the root publishes it.

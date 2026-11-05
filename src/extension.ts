@@ -33,6 +33,19 @@ export function activate(context: vscode.ExtensionContext) {
   const collection = vscode.languages.createDiagnosticCollection(SOURCE);
   context.subscriptions.push(collection);
 
+  // AI agents in VS Code (Copilot agent mode, VS Code 1.101+): offer the handler tools as an MCP
+  // server, the bundled `nucleus mcp`, run by VS Code's own Node.
+  const lm = (vscode as any).lm;
+  const McpStdio = (vscode as any).McpStdioServerDefinition;
+  if (lm?.registerMcpServerDefinitionProvider && McpStdio) {
+    const cli = vscode.Uri.joinPath(context.extensionUri, 'dist', 'cli.js').fsPath;
+    context.subscriptions.push(
+      lm.registerMcpServerDefinitionProvider('nucleus', {
+        provideMcpServerDefinitions: () => [new McpStdio('Nucleus Co-op handler tools', process.execPath, [cli, 'mcp'], { ELECTRON_RUN_AS_NODE: '1' }, context.extension?.packageJSON?.version)],
+      }),
+    );
+  }
+
   const timers = new Map<string, NodeJS.Timeout>();
   const refresh = (doc: vscode.TextDocument, delay = 250) => {
     const key = doc.uri.toString();

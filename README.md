@@ -93,6 +93,31 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
 
 The skill loads automatically when you ask about Nucleus handlers.
 
+### MCP server (Claude Desktop, Cursor, VS Code Copilot, …)
+
+`nucleus mcp` serves the same tools over the [Model Context Protocol](https://modelcontextprotocol.io), for agents that can't run shell commands. Handler code only runs in the isolated simulator.
+
+| Tool | What it does |
+| --- | --- |
+| `nucleus_lint` | Every problem, with line, rule and available fixes |
+| `nucleus_fix` | Apply the safe automatic fixes; returns the fixed source (or saves it) |
+| `nucleus_simulate` | Try it: each player's window, launch arguments and file changes |
+| `nucleus_api` / `nucleus_api_search` | Type, default and docs of an option; search by words |
+| `nucleus_new_handler` | A lint-clean handler from the templates |
+| `nucleus_hub_search` / `nucleus_hub_handler` | Find Hub handlers; read a verified one as an example |
+| `nucleus_rules` | What each check does |
+
+It also offers the skill's guide as the `nucleus-handler` prompt.
+
+- **VS Code (Copilot agent mode):** nothing to set up. The extension registers the server (VS Code 1.101 or newer); turn it on under **MCP Servers** in the Extensions view or in the agent's tool picker.
+- **Anywhere else:** download `nucleus.js` from the [latest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) (one file, needs Node 18+), and add it to your client. For Claude Desktop (`claude_desktop_config.json`) or Cursor (`.cursor/mcp.json`):
+
+  ```json
+  { "mcpServers": { "nucleus": { "command": "node", "args": ["/path/to/nucleus.js", "mcp"] } } }
+  ```
+
+  Claude Code: `claude mcp add nucleus -- node /path/to/nucleus.js mcp` (or install the plugin above).
+
 ### Does the skill help? (evals)
 
 `plugin/evals/` holds six cases built from mistakes found in real handlers: write a UE4 handler from facts, fix a handler that doesn't load, the nonexistent `ProtoController5`+, `.includes()` in `Game.Play`, a review where `DPIHandling = true` hides a bug, and Hub-install lines. `claude plugin eval` runs each with and without the plugin. Its graders can only be regexes and model judges, so `scripts/eval-grade.mjs` then grades every handler the agent wrote with the real linter and Try it.
@@ -228,7 +253,8 @@ src/core/zip.ts         dependency-free zip reader/writer for .nc packages
 src/core/hub.ts         hub.splitscreen.me client
 src/extension.ts        VS Code providers
 src/commands.ts         VS Code commands
-src/cli.ts              nucleus-lint
+src/cli.ts              the nucleus CLI (nucleus-lint is an alias)
+src/mcp.ts              nucleus mcp: the tools as an MCP server
 scripts/generate-api.mjs
 ```
 

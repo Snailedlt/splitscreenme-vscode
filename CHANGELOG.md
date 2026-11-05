@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `nucleus mcp`: the tools as an MCP server for AI agents (Claude Desktop, Cursor, VS Code Copilot, …): lint, fix, simulate, API lookup and search, templates, Hub search and verified Hub handlers, plus the skill's guide as a prompt. The extension registers it with VS Code (1.101+), and releases now include a single-file `nucleus.js`.
 - Completion after `=` offers the option's values: enum values (`Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, …, the default preselected) and `true`/`false` for boolean options.
 
 ## 0.1.1 (beta)

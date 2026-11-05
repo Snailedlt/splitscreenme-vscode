@@ -8,8 +8,9 @@ import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { SimResult, sessionSummary, groupIgnored } from './core/sim';
 import { pluginsFor, simulateIsolated } from './sandbox';
+import { formatSimulation } from './simformat';
+import { serve } from './mcp';
 
 const HELP = `Usage: nucleus <command> [options]
 
@@ -35,6 +36,9 @@ Commands:
   init-agent [dir]            Install AI agent instructions and this tool into a handler folder
                               (AGENTS.md, CLAUDE.md, .claude/skills/nucleus-handler/)
   rules                       List lint rules
+  mcp                         Run as an MCP server (stdio) for AI agents: Claude Desktop, Cursor,
+                              VS Code Copilot, ... Tools: lint, fix, simulate, API lookup/search,
+                              templates, Hub search and verified Hub handlers
 
 Common options:
   --json                      Machine-readable output
@@ -76,7 +80,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules'];
+  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -107,6 +111,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdPackage(args, json);
     case 'init-agent':
       return cmdInitAgent(args, json);
+    case 'mcp':
+      return serve();
   }
   return 2;
 }
@@ -195,30 +201,6 @@ function cmdSimulate(args: Args, json: boolean): number {
   const failed = !r.loaded || r.players.some((p) => p.error) || r.callbacks.some((c) => c.error);
   print(json, { file, ...r }, () => formatSimulation(r, keyboardPlayer));
   return failed ? 1 : 0;
-}
-
-export function formatSimulation(r: SimResult, keyboardPlayer: number): string {
-  const out: string[] = [];
-  out.push(sessionSummary(r));
-  if (!r.loaded) out.push(`  ${r.loadError ?? ''}`);
-  const ignored = groupIgnored(r.ignored);
-  if (ignored.length) out.push('', `Settings Nucleus skips (${ignored.length}):`, ...ignored.map((s) => `  ${s}`));
-  for (const p of r.players) {
-    out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer ? 'keyboard & mouse' : 'controller'})`);
-    if (p.error) out.push(`  FAILS: ${p.error}`);
-    if (p.note) out.push(`  Note: ${p.note}`);
-    out.push(`  Window:       ${p.window}`, `  Starts with:  ${p.startArguments || '(nothing extra)'}`);
-    if (p.effects.length) out.push('  Changes before the game starts:', ...p.effects.map((e) => `    - ${e}`));
-    if (p.calls.length) out.push('  Recorded calls:', ...p.calls.map((c) => `    ${c}`));
-  }
-  for (const c of r.callbacks) {
-    out.push('', c.name);
-    if (c.error) out.push(`  FAILS: ${c.error}${c.note ? ` ${c.note}` : ''}`);
-    out.push(...c.calls.map((x) => `    ${x}`));
-  }
-  if (r.options.length) out.push('', `Options set (different from Nucleus' defaults):`, ...r.options.map((o) => `  ${o.path} = ${o.value}`));
-  out.push('', 'Simulated: no files, registry or processes were touched. Windows, focus and input still need a real test in Nucleus.');
-  return out.join('\n');
 }
 
 function cmdApi(args: Args, json: boolean): number {
