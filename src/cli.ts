@@ -10,6 +10,7 @@ import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
 import { pluginsFor, simulateIsolated } from './sandbox';
+import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 import { serve } from './mcp';
 
@@ -21,7 +22,7 @@ Commands:
                               "Context.ModifySaveFile", "KillMutex", "Nucleus.Folder"
   api --search <words>        Search API names and docs, e.g. "api --search mutex"
   api --markdown              Print the full API reference as Markdown
-  simulate <handler.js> [--players N] [--resolution 1920x1080] [--keyboard 1|none]
+  simulate <handler.js> [--players N] [--resolution 1920x1080] [--keyboard 1|all|none]
                               "Try it": load the handler and run Game.Play for each player the
                               way Nucleus would (emulating its Jint engine), without Nucleus or
                               the game. Shows each player's window, launch arguments and file
@@ -200,8 +201,9 @@ function cmdSimulate(args: Args, json: boolean): number {
   const res = (flag(args, '--resolution') ?? '1920x1080').match(/^(\d+)x(\d+)$/);
   if (!res) throw new Usage('--resolution must look like 1920x1080');
   const kbArg = flag(args, '--keyboard') ?? '1';
-  const keyboardPlayer = kbArg === 'none' ? -1 : Number(kbArg) - 1;
-  if (kbArg !== 'none' && (!Number.isInteger(keyboardPlayer) || keyboardPlayer < 0 || keyboardPlayer >= players)) throw new Usage(`--keyboard must be a player number (1-${players}) or "none"`);
+  // all: every player has their own keyboard and mouse (Nucleus' multiple keyboards and mice mode)
+  const keyboardPlayer = kbArg === 'none' ? -1 : kbArg === 'all' ? EVERY_KEYBOARD : Number(kbArg) - 1;
+  if (kbArg !== 'none' && kbArg !== 'all' && (!Number.isInteger(keyboardPlayer) || keyboardPlayer < 0 || keyboardPlayer >= players)) throw new Usage(`--keyboard must be a player number (1-${players}), "all" (each player their own) or "none"`);
   const src = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
   const r = simulateIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(file) });
   const failed = !r.loaded || r.players.some((p) => p.error) || r.callbacks.some((c) => c.error);

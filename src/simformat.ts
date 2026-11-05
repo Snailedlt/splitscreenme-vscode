@@ -1,14 +1,15 @@
 // Text output of a simulation ("Try it"), shared by the CLI and the MCP server.
-import { SimResult, sessionSummary, groupIgnored } from './core/sim';
+import { SimResult, sessionSummary, groupIgnored, EVERY_KEYBOARD } from './core/sim';
 
 export function formatSimulation(r: SimResult, keyboardPlayer: number): string {
   const out: string[] = [];
   out.push(sessionSummary(r));
   if (!r.loaded) out.push(`  ${r.loadError ?? ''}`);
+  if (r.inputNote) out.push(`  Note: ${r.inputNote}`);
   const ignored = groupIgnored(r.ignored);
   if (ignored.length) out.push('', `Settings Nucleus skips (${ignored.length}):`, ...ignored.map((s) => `  ${s}`));
   for (const p of r.players) {
-    out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer ? 'keyboard & mouse' : 'controller'})`);
+    out.push('', `Player ${p.index + 1} (${p.index === keyboardPlayer || keyboardPlayer === EVERY_KEYBOARD ? 'keyboard & mouse' : 'controller'})`);
     if (p.error) out.push(`  FAILS: ${p.error}`);
     if (p.note) out.push(`  Note: ${p.note}`);
     out.push(`  Window:       ${p.window}`, `  Starts with:  ${p.startArguments || '(nothing extra)'}`);

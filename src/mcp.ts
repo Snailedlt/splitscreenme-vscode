@@ -13,6 +13,7 @@ import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
 import { pluginsFor, simulateIsolated } from './sandbox';
+import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 
 declare const __VERSION__: string;
@@ -95,14 +96,14 @@ export const TOOLS: Tool[] = [
         players: { type: 'integer', minimum: 1, maximum: 16, default: 2 },
         width: { type: 'integer', default: 1920, description: 'Monitor width' },
         height: { type: 'integer', default: 1080, description: 'Monitor height' },
-        keyboardPlayer: { type: 'integer', minimum: 0, default: 1, description: 'Which player (1-based) uses keyboard and mouse; 0 for nobody.' },
+        keyboardPlayer: { type: 'integer', minimum: -1, default: 1, description: 'Which player (1-based) uses keyboard and mouse; 0 for nobody; -1 for every player with their own keyboard and mouse (needs Game.SupportsMultipleKeyboardsAndMice).' },
       },
     },
     annotations: { readOnlyHint: true },
     run: (a) => {
       const { text, file } = readSource(a);
       const players = a.players ?? 2;
-      const kb = (a.keyboardPlayer ?? 1) - 1;
+      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : (a.keyboardPlayer ?? 1) - 1;
       const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
       return { text: formatSimulation(r, kb), data: r };
     },
