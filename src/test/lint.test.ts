@@ -405,3 +405,10 @@ test('Player.ProtoController5+ explained, with a safe removal', () => {
   // a call on the right-hand side is kept out of Fix all (removing it would skip the call)
   assert.equal(only(HEADER + 'Game.Play = function () { Player.ProtoController5 = Context.GetFolder(0); };\n', 'unknown-member')[0].fixes, undefined);
 });
+
+test('let then var redeclaration loads in Jint (probe 112): no syntax error, real duplicates still fail', () => {
+  const src = 'Game.GUID = "P";\nGame.GameName = "P";\nGame.ExecutableName = "p.exe";\nGame.Play = function () {\n  if (true) {\n    let server = "a";\n    if (true) { var server = "b"; }\n    Context.StartArguments = server;\n  }\n};\n';
+  assert.equal(lint(src).filter((d) => d.severity === 'error').length, 0);
+  // Other syntax errors are still reported.
+  assert.ok(lint(src + 'var = ;\n').some((d) => d.rule === 'syntax-error'));
+});

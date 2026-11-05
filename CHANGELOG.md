@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: `let x` followed by `var x` in a nested block was reported as a syntax error and failed Try it. Jint treats `let`/`const` as `var`, so Nucleus loads it (probe 112; found in a verified Hub handler).
+
 ## 0.1.0
 
 First release.

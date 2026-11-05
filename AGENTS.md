@@ -40,7 +40,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 
 ## Facts the code relies on (verified, don't "fix" them away)
 
-- Nucleus runs handlers with **Jint 2.11.58** (`Master/NucleusGaming/packages.config` in splitscreenme-nucleus). Its parser is ES5 plus `let`/`const`, which behave like `var` (the interpreter ignores the declaration kind). Arrow functions, template literals, classes, spread and destructuring are rejected.
+- Nucleus runs handlers with **Jint 2.11.58** (`Master/NucleusGaming/packages.config` in splitscreenme-nucleus). Its parser is ES5 plus `let`/`const`, which behave like `var` (the interpreter ignores the declaration kind), so redeclaring one with `var` loads fine (probe 112; `core/jsparse.ts`). Arrow functions, template literals, classes, spread and destructuring are rejected.
 - Jint resolves .NET members with only the **first character** case-insensitive (`ObjectWrapper.EqualsIgnoreCasing`). Writes to unknown members are silently ignored outside strict mode.
 - `Context` fields with the same name and type as `Game` fields are copied from `Game` (`GenericGameInfo.CreateContext`).
 - `Game.Play` runs per instance (GenericGameHandler: three call sites). Default: after the instance is set up (Goldberg, XInput, ...) and before launch, and `Context.StartArguments` is read after it. `GamePlayBeforeGameSetup` runs it before the setup, `GamePlayAfterLaunch` after launch; both true means never. An exception in it (or in `OnFinishedSetup`) ends the session. `OnFinishedSetup`, `OnStop`, hotkey and Proto Input lock callbacks see the last player's `Context`. `SetupSse` is never invoked.

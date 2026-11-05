@@ -1,6 +1,7 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
 import * as acorn from 'acorn';
+import { parseLikeJint } from './jsparse';
 import {
   api,
   Member,
@@ -117,13 +118,13 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   const comments: acorn.Comment[] = [];
   let program: Node;
   try {
-    program = acorn.parse(text, {
+    program = parseLikeJint(text, {
       ecmaVersion: 'latest',
       sourceType: 'script',
       allowReturnOutsideFunction: true,
       allowHashBang: true,
       onComment: comments,
-    }) as Node;
+    }).program as Node;
   } catch (e: any) {
     const pos = typeof e.pos === 'number' ? e.pos : 0;
     out.push({

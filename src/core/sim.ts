@@ -10,6 +10,7 @@
 import { api, Member, jintMemberName, constructorsOf } from './api';
 import { lint, MISSING_GLOBALS, MISSING_METHODS, MISSING_STATIC } from './lint';
 import * as acorn from 'acorn';
+import { parseLikeJint } from './jsparse';
 
 export interface SimOptions {
   players: number;
@@ -375,7 +376,7 @@ function withoutModernBuiltins(src: string): { code: string; declared: Set<strin
   const declared = new Set<string>();
   let ast: any;
   try {
-    ast = acorn.parse(src, { ecmaVersion: 2020, allowReturnOutsideFunction: true });
+    ({ program: ast, text: src } = parseLikeJint(src, { ecmaVersion: 2020, allowReturnOutsideFunction: true }));
   } catch {
     return { code: src, declared };
   }

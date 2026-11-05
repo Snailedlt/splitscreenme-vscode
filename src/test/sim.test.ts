@@ -180,3 +180,10 @@ test('groupIgnored: per-player duplicates merge, numbered runs collapse', () => 
     'Player.ProtoController5–16, 20 (no such member; Nucleus ignores it)',
   ]);
 });
+
+test('let then var redeclaration runs like Jint (probe 112)', () => {
+  const src = 'Game.GUID = "P";\nGame.GameName = "P";\nGame.ExecutableName = "p.exe";\nGame.Play = function () {\n  if (true) {\n    let server = "a";\n    if (true) { var server = "b"; }\n    Context.StartArguments = server;\n  }\n};\n';
+  const r = simulateIsolated(src, { players: 1, width: 1920, height: 1080, keyboardPlayer: 0 });
+  assert.ok(r.loaded, r.loadError);
+  assert.equal(r.players[0].startArguments, 'b');
+});
