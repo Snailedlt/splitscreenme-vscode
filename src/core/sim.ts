@@ -7,7 +7,8 @@
 //
 // This runs the handler's code. Browsers sandbox it already; in Node (CLI, VS Code) use
 // simulateIsolated() from src/sandbox.ts, which runs it in a separate realm with no Node access.
-import { api, Member, jintMemberName, constructorsOf } from './api';
+import { api, Member, jintMemberName, constructorsOf, looksLikeTypo } from './api';
+import { DOTNET_OBJECTS } from './dotnet';
 import { lint, MISSING_GLOBALS, MISSING_METHODS, MISSING_STATIC } from './lint';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
@@ -246,16 +247,32 @@ function clr(type: string, label: string, log: string[], ignored: string[], stor
   });
 }
 
-/** Fake .NET `System` namespace: records calls, returns plausible values. */
+/** Fake .NET `System` namespace: records calls, returns plausible values. Where core/dotnet.ts
+ *  lists a type, it follows Jint: a misspelled member is undefined (calling it throws, probes
+ *  116/117), a call needs a matching parameter count (118), and properties are values. Other
+ *  names stay permissive: they may well exist in .NET. */
+const DOTNET_VALUES: Record<string, unknown> = { 'System.Environment.UserName': 'me', 'System.Environment.MachineName': 'MY-PC' };
 function systemNs(log: string[], path = 'System'): any {
   const fn = function () {} as any;
+  const owner = path.slice(0, path.lastIndexOf('.'));
+  const member = DOTNET_OBJECTS[owner]?.members[path.slice(owner.length + 1)];
   return new Proxy(fn, {
     get(_t, p) {
       if (typeof p !== 'string' || p === 'then') return undefined;
       if (p.startsWith(NOJINT)) p = p.slice(NOJINT.length);
+      const listed = DOTNET_OBJECTS[path];
+      if (listed) {
+        const key = jintMemberName(listed.members, p);
+        if (!key && looksLikeTypo(p, Object.keys(listed.members))) return undefined;
+        if (key && listed.members[key].kind === 'property') return DOTNET_VALUES[`${path}.${key}`] ?? '';
+        if (key) p = key;
+      }
       return systemNs(log, `${path}.${p}`);
     },
     apply(_t, _this, args) {
+      if (member?.kind === 'method' && !member.overloads!.some((o) => o.params.length === args.length || o.params.some((x) => x.rest))) {
+        throw new JintError('No public methods with the specified arguments were found.');
+      }
       log.push(`${path}(${args.map(fmt).join(', ')})`);
       const fx = effects && describeSystem(path, args);
       if (fx) effects!.push(fx);
@@ -553,7 +570,9 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   const ratio = (a: number, b: number) => `${a / gcd(a, b)}:${b / gcd(a, b)}`;
   let controllers = 0;
   let lastCtx: { ctx: unknown; calls: string[]; player: unknown } | undefined;
-  if (result.hasPlay) {
+  // GenericGameInfo.PrePlay sets Context, Player, Handler for every player and only then calls
+  // Play?.Invoke(): the callbacks see the last player's Context even without a Game.Play.
+  {
     for (let i = 0; i < opt.players; i++) {
       const calls: string[] = [];
       const ctxStore: Record<string, unknown> = { __guid: gameStore.GUID ?? 'GUID', __player: i };
@@ -620,7 +639,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       effects = run.effects;
       try {
         if (playNeverRuns) run.note = 'Game.Play never runs: both Game.GamePlayBeforeGameSetup and Game.GamePlayAfterLaunch are true.';
-        else (play as () => void)();
+        else if (result.hasPlay) (play as () => void)();
       } catch (e: any) {
         run.error = engineError(e);
       } finally {
@@ -632,8 +651,9 @@ export function simulate(src: string, opt: SimOptions): SimResult {
         run.note = `Game.Play runs after this player's game has started (Game.GamePlayAfterLaunch)${String(ctxStore.StartArguments ?? '') !== argsBefore ? ', so the Context.StartArguments it sets have no effect' : ''}.`;
       }
       run.calls.push(...loadLog.splice(0));
-      result.players.push(run);
-      lastCtx = { ctx, calls, player: playerObjs[i] };
+      if (result.hasPlay) result.players.push(run); // without Game.Play every player is the same: summarised instead
+      // Both GamePlay flags true: PrePlay is never called, so no Context/Player is ever set.
+      if (!playNeverRuns) lastCtx = { ctx, calls, player: playerObjs[i] };
       if (run.error) {
         // GenericGameHandler.StartPlay: the exception ends the session (error dialog, End()).
         result.sessionEnded = { player: i, reason: run.error };
@@ -667,7 +687,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     entry.calls = calls.splice(from);
     result.callbacks.push(entry);
   };
-  if (result.hasPlay && !result.sessionEnded) runCallback('OnFinishedSetup');
+  if (!result.sessionEnded) runCallback('OnFinishedSetup'); // GenericGameHandler: invoked whether or not there is a Game.Play
 
   const gp = gameStore.ProtoInput as any;
   for (const name of ['OnInputLocked', 'OnInputUnlocked']) {

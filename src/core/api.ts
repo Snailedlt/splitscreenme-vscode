@@ -253,7 +253,7 @@ export function suggest(name: string, candidates: string[]): string | undefined 
   return bestScore <= limit ? best : undefined;
 }
 
-function looksLikeTypo(name: string, candidates: string[]): boolean {
+export function looksLikeTypo(name: string, candidates: string[]): boolean {
   return suggest(name, candidates) !== undefined;
 }
 

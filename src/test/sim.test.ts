@@ -222,3 +222,18 @@ Game.Play = function () {
   assert.ok(m.cells.get('3|-1')!.every((f) => /too small/.test(f.why)));
   assert.equal(planMatrix(simulateIsolated('Game.Play = function () {', { players: 1, width: 1920, height: 1080, keyboardPlayer: -1 })), null, 'nothing to test when it does not load');
 });
+
+test('without Game.Play, OnFinishedSetup still runs and OnStop sees the last Context (GenericGameInfo.PrePlay)', () => {
+  const code = `Game.GUID = "N";
+Game.GameName = "N";
+Game.ExecutableName = "n.exe";
+Game.OnFinishedSetup = function () { Context.StartArguments = "x" + Context.PlayerID; };
+Game.OnStop = function () { var id = Context.PlayerID; };
+`;
+  const r = simulateIsolated(code, { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 });
+  assert.deepEqual(r.callbacks.map((c) => [c.name, c.error ?? '']), [['Game.OnFinishedSetup', ''], ['Game.OnStop', '']]);
+  assert.equal(r.players.length, 0, 'still summarised: every player is the same');
+  // Both GamePlay flags true: PrePlay never runs, so no Context in the callbacks.
+  const never = simulateIsolated(code.replace('Game.OnFinishedSetup', 'Game.GamePlayBeforeGameSetup = true;\nGame.GamePlayAfterLaunch = true;\nGame.OnFinishedSetup'), { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 });
+  assert.match(never.callbacks.find((c) => c.name === 'Game.OnStop')!.error ?? '', /Context is not defined/);
+});
