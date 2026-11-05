@@ -27,6 +27,12 @@ const KEY_NAMES = new Set([
   ...'Back Tab LineFeed Clear Return Enter ShiftKey ControlKey Menu Pause Capital CapsLock Escape Space Prior PageUp Next PageDown End Home Left Up Right Down Select Print Execute Snapshot PrintScreen Insert Delete Help LWin RWin Apps Sleep Multiply Add Separator Subtract Decimal Divide NumLock Scroll LShiftKey RShiftKey LControlKey RControlKey LMenu RMenu BrowserBack BrowserForward BrowserRefresh BrowserStop BrowserSearch BrowserFavorites BrowserHome VolumeMute VolumeDown VolumeUp MediaNextTrack MediaPreviousTrack MediaStop MediaPlayPause LaunchMail SelectMedia LaunchApplication1 LaunchApplication2 OemSemicolon Oem1 Oemplus Oemcomma OemMinus OemPeriod OemQuestion Oem2 Oemtilde Oem3 OemOpenBrackets Oem4 OemPipe Oem5 OemCloseBrackets Oem6 OemQuotes Oem7 Oem8 OemBackslash Oem102 ProcessKey Packet Attn Crsel Exsel EraseEof Play Zoom NoName Pa1 OemClear KanaMode HanguelMode HangulMode JunjaMode FinalMode HanjaMode KanjiMode IMEConvert IMENonconvert IMEAccept IMEAceept IMEModeChange Cancel LButton RButton MButton XButton1 XButton2 None'.split(' '),
 ]);
 
+// Options that look real (they're in Nucleus' own MasterHandler.js example) but that no Nucleus code
+// reads, checked in splitscreenme-nucleus master and the v3.0.0 branches: an info, not a typo warning.
+const OBSOLETE: Record<string, string> = {
+  'Game.ForceFinishOnPlay': "it is still in Nucleus' own example handler (MasterHandler.js), but no Nucleus code reads it.",
+};
+
 export const RULES = {
   'syntax-error': { severity: 'error', description: 'The file cannot be parsed.' },
   'es5-only': {
@@ -733,6 +739,24 @@ class Analyzer {
           end: n.property.end,
           tags: isWrite ? ['unnecessary'] : undefined,
           fixes: alone ? [{ title: 'Remove this line', edits: [{ start: ls, end: le, text: '' }], preferred: pure }] : undefined,
+        });
+        return;
+      }
+      // Options handlers copy from Nucleus' own example (MasterHandler.js) that no Nucleus code reads.
+      const gone = OBSOLETE[`${label}.${name}`];
+      if (gone && isWrite) {
+        const stmt = this.parentOf.get(ctx.parent!);
+        const ls = stmt ? lineStart(this.text, stmt.start) : 0;
+        const le = stmt ? nextLineStart(this.text, stmt.end) : 0;
+        const alone = !!stmt && stmt.type === 'ExpressionStatement' && this.text.slice(ls, stmt.start).trim() === '' && /^\s*(\/\/.*)?(\r?\n)?$/.test(this.text.slice(stmt.end, le));
+        this.report({
+          rule: 'unknown-member',
+          severity: 'info',
+          message: `\`${label}.${name}\` is not an option in Nucleus: ${gone} Nucleus ignores the line, so it is safe to remove.`,
+          start: n.property.start,
+          end: n.property.end,
+          tags: ['unnecessary'],
+          fixes: alone ? [{ title: 'Remove this line', edits: [{ start: ls, end: le, text: '' }], preferred: true }] : undefined,
         });
         return;
       }
