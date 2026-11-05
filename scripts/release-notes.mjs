@@ -1,5 +1,6 @@
 // Release notes from CHANGELOG.md, for the GitHub release and for a Discord post.
-//   node scripts/release-notes.mjs [version] [--discord] [--tag vX.Y.Z-beta.N]
+//   node scripts/release-notes.mjs [version] [--discord [--json]] [--tag vX.Y.Z-beta.N]
+// --discord --json prints the Discord webhook payload (a rich embed) instead of the text.
 // version defaults to package.json's. The section is "## <version>" (anything after the number,
 // like "(beta)", is fine). Each bullet starts with a **short summary**, then the details: the
 // GitHub notes show everything; the Discord post is a heading, up to three highlights and the link
@@ -42,10 +43,41 @@ if (args.includes('--discord')) {
   // A heading, up to three highlights, the link, and the thanks: one message, readable at a glance.
   const version = tag.replace(/^v/, '').replace(/-.*$/, '');
   const thanks = (body.split(/^### 🙏.*$/m)[1] ?? '').split('\n').map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1]?.replace(/^\[([^\]]+)\]\([^)]+\)$/, '$1')).filter(Boolean);
-  const lines = [`**v${version} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
-  lines.push('', `<${repo}/releases/tag/${tag}>`);
-  if (thanks.length) lines.push(`Thanks ${thanks.join(', ')} 🙏`);
-  console.log(lines.join('\n'));
+  if (args.includes('--json')) {
+    // A rich embed, so the extension's posts look different from the workbench's
+    // (nucleuscoop-handler-testbench tools/release-post.mjs): its own name, icon and colour.
+    const url = `${repo}/releases/tag/${tag}`;
+    const shown = items.slice(0, 5);
+    const description = [
+      ...shown.map((s) => `• ${s}`),
+      ...(items.length > shown.length ? [`…and ${items.length - shown.length} more in the release notes`] : []),
+      '',
+      `[Release notes](${url}) · [Download the .vsix](${repo}/releases/download/${tag}/splitscreenme-vscode-${tag}.vsix) · [Install guide](https://snailedlt.github.io/nucleuscoop-handler-testbench/start/)`,
+    ].join('\n');
+    console.log(
+      JSON.stringify({
+        username: 'Nucleus Tools · VS Code extension',
+        avatar_url: 'https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/media/discord-avatar.png',
+        embeds: [
+          {
+            author: { name: 'VS Code extension', url: repo, icon_url: 'https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/media/icon.png' },
+            title: `🧩 SplitScreen.Me for VS Code v${version}${/-beta/.test(tag) ? ' (beta)' : ''}`,
+            url,
+            description,
+            color: 0x007acc, // VS Code blue
+            ...(thanks.length ? { fields: [{ name: 'Thanks', value: `${thanks.join(', ')} 🙏` }] } : {}),
+            footer: { text: 'Nucleus handler tools · VS Code extension' },
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  } else {
+    const lines = [`**v${version} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
+    lines.push('', `<${repo}/releases/tag/${tag}>`);
+    if (thanks.length) lines.push(`Thanks ${thanks.join(', ')} 🙏`);
+    console.log(lines.join('\n'));
+  }
 } else {
   console.log(`${body}
 

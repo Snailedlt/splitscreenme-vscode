@@ -55,8 +55,8 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           DISCORD_WEBHOOKS: ${{ secrets.DISCORD_WEBHOOKS }}
         run: |
-          node scripts/release-notes.mjs --tag "$TAG" --discord > discord.txt
-          node scripts/announce.mjs discord.txt
+          node scripts/release-notes.mjs --tag "$TAG" --discord --json > discord.json
+          node scripts/announce.mjs discord.json
       - name: Summary (links and the Discord post)
         env:
           TAG: ${{ steps.version.outputs.tag }}
