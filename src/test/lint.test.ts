@@ -470,3 +470,12 @@ test('value-format: options Nucleus parses from text', () => {
   assert.equal(slash[0].severity, 'warning');
   assert.equal(slash[0].fixes![0].edits[0].text, '"Binaries\\\\Win64"');
 });
+
+test('too-late: options Nucleus reads before the session, set inside a callback', () => {
+  const inPlay = only(`${HEADER}Game.Play = function () {\n  Game.MaxPlayers = 8;\n  Game.AddOption("Mode", "", "mode", ["a", "b"]);\n  Game.FakeFocus = true;\n};\n`, 'too-late');
+  assert.deepEqual(inPlay.map((d) => d.message.split(' ')[1]), ['`Game.MaxPlayers`', '`Game.AddOption`'], 'FakeFocus does work inside Game.Play');
+  assert.match(inPlay[0].message, /inside `Game\.Play`/);
+  // A helper run at the top level runs at load: fine.
+  assert.equal(only(`${HEADER}function setup() { Game.MaxPlayers = 4; }\nsetup();\n`, 'too-late').length, 0);
+  assert.equal(only(`${HEADER}Game.MaxPlayers = 4;\n`, 'too-late').length, 0);
+});

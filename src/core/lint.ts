@@ -2,6 +2,7 @@
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
+import { BEFORE_SESSION } from './lifecycle';
 import {
   api,
   Member,
@@ -54,6 +55,10 @@ export const RULES = {
   'callback-only-global': {
     severity: 'error',
     description: 'Context, Player, PlayerList, Handler and ProtoInput only exist while a callback such as Game.Play runs. Using them at the top level makes the handler fail to load.',
+  },
+  'too-late': {
+    severity: 'warning',
+    description: 'A Game option Nucleus reads before the session starts (GUID, GameName, MaxPlayers, SupportsKeyboard, Description, AddOption) is set inside Game.Play or another function, where it has no effect.',
   },
   'duplicate-assignment': { severity: 'warning', description: 'The same option is set more than once at the top level; only the last value is used.' },
   'hub-install-parse': {
@@ -163,6 +168,8 @@ interface Ctx {
   topLevelStatement: boolean;
   /** Inside "use strict" code (program or function directive). */
   strict: boolean;
+  /** Inside a callback Nucleus runs during the session (a function assigned to Game.Play, Game.OnStop, ...). */
+  callback?: string;
 }
 
 const hasUseStrict = (body: Node[] | undefined) => !!body?.some((st) => st.type === 'ExpressionStatement' && st.directive === 'use strict');
@@ -284,6 +291,7 @@ class Analyzer {
       const childCtx: Ctx = {
         parent: node,
         fnDepth: ctx.fnDepth + (isFn ? 1 : 0),
+        callback: ctx.callback ?? (isFn && ctx.parent?.type === 'AssignmentExpression' && ctx.parent.right === node && this.chainOf(ctx.parent.left)?.startsWith('Game.') ? this.chainOf(ctx.parent.left)! : undefined),
         inTypeof: ctx.inTypeof || (node.type === 'UnaryExpression' && node.operator === 'typeof'),
         topLevelStatement: node.type === 'Program' || (node.type === 'ExpressionStatement' && ctx.topLevelStatement),
         strict: ctx.strict || (isFn && node.body?.type === 'BlockStatement' && hasUseStrict(node.body.body)),
@@ -307,8 +315,10 @@ class Analyzer {
         break;
       case 'AssignmentExpression':
         this.checkAssignment(n, ctx);
+        this.checkTooLate(n.left, ctx);
         break;
       case 'CallExpression':
+        this.checkTooLate(n.callee, ctx);
         this.checkCall(n);
         this.checkOptionCall(n);
         this.checkSaveEntries(n);
@@ -753,6 +763,16 @@ class Analyzer {
     if (r?.kind === 'member' && r.member.deprecated && !setFalse) {
       this.report({ rule: 'deprecated', message: `\`${ownerLabel(r.owner)}.${name}\`: ${r.member.deprecated}`, start: n.property.start, end: n.property.end, tags: ['deprecated'] });
     }
+  }
+
+  /** core/lifecycle.ts: options read before the session, set inside a function. */
+  private checkTooLate(target: Node, ctx: Ctx) {
+    if (!ctx.callback || target.type !== 'MemberExpression') return; // a helper called at the top level runs at load
+    const chain = this.chainOf(target);
+    const why = chain && BEFORE_SESSION[chain];
+    if (!why) return;
+    const what = chain === 'Game.AddOption' ? `Calling \`${chain}\`` : `Setting \`${chain}\``;
+    this.report({ rule: 'too-late', message: `${what} inside \`${ctx.callback}\` has no effect: ${why}. Do it at the top level of the handler.`, start: target.start, end: target.end });
   }
 
   private checkAssignment(n: Node, ctx: Ctx) {
