@@ -63,6 +63,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.tryItTestAll",
+        "title": "Try It: Test All Combinations (Players, Input, Monitors)",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.fixAll",
         "title": "Fix All Auto-fixable Problems",
         "category": "Nucleus"
@@ -126,6 +131,10 @@
       "commandPalette": [
         {
           "command": "splitscreenme.tryItSet",
+          "when": "false"
+        },
+        {
+          "command": "splitscreenme.tryItTestAll",
           "when": "false"
         },
         {

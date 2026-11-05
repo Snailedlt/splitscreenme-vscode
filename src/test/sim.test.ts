@@ -199,3 +199,26 @@ test('every player with their own keyboard and mouse (multiple keyboards and mic
   const one = simulateIsolated(src, { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 });
   assert.deepEqual(one.players.map((p) => p.startArguments), ['true,true,-1,true', 'false,false,0,true']);
 });
+
+test('Test all combinations: every player count, input setup and monitor, isolated', async () => {
+  const { planMatrix, runMatrix } = await import('../core/matrix');
+  const code = `Game.GUID = "M";
+Game.GameName = "M";
+Game.ExecutableName = "m.exe";
+Game.MaxPlayers = 3;
+Game.Play = function () {
+  if (Context.PlayerID === 2 && Context.Width < 1000) throw new Error("too small");
+};
+`;
+  const plan = planMatrix(simulateIsolated(code, { players: 1, width: 1920, height: 1080, keyboardPlayer: -1 }));
+  assert.ok(plan);
+  assert.equal(plan.max, 3);
+  assert.deepEqual(plan.modes.filter((m) => m.offered).map((m) => m.kb), [-1, 0], 'no multiple keyboards unless the handler supports them');
+  const m = runMatrix(plan, (o) => simulateIsolated(code, o));
+  assert.equal(plan.jobs.length, 3 * 2 * 5);
+  // Only 3 players on the 1366-wide screen split three ways fail (a third of 1366 < 1000 for player 3).
+  assert.ok(m.failed > 0);
+  assert.equal(m.cells.get('1|-1')!.length, 0);
+  assert.ok(m.cells.get('3|-1')!.every((f) => /too small/.test(f.why)));
+  assert.equal(planMatrix(simulateIsolated('Game.Play = function () {', { players: 1, width: 1920, height: 1080, keyboardPlayer: -1 })), null, 'nothing to test when it does not load');
+});
