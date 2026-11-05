@@ -5,13 +5,13 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 > **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/**
 
 <p>
-  <img src="docs/images/vscode-problems.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one">
-  <img src="docs/images/vscode-try-it.png" width="49%" alt="VS Code: the Try it panel beside StardewValley.js, showing what Nucleus would set up for each of 4 players">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-problems-dark.png"><img src="docs/images/vscode-problems-light.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-try-it-dark.png"><img src="docs/images/vscode-try-it-light.png" width="49%" alt="VS Code: the Try it panel beside StardewValley.js, showing what Nucleus would set up for each of 4 players"></picture>
 </p>
 <p>
-  <img src="docs/images/vscode-hover.png" width="32%" alt="VS Code: hovering Player.ProtoController5 in Skyrim Together Reborn explains that Nucleus and Proto Input take at most four controllers">
-  <img src="docs/images/vscode-completion.png" width="32%" alt="VS Code: completion after Game.Hook. lists the real options with their types">
-  <img src="docs/images/vscode-quickfix.png" width="32%" alt="VS Code: the quick fix that wraps Game.KillMutex's value in an array">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-hover-dark.png"><img src="docs/images/vscode-hover-light.png" width="32%" alt="VS Code: hovering Player.ProtoController5 in Skyrim Together Reborn explains that Nucleus and Proto Input take at most four controllers"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-completion-dark.png"><img src="docs/images/vscode-completion-light.png" width="32%" alt="VS Code: completion after Game.Hook. lists the real options with their types"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-quickfix-dark.png"><img src="docs/images/vscode-quickfix-light.png" width="32%" alt="VS Code: the quick fix that wraps Game.KillMutex's value in an array"></picture>
 </p>
 
 *Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/). Testing it? See [TESTING.md](TESTING.md).*

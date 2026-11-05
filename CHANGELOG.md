@@ -24,6 +24,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **Screenshots in your theme.** The README's screenshots show VS Code light or dark, matching your theme on GitHub.
 - **Calling a name that doesn't exist is an error.** `System.IO.File.Exsts(p)` or a misspelled `Context` function used to be a warning that said the line does nothing; calling it actually throws, so Nucleus stops there. Reading or setting a misspelled name is still a warning.
 - **Game.ForceFinishOnPlay explained.** It's in Nucleus' own example handler (MasterHandler.js), but no Nucleus code reads it. Instead of "probably a typo", the linter now says so, as info, with a fix that removes the line.
 - **AI agents report their own time.** The agent skill tells AI agents that use WakaTime to register as agents (category `ai coding`, `ai_line_changes`), not as the person.
