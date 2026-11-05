@@ -50,6 +50,13 @@ jobs:
           pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
           gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
+      - name: Announce on Discord (when DISCORD_WEBHOOKS is set)
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          DISCORD_WEBHOOKS: ${{ secrets.DISCORD_WEBHOOKS }}
+        run: |
+          node scripts/release-notes.mjs --tag "$TAG" --discord > discord.txt
+          node scripts/announce.mjs discord.txt
       - name: Summary (links and the Discord post)
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -65,6 +72,8 @@ jobs:
             echo '```text'
             node scripts/release-notes.mjs --tag "$TAG" --discord
             echo '```'
+            echo
+            if [ -n "${{ secrets.DISCORD_WEBHOOKS != '' && 'yes' || '' }}" ]; then echo "Posted to Discord automatically (DISCORD_WEBHOOKS)."; else echo "To post it automatically next time, add a DISCORD_WEBHOOKS secret (one Discord webhook URL per line)."; fi
             echo
             echo "The intro page's download link and the extension's update note pick up the new version by themselves."
           } >> "$GITHUB_STEP_SUMMARY"
