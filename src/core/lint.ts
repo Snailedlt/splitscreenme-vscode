@@ -27,10 +27,15 @@ const KEY_NAMES = new Set([
   ...'Back Tab LineFeed Clear Return Enter ShiftKey ControlKey Menu Pause Capital CapsLock Escape Space Prior PageUp Next PageDown End Home Left Up Right Down Select Print Execute Snapshot PrintScreen Insert Delete Help LWin RWin Apps Sleep Multiply Add Separator Subtract Decimal Divide NumLock Scroll LShiftKey RShiftKey LControlKey RControlKey LMenu RMenu BrowserBack BrowserForward BrowserRefresh BrowserStop BrowserSearch BrowserFavorites BrowserHome VolumeMute VolumeDown VolumeUp MediaNextTrack MediaPreviousTrack MediaStop MediaPlayPause LaunchMail SelectMedia LaunchApplication1 LaunchApplication2 OemSemicolon Oem1 Oemplus Oemcomma OemMinus OemPeriod OemQuestion Oem2 Oemtilde Oem3 OemOpenBrackets Oem4 OemPipe Oem5 OemCloseBrackets Oem6 OemQuotes Oem7 Oem8 OemBackslash Oem102 ProcessKey Packet Attn Crsel Exsel EraseEof Play Zoom NoName Pa1 OemClear KanaMode HanguelMode HangulMode JunjaMode FinalMode HanjaMode KanjiMode IMEConvert IMENonconvert IMEAccept IMEAceept IMEModeChange Cancel LButton RButton MButton XButton1 XButton2 None'.split(' '),
 ]);
 
-// Options that look real (they're in Nucleus' own MasterHandler.js example) but that no Nucleus code
-// reads, checked in splitscreenme-nucleus master and the v3.0.0 branches: an info, not a typo warning.
+// Options from the original Nucleus Coop (distrohelena/nucleuscoop) that SplitScreen.Me's Nucleus
+// never read (checked in splitscreenme-nucleus' whole history and the v3.0.0 branches), still in its
+// example handler (MasterHandler.js), so handlers keep copying them. A warning that says so, not a
+// typo guess.
 const OBSOLETE: Record<string, string> = {
-  'Game.ForceFinishOnPlay': "it is still in Nucleus' own example handler (MasterHandler.js), but no Nucleus code reads it.",
+  // HandlerData.ForceFinishOnPlay: WindowsGameProcessModule.PrePlayPlayer killed the game's exe.
+  // Now GenericGameHandler always calls ProcessUtil.KillRemainingProcess when a session starts.
+  'Game.ForceFinishOnPlay':
+    "is from the original Nucleus Coop, where it closed running copies of the game before each player started. SplitScreen.Me's Nucleus doesn't read it: it always closes leftover copies of the game (its executable, the launcher and the names in `Game.KillProcessesOnClose`) when a session starts. Nucleus ignores the line, so remove it.",
 };
 
 export const RULES = {
@@ -742,7 +747,7 @@ class Analyzer {
         });
         return;
       }
-      // Options handlers copy from Nucleus' own example (MasterHandler.js) that no Nucleus code reads.
+      // Historical options from the original Nucleus Coop (OBSOLETE above).
       const gone = OBSOLETE[`${label}.${name}`];
       if (gone && isWrite) {
         const stmt = this.parentOf.get(ctx.parent!);
@@ -751,11 +756,11 @@ class Analyzer {
         const alone = !!stmt && stmt.type === 'ExpressionStatement' && this.text.slice(ls, stmt.start).trim() === '' && /^\s*(\/\/.*)?(\r?\n)?$/.test(this.text.slice(stmt.end, le));
         this.report({
           rule: 'unknown-member',
-          severity: 'info',
-          message: `\`${label}.${name}\` is not an option in Nucleus: ${gone} Nucleus ignores the line, so it is safe to remove.`,
+          severity: 'warning',
+          message: `\`${label}.${name}\` ${gone}`,
           start: n.property.start,
           end: n.property.end,
-          tags: ['unnecessary'],
+          tags: ['deprecated'],
           fixes: alone ? [{ title: 'Remove this line', edits: [{ start: ls, end: le, text: '' }], preferred: true }] : undefined,
         });
         return;

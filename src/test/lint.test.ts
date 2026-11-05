@@ -480,10 +480,13 @@ test('too-late: options Nucleus reads before the session, set inside a callback'
   assert.equal(only(`${HEADER}Game.MaxPlayers = 4;\n`, 'too-late').length, 0);
 });
 
-test('an option from Nucleus\' MasterHandler.js that Nucleus never reads: info with a remove fix, not a typo warning', () => {
+test('a historical option from the original Nucleus Coop: a warning that says so, with a remove fix', () => {
   const d = only(`${HEADER}Game.ForceFinishOnPlay = true;\n`, 'unknown-member');
   assert.equal(d.length, 1);
-  assert.equal(d[0].severity, 'info');
-  assert.match(d[0].message, /MasterHandler\.js/);
+  assert.equal(d[0].severity, 'warning');
+  assert.match(d[0].message, /original Nucleus Coop/);
+  assert.match(d[0].message, /always closes leftover copies/);
+  assert.deepEqual(d[0].tags, ['deprecated']);
+  assert.doesNotMatch(d[0].message, /Did you mean/);
   assert.equal(apply(`${HEADER}Game.ForceFinishOnPlay = true;\n`, d[0].fixes![0]), HEADER);
 });
