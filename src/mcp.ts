@@ -7,6 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { lint, lineOf, lineStart, RULES } from './core/lint';
 import { fixAll } from './core/fix';
+import { formatHandler } from './core/format';
 import { lookup, search, formatEntry } from './core/lookup';
 import { handlerPageUrl } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
@@ -82,6 +83,20 @@ export const TOOLS: Tool[] = [
         text: `${r.applied.length} fix(es) applied${a.write && file ? ` and saved to ${file}` : ''}:\n${r.applied.map((f) => `  line ${f.line}: ${f.title}`).join('\n') || '  (none)'}\nLeft:\n${summary(left)}\n\nFixed source:\n${r.code}`,
         data: { applied: r.applied, remaining: left, source: r.code },
       };
+    },
+  },
+  {
+    name: 'nucleus_format',
+    title: 'Format a handler',
+    description: 'Format a handler: indentation and the spacing between tokens only. No line breaks move (Nucleus runs handlers line by line), tokens and comments stay exactly the same (checked), and top-level lines stay unindented for the Hub install. With path and write: true, saves the file.',
+    inputSchema: { type: 'object', properties: { ...SOURCE, write: { type: 'boolean', description: 'Save the formatted file (only with path).', default: false } } },
+    annotations: { destructiveHint: false, idempotentHint: true },
+    run: (a) => {
+      const { text, file } = readSource(a);
+      const r = formatHandler(text);
+      if (!r.ok) return { text: r.reason, data: { ok: false, reason: r.reason } };
+      if (a.write && file && r.changed) fs.writeFileSync(file, r.code);
+      return { text: `${r.changed ? 'Formatted' : 'Already formatted'}${a.write && file && r.changed ? `, saved to ${file}` : ''}.\n\n${r.code}`, data: { ok: true, changed: r.changed, source: r.code } };
     },
   },
   {

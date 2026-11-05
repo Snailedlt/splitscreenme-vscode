@@ -73,6 +73,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.formatHandler",
+        "title": "Format Handler (indentation and spacing)",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.packageHandler",
         "title": "Package Handler for the Hub (.nc)",
         "category": "Nucleus"
@@ -106,6 +111,14 @@
         "command": "splitscreenme.openDocs",
         "title": "Open Documentation\u2026",
         "category": "Nucleus"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "splitscreenme.formatHandler",
+        "key": "shift+alt+f",
+        "mac": "shift+alt+f",
+        "when": "editorTextFocus && !editorReadonly && splitscreenme.isHandler"
       }
     ],
     "menus": {

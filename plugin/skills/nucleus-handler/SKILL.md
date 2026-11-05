@@ -17,6 +17,7 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 | --- | --- |
 | `node .../nucleus.js lint --fix <file.js>` | Apply every safe automatic fix first (ES5 conversions, typos, moving `Context` code into `Game.Play`, ...). It never changes behaviour; what's left needs your judgement. |
 | `node .../nucleus.js lint <file.js>` | **Always run after every edit.** Catches syntax Nucleus can't load, nonexistent options, wrong types, Context used outside `Game.Play`, Hub-install pitfalls. Shows available fixes. |
+| `node .../nucleus.js format <file.js> --write` | Tidy indentation and spacing after editing. It never moves a line or changes a token (it checks), so it can't change what the handler does. |
 | `node .../nucleus.js simulate <file.js> [--players 4]` | **Run after lint is clean.** Loads the handler and runs `Game.Play` for each player the way Nucleus would (emulating its Jint engine), without Nucleus or the game: each player's window, launch arguments, the file/registry changes it would make, settings Nucleus skips, and errors a player would hit (for example an ES2015 method that Jint lacks). Check the output matches what you intended. It runs isolated and touches nothing. |
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |

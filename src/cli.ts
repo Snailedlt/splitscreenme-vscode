@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { lint, lineOf, lineStart, RULES, RuleId, Severity, LintOptions, looksLikeHandler } from './core/lint';
 import { fixAll } from './core/fix';
+import { formatHandler } from './core/format';
 import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
@@ -20,6 +21,10 @@ const HELP = `Usage: nucleus <command> [options]
 
 Commands:
   lint <file|dir>...          Check handlers for problems (default command)
+  format <file|dir>... [--write | --check]
+                              Indentation and spacing only (no line moves, tokens unchanged).
+                              Prints the result for one file; --write saves, --check lists the
+                              files that aren't formatted and exits 1
   api <name>                  Show the type and docs of an API member, e.g. "Game.KillMutex",
                               "Context.ModifySaveFile", "KillMutex", "Nucleus.Folder"
   api --search <words>        Search API names and docs, e.g. "api --search mutex"
@@ -69,7 +74,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -88,7 +93,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'workbench'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'workbench'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -107,6 +112,8 @@ async function main(argv: string[]): Promise<number> {
     case 'rules':
       print(json, RULES, () => Object.entries(RULES).map(([id, r]) => `${id.padEnd(22)} ${r.severity.padEnd(8)} ${r.description}`).join('\n'));
       return 0;
+    case 'format':
+      return cmdFormat(args, json);
     case 'simulate':
       return cmdSimulate(args, json);
     case 'api':
@@ -195,6 +202,40 @@ async function cmdLint(args: Args, json: boolean): Promise<number> {
   if (json) console.log(JSON.stringify({ files: out, errors, warnings, ...(fixMode ? { fixed: fixedCount } : {}) }, null, 2));
   else console.log(`${linted} handler(s): ${fixMode ? `${fixedCount} problem(s) ${fixMode === 'dry' ? 'would be fixed' : 'fixed'}, ` : ''}${errors} error(s)${fixMode ? ' left' : ''}, ${warnings} warning(s)${fixMode ? ' left' : ''}`);
   return errors ? 1 : 0;
+}
+
+function cmdFormat(args: Args, json: boolean): number {
+  const files: string[] = [];
+  const collect = (p: string, explicit: boolean) => {
+    const st = fs.statSync(p);
+    if (st.isDirectory()) for (const f of fs.readdirSync(p)) collect(path.join(p, f), false);
+    else if (explicit || (p.endsWith('.js') && looksLikeHandler(fs.readFileSync(p, 'utf8')))) files.push(p);
+  };
+  if (!args.positional.length) throw new Usage('format: give at least one file or directory');
+  for (const p of args.positional) collect(p, true);
+  const write = has(args, '--write');
+  const checkOnly = has(args, '--check');
+  const results: { file: string; ok: boolean; changed?: boolean; reason?: string }[] = [];
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8');
+    const r = formatHandler(text);
+    if (!r.ok) {
+      results.push({ file, ok: false, reason: r.reason });
+      continue;
+    }
+    results.push({ file, ok: true, changed: r.changed });
+    if (write && r.changed) fs.writeFileSync(file, r.code);
+    else if (!write && !checkOnly && !json && files.length === 1) process.stdout.write(r.code);
+  }
+  const bad = results.filter((r) => !r.ok);
+  const unformatted = results.filter((r) => r.ok && r.changed);
+  if (json) console.log(JSON.stringify(results, null, 2));
+  else if (write || checkOnly || files.length > 1) {
+    for (const r of bad) console.log(`${r.file}: not formatted: ${r.reason}`);
+    for (const r of unformatted) console.log(`${r.file}${write ? ': formatted' : checkOnly ? ': not formatted' : ''}`);
+    console.log(`${files.length} file(s): ${unformatted.length} ${write ? 'formatted' : 'to format'}${bad.length ? `, ${bad.length} skipped` : ''}`);
+  } else if (bad.length) console.error(bad[0].reason);
+  return bad.length || (checkOnly && unformatted.length) ? 1 : 0;
 }
 
 function cmdSimulate(args: Args, json: boolean): number {

@@ -23,6 +23,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/core/`: pure logic, no `vscode` import, shared by the extension, the CLI and the skill.
   - `api.ts`: typed access to the generated API model, member resolution.
   - `lint.ts`: the linter (acorn AST). `RULES` is the rule registry.
+  - `format.ts`: Format Document / `nucleus format`: indentation and spacing only. Line breaks never move and the result is re-tokenized and compared with the original; any difference and it refuses. Keep that guarantee.
   - `complete.ts`: text-based resolution for completion/hover/signature help (works on incomplete code).
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.

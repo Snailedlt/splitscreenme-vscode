@@ -20,6 +20,7 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 - **Hover docs** and **signature help** for every `Context` method and its overloads.
 - **Linting** for the mistakes that make handlers fail, often silently. See [Lint rules](#lint-rules).
 - **Fix all**, deterministic and offline: applies every fix that keeps the handler's behaviour or repairs code Nucleus can't load. It runs as a command, on save, or as `nucleus lint --fix`. Fixes that change behaviour or need your input stay one-click quick fixes. On the 41 engine probes, it takes 11 of the 16 that fail in Jint 2.11.58 to working.
+- **Format Document** (Shift+Alt+F): indentation and spacing only. No line moves (Nucleus runs handlers line by line), and the tokens and comments are checked to be exactly the same afterwards, so formatting never changes what the handler does. Also `nucleus format`.
 - **Quick fixes**: did-you-mean for typos, `"true"` → `true`, template string → concatenation, wrap a value in an array, add missing required options, and more.
 - **New Handler** wizard that generates a handler which passes the linter, with optional Proto Input, Goldberg, INI resolution and user-option sections.
 - **Package for the Hub**: builds a `.nc` package laid out the way Nucleus' installer expects.
@@ -80,6 +81,7 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
   | Command | What it does |
   | --- | --- |
   | `nucleus lint <file> --json` | Diagnostics and available fixes |
+  | `nucleus format <file> --write` | Indentation and spacing, never the code itself |
   | `nucleus api Game.KillMutex` / `nucleus api --search mutex` | The "hover": type, default and docs |
   | `nucleus hub search <game>` / `nucleus hub fetch <id>` | Study how existing handlers solved the same problem |
   | `nucleus new …` / `nucleus package …` | Scaffold a handler / build the `.nc` package |
@@ -193,6 +195,7 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | --- | --- | --- |
 | `splitscreenme.detection` | `auto` | `auto`: handler-looking files and files in a `handlers` folder. `always`: every `.js` file. `off`: disable. |
 | `splitscreenme.lint.enable` | `true` | Report problems. |
+| `splitscreenme.lint.compareWithHub` | `true` | For a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub version (`guid-changed`); downloads that version once. |
 | `splitscreenme.lint.rules` | `{}` | Per-rule severity: `error`, `warning`, `info`, `hint` or `off`. |
 | `splitscreenme.completion.enable` | `true` | The extension's completion/hover/signature help. Turned off by **Set Up Type Definitions**, because TypeScript then provides them. |
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
@@ -219,7 +222,7 @@ npm ci && npm run build
 node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is installed
 ```
 
-`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. It also has `simulate`, `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
+`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. `format` re-indents and spaces handlers (`--write` saves, `--check` exits 1 when a file isn't formatted), and `--hub` compares `Game.GUID` with the Hub version. It also has `simulate`, `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
 
 ## Development
 

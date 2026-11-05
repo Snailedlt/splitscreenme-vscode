@@ -6,6 +6,7 @@ import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULE
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
 import { fixAll } from './core/fix';
+import { formatHandler } from './core/format';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 
@@ -86,6 +87,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.languages.registerCodeActionsProvider(SELECTOR, new FixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix, FIX_ALL_KIND] }),
+    // Shift+Alt+F in a handler (package.json keybinding): VS Code's own JavaScript formatter would
+    // otherwise ask which one to use, and other .js files keep theirs.
+    vscode.commands.registerCommand('splitscreenme.formatHandler', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isHandler(editor.document)) return vscode.commands.executeCommand('editor.action.formatDocument');
+      const opts = editor.options;
+      const [edit] = formatEdits(editor.document, { insertSpaces: opts.insertSpaces !== false, tabSize: typeof opts.tabSize === 'number' ? opts.tabSize : 4 });
+      if (edit) await editor.edit((b) => b.replace(edit.range, edit.newText));
+      else vscode.window.setStatusBarMessage('Nucleus: already formatted', 2500);
+    }),
     vscode.commands.registerCommand('splitscreenme.fixAll', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !isHandler(editor.document)) {
@@ -102,6 +113,10 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' '),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
+    // Format Document (Shift+Alt+F): indentation and spacing only (core/format.ts).
+    vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
+      provideDocumentFormattingEdits: (doc, opts) => (isHandler(doc) ? formatEdits(doc, opts) : []),
+    }),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
   );
 
@@ -160,6 +175,17 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
     if (d.fixes) fixesByDiagnostic.set(v, d.fixes);
     return v;
   });
+}
+
+/** The edit that formats a handler (core/format.ts), or none. */
+function formatEdits(doc: vscode.TextDocument, opts: { insertSpaces: boolean; tabSize: number }): vscode.TextEdit[] {
+  const text = doc.getText();
+  const r = formatHandler(text, { indent: opts.insertSpaces ? ' '.repeat(opts.tabSize) : '\t' });
+  if (!r.ok) {
+    void vscode.window.showWarningMessage(`Nucleus: ${r.reason}`);
+    return [];
+  }
+  return r.changed ? [vscode.TextEdit.replace(new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), r.code)] : [];
 }
 
 const FIX_ALL_KIND = vscode.CodeActionKind.SourceFixAll.append('nucleus');

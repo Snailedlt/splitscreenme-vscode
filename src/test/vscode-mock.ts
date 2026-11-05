@@ -99,7 +99,7 @@ export enum ConfigurationTarget { Global = 1, Workspace, WorkspaceFolder }
 export enum ProgressLocation { Notification = 15 }
 
 // --- registries the tests can inspect --------------------------------------
-export const __registered: Record<string, any[]> = { completion: [], hover: [], signature: [], codeAction: [], commands: [] };
+export const __registered: Record<string, any[]> = { completion: [], hover: [], signature: [], codeAction: [], commands: [], formatting: [] };
 export const __diagnostics = new Map<string, Diagnostic[]>();
 export const __config: Record<string, any> = {};
 
@@ -114,6 +114,7 @@ export const languages = {
   registerCompletionItemProvider: (_s: any, p: any) => (__registered.completion.push(p), disposable),
   registerHoverProvider: (_s: any, p: any) => (__registered.hover.push(p), disposable),
   registerSignatureHelpProvider: (_s: any, p: any) => (__registered.signature.push(p), disposable),
+  registerDocumentFormattingEditProvider: (_s: any, p: any) => (__registered.formatting.push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
 };
 export const __applied: WorkspaceEdit[] = [];
@@ -189,3 +190,5 @@ export function makeDocument(text: string, fileName = '/work/handlers/Game.js') 
     },
   };
 }
+
+export const TextEdit = { replace: (range: any, newText: string) => ({ range, newText }) };
