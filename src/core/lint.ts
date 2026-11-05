@@ -1238,8 +1238,13 @@ class Analyzer {
     if (valueOf('SupportsMultipleKeyboardsAndMice') !== true) return;
     const missing: string[] = [];
     const enabled: string[] = [];
+    // The re-register sub-options are only read when HookReRegisterRawInput (default false) is on
+    // (Nucleus.Hook: Hook.cpp, RawInputReRegister.cpp), so their true defaults do nothing by themselves.
+    const reRegister = valueOf('HookReRegisterRawInput');
+    const reRegisterOn = reRegister === true || reRegister === 'expr';
     for (const [k, m] of Object.entries(game)) {
       if (!m.protoInputLegacy) continue;
+      if (!reRegisterOn && (k === 'HookReRegisterRawInputMouse' || k === 'HookReRegisterRawInputKeyboard')) continue;
       const v = valueOf(k);
       if (v === undefined && m.default === 'true') missing.push(k);
       else if (v === true) enabled.push(k);

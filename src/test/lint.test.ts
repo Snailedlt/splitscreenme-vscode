@@ -247,6 +247,14 @@ test('Proto Input requires the legacy input options to be off', () => {
   // no Proto Input, or Proto Input for controllers only: no warning
   assert.deepEqual(only(HEADER, 'protoinput-legacy-hooks'), []);
   assert.deepEqual(only(HEADER + 'Game.ProtoInput.XinputHook = true;\n', 'protoinput-legacy-hooks'), []);
+  // HookReRegisterRawInputMouse/Keyboard default to true but are only read when HookReRegisterRawInput
+  // (default false) is on: their defaults alone are no reason to warn.
+  const legacyOff = 'Game.SupportsMultipleKeyboardsAndMice = true;\nGame.ProtoInput.FocusHooks = true;\n' +
+    ['HookSetCursorPos', 'HookGetCursorPos', 'HookGetKeyState', 'HookGetAsyncKeyState', 'HookGetKeyboardState', 'HookMouseVisibility', 'SendNormalMouseInput', 'SendNormalKeyboardInput', 'DrawFakeMouseCursor'].map((k) => `Game.${k} = false;\n`).join('');
+  assert.deepEqual(only(HEADER + legacyOff, 'protoinput-legacy-hooks'), []);
+  const reReg = only(HEADER + legacyOff + 'Game.HookReRegisterRawInput = true;\n', 'protoinput-legacy-hooks');
+  assert.equal(reReg.length, 1);
+  assert.match(reReg[0].message, /HookReRegisterRawInputMouse/);
 });
 
 // The following were verified by running probes through Jint 2.11.58 with Nucleus' engine setup.
