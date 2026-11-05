@@ -713,12 +713,12 @@ class Analyzer {
         });
         return;
       }
-      // `System.IO.File.Exsts(p)`: the value is undefined, and calling undefined throws a TypeError.
+      // `System.IO.File.Exsts(p)`: Jint throws "Object has no method 'Exsts'" (testbench probe 116); reading it is just undefined (117).
       if (ctx.parent?.type === 'CallExpression' && ctx.parent.callee === n) {
         this.report({
           rule: 'unknown-member',
           severity: 'error',
-          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws a TypeError and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws (Jint: "Object has no method '${name}'") and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${s ? ` Did you mean \`${s}\`?` : ''}`,
           start: n.property.start,
           end: n.property.end,
           fixes,

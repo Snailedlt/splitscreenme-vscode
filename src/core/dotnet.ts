@@ -2,7 +2,7 @@
 // Nucleus sources, so `System` was a name with nothing under it. Picked from the Hub handlers
 // (Path.Combine, File.Copy/Exists/Delete, Directory.CreateDirectory/Exists, Thread.Sleep are in
 // most of them). Signatures are .NET Framework's (Nucleus targets it); Jint 2.11.58 matches an
-// overload only by its exact parameter count, so list each count that exists.
+// overload only by its exact parameter count (probe 118), so list each count that exists.
 //
 // These objects are `open`: a member that isn't listed is still allowed (it may well exist in
 // .NET), unless it looks like a typo of one that is.
@@ -92,7 +92,7 @@ export const DOTNET_OBJECTS: Record<string, ApiObject & { open: true }> = {
         ['string', [p('path1'), p('path2')]],
         ['string', [p('path1'), p('path2'), p('path3')]],
         ['string', [p('path1'), p('path2'), p('path3'), p('path4')]],
-        // .NET also has Combine(params string[]); whether Jint 2.11 expands params is unverified, so don't flag other counts.
+        // .NET also has Combine(params string[]), and Jint 2.11 expands it: 1 or 5 parts work (testbench probes 114, 115).
         ['string', [{ name: 'paths', type: 'string', csType: 'string[]', rest: true }]],
       ),
       GetFileName: fn('The file name with its extension: `C:\\a\\b.ini` → `b.ini`.', ['string', [p('path')]]),
