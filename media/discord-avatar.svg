@@ -1,7 +1,0 @@
-<html><body style="margin:0"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-<rect width="512" height="512" fill="#1a2030"/>
-<rect x="96" y="106" width="320" height="142" rx="22" fill="#5ac8fa"/>
-<rect x="96" y="264" width="320" height="142" rx="22" fill="#3a9cc9"/>
-<text x="256" y="205" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-weight="700" font-size="88" fill="#1a2030">{ }</text>
-<path d="M232 297 L232 373 L292 335 Z" fill="#1a2030" stroke="#1a2030" stroke-width="10" stroke-linejoin="round"/>
-</svg></body></html>
