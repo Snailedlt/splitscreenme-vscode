@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { FEATURES, renderHandler, toHandlerFileName, Feature } from './core/templates';
 import { writeZip, handlerPackageEntries } from './core/zip';
-import { fetchHandlers, downloadPackage, handlerPageUrl, HubHandler } from './core/hub';
+import { handlerPageUrl, HubHandler } from './core/hub';
+import { hubHandlers, hubPackage } from './hubcache';
 import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
 
@@ -212,12 +213,10 @@ async function installHandler(uri?: vscode.Uri) {
 
 // ---------------------------------------------------------------------------
 
-let hubCache: { at: number; list: HubHandler[] } | undefined;
 
 async function browseHub(context: vscode.ExtensionContext) {
   const list = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Loading handlers from hub.splitscreen.me…' }, async () => {
-    if (!hubCache || Date.now() - hubCache.at > 10 * 60_000) hubCache = { at: Date.now(), list: await fetchHandlers() };
-    return hubCache.list;
+    return hubHandlers(); // cached for an hour, shared with the CLI and the MCP server
   });
   type Item = vscode.QuickPickItem & { h: HubHandler };
   const items: Item[] = list.map((h) => ({
@@ -248,7 +247,7 @@ async function browseHub(context: vscode.ExtensionContext) {
     vscode.env.openExternal(vscode.Uri.parse(handlerPageUrl(pick.h._id)));
     return;
   }
-  const entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => downloadPackage(pick.h));
+  const entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h));
   const dir = vscode.Uri.joinPath(context.globalStorageUri, 'hub', `${pick.h._id}-v${pick.h.currentVersion}`);
   for (const e of entries) {
     if (e.name.endsWith('/') || !e.data) continue;

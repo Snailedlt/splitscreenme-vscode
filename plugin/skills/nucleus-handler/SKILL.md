@@ -21,7 +21,7 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |
 | `node .../nucleus.js hub search <words>` | Find existing handlers by game or series name. The Hub has no engine field: to find same-engine handlers, get a list of games on that engine (for example PCGamingWiki's engine page) and search for those titles. |
-| `node .../nucleus.js hub fetch <id> --out <dir>` | Download one to read how its author solved instancing, input and LAN. The best learning resource there is. |
+| `node .../nucleus.js hub fetch <id> --out <dir>` | Download one to read how its author solved instancing, input and LAN. The best learning resource there is. Fetch the one or two that matter, never in bulk: the Hub is run by volunteers. The list is cached for an hour and each version is downloaded once, so repeating a search is free. |
 | `node .../nucleus.js new --name "Game" --exe Game.exe [--steam-id N] [--features protoinput,goldberg,resolution-ini,options]` | Start a new handler from a lint-clean template. |
 | `node .../nucleus.js package <file.js>` | Build the `.nc` package for hub.splitscreen.me. |
 

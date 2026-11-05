@@ -4,6 +4,7 @@ Every release has a section here; the release workflow publishes it as the relea
 
 ## Unreleased
 
+- **Easier on the Hub.** The CLI, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour, each handler version is downloaded once, and requests name the tool. Agents are told to fetch one or two handlers, never in bulk.
 - **The workbench as one offline file.** Releases include `workbench.html`, and `nucleus workbench` saves it: open it locally or host it yourself.
 - **Value suggestions as you type.** After `=`, completion offers the option's values: `Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, `.Scaled` and `.InvScaled` (the default preselected), and boolean options offer `true`/`false`.
 - **AI agents can use the tools directly.** `nucleus mcp` is an MCP server for Claude Desktop, Cursor, VS Code Copilot and others: lint, fix, simulate, API lookup and search, templates, Hub search and verified Hub handlers, plus the skill's guide as a prompt. The extension registers it with VS Code (1.101+), and releases include a single-file `nucleus.js`.
