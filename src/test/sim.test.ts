@@ -187,3 +187,15 @@ test('let then var redeclaration runs like Jint (probe 112)', () => {
   assert.ok(r.loaded, r.loadError);
   assert.equal(r.players[0].startArguments, 'b');
 });
+
+test('every player with their own keyboard and mouse (multiple keyboards and mice)', () => {
+  const src = 'Game.GUID = "P";\nGame.GameName = "P";\nGame.ExecutableName = "p.exe";\nGame.SupportsMultipleKeyboardsAndMice = true;\nGame.Play = function () {\n  Context.StartArguments = Player.IsKeyboardPlayer + "," + Player.IsRawMouse + "," + Player.GamepadId + "," + (Player.RawMouseDeviceHandle !== PlayerList[0].RawMouseDeviceHandle || Context.PlayerID === 0);\n};\n';
+  const r = simulateIsolated(src, { players: 2, width: 1920, height: 1080, keyboardPlayer: -2 });
+  assert.ok(r.loaded, r.loadError);
+  assert.deepEqual(r.players.map((p) => p.startArguments), ['true,true,100,true', 'true,true,101,true']);
+  assert.equal(r.inputNote, undefined);
+  const plain = simulateIsolated(src.replace('Game.SupportsMultipleKeyboardsAndMice = true;\n', ''), { players: 2, width: 1920, height: 1080, keyboardPlayer: -2 });
+  assert.match(plain.inputNote ?? '', /SupportsMultipleKeyboardsAndMice/);
+  const one = simulateIsolated(src, { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 });
+  assert.deepEqual(one.players.map((p) => p.startArguments), ['true,true,-1,true', 'false,false,0,true']);
+});

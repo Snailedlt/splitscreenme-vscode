@@ -3,12 +3,12 @@
 // from VS Code and Node (src/sandbox.ts). The webview has scripts disabled; its controls are
 // command links.
 import * as vscode from 'vscode';
-import { SimOptions, SimResult, sessionSummary, groupIgnored } from './core/sim';
+import { SimOptions, SimResult, sessionSummary, groupIgnored, EVERY_KEYBOARD } from './core/sim';
 import { pluginsFor, simulateIsolated } from './sandbox';
 
 export interface TryItState {
   players: number;
-  keyboardPlayer: number; // -1: nobody
+  keyboardPlayer: number; // -1: nobody, EVERY_KEYBOARD: each player their own
   width: number;
   height: number;
 }
@@ -30,7 +30,7 @@ export function renderTryIt(r: SimResult, state: TryItState, title: string): str
     current ? `<strong class="choice on">${esc(label)}</strong>` : `<a class="choice" href="${cmd(SET, arg)}">${esc(label)}</a>`;
   const controls = `<div class="controls">
     <span>Players ${[1, 2, 3, 4].map((n) => choice(String(n), state.players === n, { players: n, keyboardPlayer: state.keyboardPlayer >= n ? 0 : state.keyboardPlayer })).join('')}</span>
-    <span>Keyboard &amp; mouse ${[...Array(state.players).keys()].map((i) => choice(`P${i + 1}`, state.keyboardPlayer === i, { keyboardPlayer: i })).join('')}${choice('nobody', state.keyboardPlayer === -1, { keyboardPlayer: -1 })}</span>
+    <span>Keyboard &amp; mouse ${[...Array(state.players).keys()].map((i) => choice(`P${i + 1}`, state.keyboardPlayer === i, { keyboardPlayer: i })).join('')}${choice('each player their own', state.keyboardPlayer === EVERY_KEYBOARD, { keyboardPlayer: EVERY_KEYBOARD })}${choice('nobody', state.keyboardPlayer === -1, { keyboardPlayer: -1 })}</span>
     <span>Monitor ${RESOLUTIONS.map(([w, h]) => choice(`${w}×${h}`, state.width === w && state.height === h, { width: w, height: h })).join('')}</span></div>`;
 
   const out: string[] = [];
@@ -39,10 +39,11 @@ export function renderTryIt(r: SimResult, state: TryItState, title: string): str
   } else {
     out.push(`<div class="banner ${r.sessionEnded ? 'error' : 'ok'}"><strong>${esc(sessionSummary(r))}</strong></div>`);
   }
+  if (r.inputNote) out.push(`<p class="muted">${esc(r.inputNote)}</p>`);
   const ignored = groupIgnored(r.ignored);
   if (ignored.length) out.push(`<h3>Settings Nucleus skips (${ignored.length})</h3><ul class="mono warn">${ignored.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`);
   for (const p of r.players) {
-    out.push(`<section><h3>Player ${p.index + 1} <span class="tag">${p.index === state.keyboardPlayer ? 'keyboard &amp; mouse' : 'controller'}</span></h3>
+    out.push(`<section><h3>Player ${p.index + 1} <span class="tag">${p.index === state.keyboardPlayer || state.keyboardPlayer === EVERY_KEYBOARD ? 'keyboard &amp; mouse' : 'controller'}</span></h3>
       ${p.error ? `<div class="banner error">Setting up this player fails here, and Nucleus ends the session.<div class="mono small">${esc(p.error)}</div></div>` : ''}
       ${p.note ? `<p class="muted">${esc(p.note)}</p>` : ''}
       <table><tr><th>Window</th><td>${esc(p.window)}</td></tr>
@@ -125,7 +126,7 @@ export function registerTryIt(context: vscode.ExtensionContext, isHandler: (doc:
     }),
     vscode.commands.registerCommand(SET, (change: Partial<TryItState>) => {
       const next = { ...state, ...change };
-      if (!(next.players >= 1 && next.players <= 16) || next.keyboardPlayer < -1 || next.keyboardPlayer >= next.players) return;
+      if (!(next.players >= 1 && next.players <= 16) || (next.keyboardPlayer < -1 && next.keyboardPlayer !== EVERY_KEYBOARD) || next.keyboardPlayer >= next.players) return;
       state = next;
       void context.workspaceState?.update(STATE_KEY, state);
       render();

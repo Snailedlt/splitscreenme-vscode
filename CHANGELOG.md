@@ -12,6 +12,14 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### ✨ New
+
+- **Try it with a keyboard and mouse for every player.** Choose "each player their own" (or `nucleus simulate --keyboard all`): every player gets their own keyboard and mouse, as in Nucleus' multiple keyboards and mice mode. Try it says so when the handler doesn't set `Game.SupportsMultipleKeyboardsAndMice = true`.
+
+---
+
 ## 0.2.0 (beta) · 2026-11-05
 
 ### ✨ New

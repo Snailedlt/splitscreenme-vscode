@@ -12,11 +12,16 @@ import { lint, MISSING_GLOBALS, MISSING_METHODS, MISSING_STATIC } from './lint';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
 
+/** SimOptions.keyboardPlayer: every player has their own keyboard and mouse. */
+export const EVERY_KEYBOARD = -2;
+
 export interface SimOptions {
   players: number;
   width: number;
   height: number;
-  keyboardPlayer: number; // index of the keyboard/mouse player, -1 for none
+  /** Index of the one keyboard/mouse player, -1 for none, or EVERY_KEYBOARD (-2): every player has their
+   *  own keyboard and mouse (Nucleus' multiple keyboards and mice mode). */
+  keyboardPlayer: number;
   /** Plugin globals from the handler folder's pluginsInfo.txt (see parsePluginsInfo). */
   plugins?: Record<string, string[]>;
 }
@@ -66,6 +71,8 @@ export interface SimResult {
   playerCount: number;
   /** An error in Game.Play (or OnFinishedSetup) ends the whole session: later players aren't set up. */
   sessionEnded?: { player: number; reason: string };
+  /** A note about the input setup, e.g. every player has their own keyboard but the handler doesn't support it. */
+  inputNote?: string;
 }
 
 class JintError extends Error {}
@@ -499,6 +506,10 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   result.hasPlay = typeof play === 'function';
   const cols = opt.players <= 2 ? opt.players : 2;
   const rows = Math.ceil(opt.players / cols);
+  const everyKb = opt.keyboardPlayer === EVERY_KEYBOARD;
+  if (everyKb && gameStore.SupportsMultipleKeyboardsAndMice !== true)
+    result.inputNote = "This handler doesn't set Game.SupportsMultipleKeyboardsAndMice = true, so Nucleus only offers one keyboard and mouse. Shown anyway.";
+  const isKb = (i: number) => everyKb || i === opt.keyboardPlayer;
   const playerObjs = Array.from({ length: opt.players }, (_, i) => {
     const log: string[] = [];
     const w = Math.floor(opt.width / cols);
@@ -508,11 +519,15 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       PlayerID: i,
       Nickname: `Player${i + 1}`,
       ProtoInputInstanceHandle: 100 + i,
-      IsKeyboardPlayer: i === opt.keyboardPlayer,
-      IsRawKeyboard: i === opt.keyboardPlayer,
-      IsRawMouse: i === opt.keyboardPlayer,
-      IsXInput: i !== opt.keyboardPlayer,
-      GamepadId: i === opt.keyboardPlayer ? -1 : i - (opt.keyboardPlayer >= 0 && opt.keyboardPlayer < i ? 1 : 0),
+      IsKeyboardPlayer: isKb(i),
+      IsRawKeyboard: isKb(i),
+      IsRawMouse: isKb(i),
+      IsXInput: !isKb(i),
+      // Multiple keyboards and mice: Nucleus numbers raw input devices from 100 (RawInputManager) and
+      // gives each player its own device handles.
+      GamepadId: everyKb ? 100 + i : isKb(i) ? -1 : i - (opt.keyboardPlayer >= 0 && opt.keyboardPlayer < i ? 1 : 0),
+      RawMouseDeviceHandle: isKb(i) ? 0x10001 + 2 * i : -1,
+      RawKeyboardDeviceHandle: isKb(i) ? 0x10002 + 2 * i : -1,
       SteamID: 76561199000000000 + i, // a .NET long; Jint gives a double, like Context.PlayerSteamID's number
       MonitorBounds: bounds,
       DefaultMonitorBounds: bounds,
@@ -569,11 +584,11 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       const options: Record<string, unknown> = {};
       // A list option gives its first entry; an empty list is free text, "" until the user types.
       for (const o of optionsList()) options[o.key] = Array.isArray(o.values) ? (o.values.length ? o.values[0] : '') : o.values;
-      const gamepad = i === opt.keyboardPlayer ? -1 : controllers++;
+      const gamepad = isKb(i) ? -1 : controllers++;
       const computed: Record<string, unknown> = {
         Width: w, Height: h, PosX: (i % cols) * w, PosY: Math.floor(i / cols) * h,
         MonitorWidth: opt.width, MonitorHeight: opt.height, NumberOfPlayers: opt.players,
-        Nickname: nick, IsKeyboardPlayer: i === opt.keyboardPlayer, HasKeyboardPlayer: opt.keyboardPlayer >= 0,
+        Nickname: nick, IsKeyboardPlayer: isKb(i), HasKeyboardPlayer: everyKb || opt.keyboardPlayer >= 0,
         GamepadId: gamepad + 1, AspectRatioDecimal: w / h, AspectRatio: ratio(w, h), OrigAspectRatioDecimal: opt.width / opt.height,
         OrigAspectRatio: ratio(opt.width, opt.height), Arch: 'x64', Options: options, PlayerSteamID: String(76561199000000000n + BigInt(i)),
         HandlerGUID: ctxStore.__guid, NucleusFolder: 'C:\\Nucleus', ScriptFolder: 'C:\\Nucleus\\handlers\\MyHandler',
@@ -584,7 +599,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
         EnvironmentPlayer: `C:\\Users\\me\\NucleusCoop\\${nick}\\`, EnvironmentRoot: 'C:\\Users\\me\\NucleusCoop\\',
         NucleusUserRoot: 'C:\\Users\\me', UserName: 'me', LocalIP: '192.168.1.10',
         GamepadGuid: `00000000-0000-0000-0000-00000000000${i}`, x360ceGamepadGuid: `IG_0000000000000000000000000000000${i}`,
-        RawHID: i === opt.keyboardPlayer ? '\\\\?\\HID#VID_046D&PID_C52B' : '',
+        RawHID: isKb(i) ? `\\\\?\\HID#VID_046D&PID_C52B&MI_0${i}` : '',
         EpicLang: 'en', GogLang: 'english', SteamLang: 'english',
       };
       const ctx = clr('Context', 'Context', calls, result.ignored, ctxStore, computed);
