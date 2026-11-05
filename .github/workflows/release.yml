@@ -30,6 +30,11 @@ jobs:
         run: node scripts/release-notes.mjs --tag "$VERSION" > release-notes.md
       - run: npm run typecheck
       - run: npm test
+      - name: Build the offline workbench (workbench.html)
+        run: |
+          git clone --quiet --depth 1 https://github.com/Snailedlt/nucleuscoop-handler-testbench testbench
+          cd testbench/playground && npm ci && node build.mjs --core ../.. --refresh-hub
+          cp dist/workbench-standalone.html "$GITHUB_WORKSPACE/workbench.html"
       - name: Package
         run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${VERSION}.vsix"
       - name: Create the release
@@ -40,4 +45,4 @@ jobs:
           pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
           echo "Discord post:"; node scripts/release-notes.mjs --tag "$VERSION" --discord | tee -a "$GITHUB_STEP_SUMMARY"
-          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.md $pre
+          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js workbench.html --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.md $pre

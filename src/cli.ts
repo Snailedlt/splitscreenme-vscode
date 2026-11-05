@@ -36,6 +36,9 @@ Commands:
   init-agent [dir]            Install AI agent instructions and this tool into a handler folder
                               (AGENTS.md, CLAUDE.md, .claude/skills/nucleus-handler/)
   rules                       List lint rules
+  workbench [--out file.html] [--force]
+                              Save the browser workbench as one offline HTML file (from the newest
+                              release), to open locally or host yourself
   mcp                         Run as an MCP server (stdio) for AI agents: Claude Desktop, Cursor,
                               VS Code Copilot, ... Tools: lint, fix, simulate, API lookup/search,
                               templates, Hub search and verified Hub handlers
@@ -80,7 +83,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp'];
+  const commands = ['lint', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'workbench'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -113,6 +116,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdInitAgent(args, json);
     case 'mcp':
       return serve();
+    case 'workbench':
+      return cmdWorkbench(args, json);
   }
   return 2;
 }
@@ -302,6 +307,30 @@ function cmdPackage(args: Args, json: boolean): number {
   const { zip, assetCount } = buildPackage(file);
   fs.writeFileSync(out, zip);
   print(json, { file: path.resolve(out), assetCount }, () => `Wrote ${out} (handler.js + ${assetCount} asset file(s)). Upload it at https://hub.splitscreen.me/`);
+  return 0;
+}
+
+/** Saves the newest release's workbench.html: the whole browser workbench in one offline file. */
+async function cmdWorkbench(args: Args, json: boolean): Promise<number> {
+  const out = flag(args, '--out') ?? 'nucleus-workbench.html';
+  if (fs.existsSync(out) && !has(args, '--force')) throw new Error(`${out} already exists (use --force to overwrite)`);
+  // The newest release with the file, pre-releases included. If the API is unavailable (rate
+  // limits), fall back to the newest full release's download link.
+  let rel = { tag_name: 'the latest release', url: 'https://github.com/Snailedlt/splitscreenme-vscode/releases/latest/download/workbench.html' };
+  const res = await fetch('https://api.github.com/repos/Snailedlt/splitscreenme-vscode/releases?per_page=20', { headers: { accept: 'application/vnd.github+json' } }).catch(() => undefined);
+  if (res?.ok) {
+    const releases = (await res.json()) as { tag_name: string; draft: boolean; assets: { name: string; browser_download_url: string }[] }[];
+    const r = releases.find((x) => !x.draft && x.assets.some((a) => a.name === 'workbench.html'));
+    if (!r) throw new Error('No release has a workbench.html yet. Use https://snailedlt.github.io/nucleuscoop-handler-testbench/ for now.');
+    rel = { tag_name: r.tag_name, url: r.assets.find((a) => a.name === 'workbench.html')!.browser_download_url };
+  }
+  const page = await fetch(rel.url);
+  if (page.status === 404) throw new Error('No release has a workbench.html yet. Use https://snailedlt.github.io/nucleuscoop-handler-testbench/ for now.');
+  if (!page.ok) throw new Error(`Download failed (${page.status})`);
+  const html = await page.text();
+  if (!/^<!doctype html>/i.test(html.trimStart())) throw new Error('The download is not an HTML page.');
+  fs.writeFileSync(out, html);
+  print(json, { file: path.resolve(out), release: rel.tag_name, bytes: html.length }, () => `Saved the workbench from ${rel.tag_name} to ${path.resolve(out)}. Open it in a browser; it works offline.`);
   return 0;
 }
 
