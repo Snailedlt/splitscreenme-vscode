@@ -18,7 +18,11 @@ export function highlights(changelog: string, version: string): string[] {
 }
 
 export function registerWhatsNew(context: vscode.ExtensionContext) {
-  const changelog = () => vscode.Uri.joinPath(context.extensionUri, 'CHANGELOG.md');
+  // vsce stores it as changelog.md; from a checkout it is CHANGELOG.md (names are case-sensitive on Linux and macOS).
+  const changelog = () => {
+    const names = ['changelog.md', 'CHANGELOG.md'].map((n) => vscode.Uri.joinPath(context.extensionUri, n));
+    return names.find((u) => fs.existsSync(u.fsPath)) ?? names[1];
+  };
   const open = () => vscode.commands.executeCommand('markdown.showPreview', changelog());
   context.subscriptions.push(vscode.commands.registerCommand('splitscreenme.whatsNew', open));
   if (!context.extensionUri) return;

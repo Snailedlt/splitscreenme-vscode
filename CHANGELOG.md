@@ -1,34 +1,44 @@
 # Changelog
 
-Every release has a section here; the release workflow publishes it as the release notes (and refuses to release without one). Add a line under **Unreleased** with each user-visible change: start it with a **short summary** (the update note and the Discord post show only that), then the details. Keep the biggest changes first.
+What changed in each release of the SplitScreen.Me / Nucleus Co-op handler tools for VS Code (and the `nucleus` command-line tool and MCP server that ship with it). Newest first.
+
+<!--
+How to write it (people and AI agents read this; the release workflow publishes each section as the release notes and refuses to release without one):
+- Add each user-visible change under "## Unreleased", in one of these groups, biggest change first:
+  ### ✨ New · ### 🛠️ Improved · ### 🐛 Fixed · ### ⚡ Faster · ### ⚠️ Changed (what users must do differently)
+- One line per change: a **short summary** in bold (the update note and the Discord post show only that), then one or two plain sentences.
+- A screenshot for big, visible changes, indented under its line: `  ![What it shows](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/docs/images/changelog/<version>-<name>.png)` (≈1000 px wide, docs/images/changelog/).
+- At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>".
+-->
 
 ## Unreleased
 
-- **Value suggestions as you type.** After `=`, completion offers the option's values: `Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, `.Scaled` and `.InvScaled` (the default preselected), and boolean options offer `true`/`false`.
-- **AI agents can use the tools directly.** `nucleus mcp` is an MCP server for Claude Desktop, Cursor, VS Code Copilot and others: lint, fix, simulate, API lookup and search, templates, Hub search and verified Hub handlers, plus the skill's guide as a prompt. The extension registers it with VS Code (1.101+), and releases include a single-file `nucleus.js`.
-- **The workbench as one offline file.** Releases include `workbench.html`, and `nucleus workbench` saves it: open it locally or host it yourself.
-- **What's new, in the extension.** After an update, one note with the highlights and a button to read them all. **Nucleus: What's New** opens this list any time; turn the note off with `splitscreenme.showWhatsNew`.
-- **Easier on the Hub.** The CLI, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour, each handler version is downloaded once, and requests name the tool. Agents are told to fetch one or two handlers, never in bulk.
+### ✨ New
 
-## 0.1.1 (beta)
+- **Value suggestions as you type.** After `=`, completion offers the option's values: `Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, `.Scaled` and `.InvScaled` with the default first; on/off options offer `true` and `false`.
+  ![Completion after Game.DPIHandling = lists the three DPIHandling values, the default first](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/docs/images/changelog/0.2.0-value-suggestions.png)
+- **AI agents can use the tools directly.** `nucleus mcp` is an MCP server for Claude Desktop, Cursor, VS Code Copilot and others: check, fix, Try it, API lookup, templates and Hub search. VS Code's agents get it automatically (VS Code 1.101+), and each release includes a single-file `nucleus.js` for other clients.
+- **What's new, right here.** After an update, one note shows the highlights, with a button to read them all. **Nucleus: What's New** opens this list any time; `splitscreenme.showWhatsNew` turns the note off.
+  ![The update note: Nucleus handler tools updated to 0.2.0, with What's new and Don't show again buttons](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/docs/images/changelog/0.2.0-whats-new.png)
+- **The workbench as one offline file.** Each release includes `workbench.html`, and `nucleus workbench` saves it: open it locally or host it yourself.
 
-- **Fixed a false Proto Input warning (11 Hub handlers).** `protoinput-legacy-hooks` warned about `HookReRegisterRawInputMouse`/`Keyboard` defaulting to true. Nucleus' hook only reads them when `HookReRegisterRawInput` (default false) is on, so their defaults do nothing by themselves.
-- **Fixed a false error on `let x` followed by `var x`.** It was reported as a syntax error and failed Try it. Jint treats `let`/`const` as `var`, so Nucleus loads it (probe 112; found in a verified Hub handler).
+### 🛠️ Improved
 
-## 0.1.0
+- **Easier on the Hub.** The command-line tool, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour and each handler version only once, and requests say which tool sent them. Agents are told to fetch one or two handlers, never in bulk.
 
-First release.
+## 0.1.1 (beta) · 2026-11-05
 
-- Completion, hover and signature help for the Nucleus handler API (`Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub`, `Nucleus.*`), generated from the Nucleus Co-op sources and docs.
-- Linter with 16 rules and quick fixes; also available as the `nucleus-lint` CLI.
-- Commands: New Handler, Package for the Hub (.nc), Install into Nucleus Co-op, Browse the Hub, Set Up Type Definitions, Lint All Handlers, Open Documentation.
-- Fix all: deterministic, behaviour-preserving automatic fixes (command, fix-on-save, `nucleus lint --fix`).
-- Try it follows Nucleus' session flow and paths: errors end the session, OnFinishedSetup/OnStop run, Play timing flags, instance paths per copy mode and BinariesFolder, Context.Hook shared with Game.Hook, `Handler`, plugin globals from pluginsInfo.txt.
-- Try it: simulate a handler for 1–4 players (window, launch arguments, file changes, skipped options, errors), in a panel beside the editor and as `nucleus simulate`. It emulates Nucleus' Jint engine, matches the real engine on all 106 testbench probes, and runs the handler isolated from Node and your files.
-- Checked against the Nucleus source: the Hub install's exact line scan, `ExecutableName` needed for "Search disks", `AddOption` values and duplicate keys, `ShowOptionAsStep` keys, file-name-only `ExecutableName`, callbacks Nucleus never runs or calls unchecked (`callback-misuse`), required C# default parameters, strings continued with `\`.
-- `Nucleus.Globals` and `Nucleus.IniFile` are modelled (completion, hover, lint, Try it); `new Nucleus.SaveInfo()` is valid; wrong `SaveInfo` kinds in `ModifySaveFile` are flagged. `Hub.*` lines are written by hub.splitscreen.me on upload: the linter knows them, completion no longer offers them.
-- Try it reports a handler that fails part-way through loading but still appears in Nucleus' game list.
-- Snippets for common handler tasks.
-- Rule severities and enum handling verified against Jint 2.11.58 itself (probe handlers run with Nucleus' engine setup).
-- `missing-builtin`: flags ES2015+ library calls (`.includes()`, `Object.assign`, `Map`, ...) that Jint 2.11 lacks and that throw at run time; each one checked against the real engine.
-- `nucleus.d.ts` type definitions.
+### 🐛 Fixed
+
+- **No more false Proto Input warning (11 Hub handlers).** `protoinput-legacy-hooks` warned that `HookReRegisterRawInputMouse`/`Keyboard` default to true, but Nucleus only reads them when `HookReRegisterRawInput` (default false) is on.
+- **No more false error on `let x` followed by `var x`.** Nucleus' script engine treats `let` and `const` like `var`, so it loads such handlers fine (probe 112; found in a verified Hub handler).
+
+## 0.1.0 (beta) · 2026-11-02
+
+### ✨ New
+
+- **Completion, hover and signature help for the whole handler API.** `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Nucleus.*`, generated from the Nucleus Co-op source and docs.
+- **A checker with quick fixes.** 16 rules for what makes handlers fail in Nucleus: ES5-only syntax, misspelled options, `Context` outside `Game.Play`, Hub install pitfalls, wrong value types, ES2015+ functions Nucleus lacks (`.includes()`, `Map`, …). Every rule is checked against Nucleus' real script engine (Jint 2.11.58).
+- **Fix all.** Safe automatic fixes, as a command, on save, or `nucleus lint --fix`.
+- **Try it.** What Nucleus would set up for each player (window, launch arguments, file changes), beside the editor and as `nucleus simulate`. It follows Nucleus' session and runs the handler isolated from your files.
+- **Commands.** New Handler, Package for the Hub (.nc), Install into Nucleus Co-op, Browse the Hub, Set Up Type Definitions, Lint All Handlers, Open Documentation; snippets for common handler tasks; `nucleus.d.ts` type definitions.

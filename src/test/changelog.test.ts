@@ -12,4 +12,8 @@ test('CHANGELOG.md has notes for the next release, each starting with a short bo
   assert.ok(heads[0] === 'Unreleased' || heads[0].startsWith(version), `the first section should be "Unreleased" or "${version}", not "${heads[0]}"`);
   const first = log.split(/^## .+$/m)[1];
   for (const line of first.split('\n').filter((l) => l.startsWith('- '))) assert.match(line, /^- \*\*.+?\*\*/, `start with a **short summary**: ${line.slice(0, 80)}`);
+  // Groups people (and agents) can scan: the emoji headings listed at the top of the file.
+  for (const h of first.split('\n').filter((l) => l.startsWith('### '))) assert.ok(['### ✨ New', '### 🛠️ Improved', '### 🐛 Fixed', '### ⚡ Faster', '### ⚠️ Changed'].includes(h.trim()), h);
+  // Released sections carry their date.
+  for (const h of heads.slice(1)) assert.match(h, /^\d+\.\d+\.\d+ \(beta\) · \d{4}-\d{2}-\d{2}$/, h);
 });
