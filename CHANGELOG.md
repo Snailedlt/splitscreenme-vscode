@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (beta)
 
 - Fixed: `protoinput-legacy-hooks` warned about `HookReRegisterRawInputMouse`/`Keyboard` defaulting to true. Nucleus' hook only reads them when `HookReRegisterRawInput` (default false) is on, so their defaults do nothing by themselves (11 of the 13 Hub handlers it flagged).
 - Fixed: `let x` followed by `var x` in a nested block was reported as a syntax error and failed Try it. Jint treats `let`/`const` as `var`, so Nucleus loads it (probe 112; found in a verified Hub handler).
