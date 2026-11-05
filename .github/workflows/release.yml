@@ -26,6 +26,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Release notes (CHANGELOG.md must have this version's section)
+        run: node scripts/release-notes.mjs --tag "$VERSION" > release-notes.md
       - run: npm run typecheck
       - run: npm test
       - name: Package
@@ -37,4 +39,5 @@ jobs:
           case "$VERSION" in v*) ;; *) echo "Version must start with v"; exit 1;; esac
           pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
-          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js --target "$GITHUB_SHA" --title "$VERSION" --generate-notes $pre
+          echo "Discord post:"; node scripts/release-notes.mjs --tag "$VERSION" --discord | tee -a "$GITHUB_STEP_SUMMARY"
+          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.md $pre
