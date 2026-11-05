@@ -2,7 +2,7 @@
 //   node scripts/release-notes.mjs [version] [--discord] [--tag vX.Y.Z-beta.N]
 // version defaults to package.json's. The section is "## <version>" (anything after the number,
 // like "(beta)", is fine). Each bullet starts with a **short summary**, then the details: the
-// GitHub notes show everything; the Discord post is one line with the top summaries and a link
+// GitHub notes show everything; the Discord post is a heading, up to three highlights and the link
 // (the extension and the workbench show what's new themselves).
 // Exits 1 when the version has no section: every release needs its notes written first.
 import fs from 'node:fs';
@@ -39,9 +39,13 @@ if (args.includes('--discord')) {
     .filter((l) => /^- /.test(l))
     .map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1] ?? l.slice(2).split(/(?<=\.)\s/)[0])
     .map((s) => s.replace(/\.$/, ''));
-  const top = items.slice(0, 3).join(' · ') + (items.length > 3 ? ` (+${items.length - 3} more)` : '');
+  // A heading, up to three highlights, the link, and the thanks: one message, readable at a glance.
+  const version = tag.replace(/^v/, '').replace(/-.*$/, '');
   const thanks = (body.split(/^### 🙏.*$/m)[1] ?? '').split('\n').map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1]?.replace(/^\[([^\]]+)\]\([^)]+\)$/, '$1')).filter(Boolean);
-  console.log(`**VS Code extension ${tag} is out** 🛠️ ${top}\nWhat's new is shown in the extension. <${repo}/releases/tag/${tag}>${thanks.length ? `\nThanks ${thanks.join(', ')} 🙏` : ''}`);
+  const lines = [`**v${version} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
+  lines.push('', `<${repo}/releases/tag/${tag}>`);
+  if (thanks.length) lines.push(`Thanks ${thanks.join(', ')} 🙏`);
+  console.log(lines.join('\n'));
 } else {
   console.log(`${body}
 
