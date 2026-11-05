@@ -66,6 +66,10 @@ See [reference/recipes.md](reference/recipes.md) for tested patterns: INI/XML/te
 - Use `\\` in path strings. `System.IO.*` (.NET) is available for files and folders.
 - `Context.Log("...")` writes to Nucleus' debug log; use it to confirm what `Game.Play` computed.
 
+## Time tracking (WakaTime)
+
+If you report your work to WakaTime (for example through a WakaTime plugin for your agent), register it as an AI agent, never as the person: send the category `ai coding`, count your edits in `ai_line_changes` (not `human_line_changes`), and name your agent in the user agent (for example `claude-code-wakatime/1.0`). Don't send heartbeats under the browser workbench's or the VS Code extension's name; they report the person's own time.
+
 ## Style
 
 Match the conventions of the handler you're editing. For new handlers, group options (game info, instances, windows, input, network) and comment non-obvious choices with the reason (for example `// game refuses a 2nd instance without this`). Put user-facing notes (setup steps, known issues, which key locks input) in `Game.Description`.
