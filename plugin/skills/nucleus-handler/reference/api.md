@@ -3711,6 +3711,161 @@ Hub handler identity.
 
 Hub maintainer.
 
+## System.IO.File
+
+Copy, delete, check, read and write files. Paths are Windows paths: write `\\` in a string, or build them with `System.IO.Path.Combine`.
+
+### System.IO.File.AppendAllText
+`AppendAllText(path: string, contents: string): void`
+Files and folders (System.IO)
+Adds the string to the end of the file (creates the file if needed).
+
+### System.IO.File.Copy
+`Copy(sourceFileName: string, destFileName: string): void` / `System.IO.File.Copy(sourceFileName: string, destFileName: string, overwrite: boolean): void`
+Files and folders (System.IO)
+Copies a file. With `overwrite` false (or left out) it throws if the destination exists, which ends the session inside `Game.Play`.
+
+### System.IO.File.Delete
+`Delete(path: string): void`
+Files and folders (System.IO)
+Deletes a file. No error if the file doesn't exist (its folder must); throws if it's in use or read-only.
+
+### System.IO.File.Exists
+`Exists(path: string): boolean`
+Files and folders (System.IO)
+Whether the file exists. `false` for a folder.
+
+### System.IO.File.GetAttributes
+`GetAttributes(path: string): number`
+Files and folders (System.IO)
+The file's attributes, e.g. `System.IO.FileAttributes.ReadOnly`.
+
+### System.IO.File.Move
+`Move(sourceFileName: string, destFileName: string): void`
+Files and folders (System.IO)
+Moves or renames a file. Throws if the destination exists.
+
+### System.IO.File.ReadAllLines
+`ReadAllLines(path: string): string[]`
+Files and folders (System.IO)
+The file as a list of lines.
+
+### System.IO.File.ReadAllText
+`ReadAllText(path: string): string`
+Files and folders (System.IO)
+The whole file as one string.
+
+### System.IO.File.SetAttributes
+`SetAttributes(path: string, fileAttributes: number): void`
+Files and folders (System.IO)
+Sets the file's attributes, e.g. `System.IO.FileAttributes.Normal` to clear read-only.
+
+### System.IO.File.WriteAllLines
+`WriteAllLines(path: string, contents: string[]): void`
+Files and folders (System.IO)
+Writes the lines to the file, replacing what was there.
+
+### System.IO.File.WriteAllText
+`WriteAllText(path: string, contents: string): void`
+Files and folders (System.IO)
+Writes the string to the file, replacing what was there (creates the file if needed).
+
+## System.IO.Directory
+
+Create, delete, check and list folders. Paths are Windows paths: write `\\` in a string, or build them with `System.IO.Path.Combine`. .NET has no Directory.Copy: copy the files one by one (`GetFiles` and `System.IO.File.Copy`).
+
+### System.IO.Directory.CreateDirectory
+`CreateDirectory(path: string): any`
+Files and folders (System.IO)
+Creates the folder and any missing parent folders. Nothing happens if it already exists.
+
+### System.IO.Directory.Delete
+`Delete(path: string): void` / `System.IO.Directory.Delete(path: string, recursive: boolean): void`
+Files and folders (System.IO)
+Deletes a folder. Without `recursive` (or with false) the folder must be empty.
+
+### System.IO.Directory.Exists
+`Exists(path: string): boolean`
+Files and folders (System.IO)
+Whether the folder exists.
+
+### System.IO.Directory.GetDirectories
+`GetDirectories(path: string): string[]` / `System.IO.Directory.GetDirectories(path: string, searchPattern: string): string[]`
+Files and folders (System.IO)
+Full paths of the folders in a folder, optionally matching a pattern.
+
+### System.IO.Directory.GetFiles
+`GetFiles(path: string): string[]` / `System.IO.Directory.GetFiles(path: string, searchPattern: string): string[]`
+Files and folders (System.IO)
+Full paths of the files in a folder, optionally matching a pattern like `"*.ini"`.
+
+### System.IO.Directory.Move
+`Move(sourceDirName: string, destDirName: string): void`
+Files and folders (System.IO)
+Moves or renames a folder.
+
+## System.IO.Path
+
+Build and take apart paths, without touching the disk.
+
+### System.IO.Path.ChangeExtension
+`ChangeExtension(path: string, extension: string): string`
+Files and folders (System.IO)
+The path with another extension, e.g. `".bak"`.
+
+### System.IO.Path.Combine
+`Combine(path1: string, path2: string): string` / `System.IO.Path.Combine(path1: string, path2: string, path3: string): string` / `System.IO.Path.Combine(path1: string, path2: string, path3: string, path4: string): string` / `System.IO.Path.Combine(...paths: string): string`
+Files and folders (System.IO)
+Joins path parts with `\`, e.g. `System.IO.Path.Combine(Game.Folder, "config.ini")`.
+
+### System.IO.Path.GetDirectoryName
+`GetDirectoryName(path: string): string`
+Files and folders (System.IO)
+The folder part: `C:\a\b.ini` → `C:\a`.
+
+### System.IO.Path.GetExtension
+`GetExtension(path: string): string`
+Files and folders (System.IO)
+The extension with its dot: `C:\a\b.ini` → `.ini`.
+
+### System.IO.Path.GetFileName
+`GetFileName(path: string): string`
+Files and folders (System.IO)
+The file name with its extension: `C:\a\b.ini` → `b.ini`.
+
+### System.IO.Path.GetFileNameWithoutExtension
+`GetFileNameWithoutExtension(path: string): string`
+Files and folders (System.IO)
+The file name without its extension: `C:\a\b.ini` → `b`.
+
+## System.Environment
+
+The current user and computer: the Windows account's, not a player's (that's `Context.Nickname`).
+
+### System.Environment.GetEnvironmentVariable
+`GetEnvironmentVariable(variable: string): string`
+Other .NET (System)
+An environment variable, e.g. `"APPDATA"`, or null if it is not set.
+
+### System.Environment.MachineName
+`(read-only) MachineName: string`
+read-only · Other .NET (System)
+The computer's name.
+
+### System.Environment.UserName
+`(read-only) UserName: string`
+read-only · Other .NET (System)
+The Windows user name of whoever runs Nucleus.
+
+## System.Threading.Thread
+
+The current thread.
+
+### System.Threading.Thread.Sleep
+`Sleep(millisecondsTimeout: number): void`
+Other .NET (System)
+Waits this many milliseconds. Nucleus waits with it, so keep it short.
+
 ## Nucleus enums
 
 ### Nucleus.Folder

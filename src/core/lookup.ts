@@ -20,6 +20,11 @@ const ROOTS: [string, string][] = [
   ['ProtoInputValues', 'ProtoInput.Values'],
   ['HubHandler', 'Hub.Handler'],
   ['HubMaintainer', 'Hub.Maintainer'],
+  ['System.IO.File', 'System.IO.File'],
+  ['System.IO.Directory', 'System.IO.Directory'],
+  ['System.IO.Path', 'System.IO.Path'],
+  ['System.Environment', 'System.Environment'],
+  ['System.Threading.Thread', 'System.Threading.Thread'],
 ];
 
 let cache: Entry[] | undefined;

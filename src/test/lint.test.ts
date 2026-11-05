@@ -420,3 +420,24 @@ test('let then var redeclaration loads in Jint (probe 112): no syntax error, rea
   // Other syntax errors are still reported.
   assert.ok(lint(src + 'var = ;\n').some((d) => d.rule === 'syntax-error'));
 });
+
+test('System.*: listed .NET members resolve, typos are caught, unlisted ones are allowed', () => {
+  const code = `${HEADER}Game.Play = function () {
+  var p = System.IO.Path.Combine(Game.Folder, "a.ini");
+  if (!System.IO.File.Exists(p)) System.IO.File.Copy(p, p + ".bak", true);
+  System.IO.File.SetAttributes(p, System.IO.FileAttributes.Normal);
+  System.IO.Directory.CreateDirectory(Context.UserProfileConfigPath);
+  System.Threading.Thread.Sleep(500);
+  var u = System.Environment.UserName;
+  System.Diagnostics.Process.Start("x.exe");
+  var many = System.IO.Path.Combine("a", "b", "c", "d", "e");
+};
+`;
+  assert.deepEqual(rules(lint(code)), [], 'no false positives on real-world System calls');
+  const typo = only(`${HEADER}Game.Play = function () { System.IO.File.Exsts("a"); };\n`, 'unknown-member');
+  assert.equal(typo.length, 1);
+  assert.match(typo[0].message, /Did you mean `Exists`/);
+  const args = only(`${HEADER}Game.Play = function () { System.IO.File.Copy("a"); };\n`, 'wrong-arguments');
+  assert.equal(args.length, 1, 'File.Copy needs 2 or 3 arguments');
+  assert.ok(membersOf({ kind: 'object', type: 'System.IO.File' }).some((m) => m.name === 'Exists'), 'completion offers File.Exists');
+});

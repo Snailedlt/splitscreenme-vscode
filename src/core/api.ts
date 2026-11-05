@@ -1,5 +1,6 @@
 // Typed access to the generated Nucleus handler API model (data/nucleus-api.json).
 import raw from '../../data/nucleus-api.json';
+import { DOTNET_OBJECTS } from './dotnet';
 
 export type SimpleType =
   | 'string'
@@ -46,6 +47,8 @@ export interface Member {
 export interface ApiObject {
   doc: string;
   members: Record<string, Member>;
+  /** Not every member is listed (.NET `System.*`): an unlisted one is allowed unless it looks like a typo. */
+  open?: boolean;
 }
 export interface NucleusClass {
   doc: string;
@@ -81,6 +84,9 @@ export interface ApiModel {
 }
 
 export const api = raw as unknown as ApiModel;
+// .NET `System.*`, written by hand (core/dotnet.ts): the generator only reads the Nucleus sources.
+Object.assign(api.objects, DOTNET_OBJECTS);
+if (api.globals.System) api.globals.System = { ...api.globals.System, type: 'System', doc: DOTNET_OBJECTS.System.doc };
 
 export const DOCS_URL = 'https://www.splitscreen.me/docs/handler-api';
 
@@ -134,6 +140,7 @@ export function resolveMember(base: Resolved, name: string): StepResult {
     case 'object': {
       const obj = api.objects[base.type];
       const key = jintMemberName(obj.members, name);
+      if (!key && obj.open && !looksLikeTypo(name, Object.keys(obj.members))) return { resolved: { kind: 'opaque' } };
       if (!key) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
       return { resolved: { kind: 'member', owner: base.type, name: key, member: obj.members[key] } };
     }
