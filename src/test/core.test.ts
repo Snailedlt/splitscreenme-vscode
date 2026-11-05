@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
-import { memberContextAt, resolveAt, callContextAt } from '../core/complete';
+import { memberContextAt, resolveAt, callContextAt, valueContextAt } from '../core/complete';
 import { membersOf, suggest } from '../core/api';
 import { renderHandler, toGuid, toHandlerFileName, FEATURES } from '../core/templates';
 import { writeZip, readZip, handlerPackageEntries, crc32 } from '../core/zip';
@@ -96,4 +96,13 @@ test('zip round trip with directory entries (Nucleus package layout)', () => {
   assert.ok(back[4].data!.equals(big));
   assert.ok(zip.length < 1000, 'compressible content is deflated');
   assert.equal(crc32(Buffer.from('123456789')), 0xcbf43926);
+});
+
+test('valueContextAt: values for enum and boolean options only', () => {
+  const at = (src: string) => valueContextAt(src.replace('|', ''), src.indexOf('|'));
+  assert.deepEqual(at('Game.DPIHandling = |')?.values.map((v) => v.value), ['Nucleus.DPIHandling.True', 'Nucleus.DPIHandling.Scaled', 'Nucleus.DPIHandling.InvScaled']);
+  assert.equal(at('Game.SymlinkGame = tr|')?.partial, 'tr');
+  assert.equal(at('Game.GameName = |'), undefined);
+  assert.equal(at('x = Game.SymlinkGame == |'), undefined);
+  assert.equal(at('Game.Play = |'), undefined);
 });

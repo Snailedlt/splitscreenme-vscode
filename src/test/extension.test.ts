@@ -146,3 +146,20 @@ test('Try it panel: simulates the active handler, no scripts, settings via comma
   assert.match(panel.webview.html, /all 4 players/);
   m.window.activeTextEditor = undefined;
 });
+
+test('completion after `=` offers the option values (enum values, true / false)', () => {
+  let { doc, pos } = at(HEADER + 'Game.DPIHandling = |');
+  let items = m.__registered.completion[0].provideCompletionItems(doc, pos);
+  assert.deepEqual(items.map((i: any) => i.label), ['Nucleus.DPIHandling.True', 'Nucleus.DPIHandling.Scaled', 'Nucleus.DPIHandling.InvScaled']);
+  assert.equal(items[0].preselect, true, 'the default is preselected');
+  ({ doc, pos } = at(HEADER + 'Game.Play = function () {\n  Context.Hook.ForceFocus = fa|\n};'));
+  items = m.__registered.completion[0].provideCompletionItems(doc, pos);
+  assert.deepEqual(items.map((i: any) => i.label), ['true', 'false']);
+  assert.deepEqual([items[0].range.start.character, items[0].range.end.character], [28, 30]);
+  // not for strings, comparisons or unknown names
+  for (const src of ['Game.GameName = |', 'if (Game.SymlinkGame == |', 'Game.Nope = |']) {
+    ({ doc, pos } = at(HEADER + src));
+    const r = m.__registered.completion[0].provideCompletionItems(doc, pos);
+    assert.ok(!r || !r.some((i: any) => i.label === 'true' || String(i.label).startsWith('Nucleus.DPI')), src);
+  }
+});

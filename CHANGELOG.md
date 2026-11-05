@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Completion after `=` offers the option's values: enum values (`Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, …, the default preselected) and `true`/`false` for boolean options.
+
 ## 0.1.1 (beta)
 
 - Fixed: `protoinput-legacy-hooks` warned about `HookReRegisterRawInputMouse`/`Keyboard` defaulting to true. Nucleus' hook only reads them when `HookReRegisterRawInput` (default false) is on, so their defaults do nothing by themselves (11 of the 13 Hub handlers it flagged).

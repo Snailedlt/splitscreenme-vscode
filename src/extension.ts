@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
-import { callContextAt, memberContextAt, resolveAt } from './core/complete';
+import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './core/complete';
 import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
@@ -80,7 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.workspace.applyEdit(edit.edit);
       vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
     }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.'),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' '),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
   );
@@ -228,6 +228,25 @@ function valueSnippet(m: Member): string {
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
   const text = doc.getText();
   const offset = doc.offsetAt(pos);
+  // `Game.DPIHandling = |`: the option's values (enum values, true / false).
+  const value = valueContextAt(text, offset);
+  if (value && !value.partial.includes('.')) {
+    const range = new vscode.Range(doc.positionAt(value.partialStart), pos);
+    return value.values.map(({ value: v, detail }, i) => {
+      const item = new vscode.CompletionItem(v, v.startsWith('Nucleus.') ? vscode.CompletionItemKind.EnumMember : vscode.CompletionItemKind.Value);
+      item.range = range;
+      item.detail = detail;
+      item.sortText = String(i).padStart(3, '0');
+      // The option's default first (preselected), then the rest in declared order.
+      const def = value.member.default?.replace(/^(\w+)\.(\w+)$/, 'Nucleus.$1.$2');
+      if (def && (def === v || value.member.default === v)) {
+        item.preselect = true;
+        item.detail = [detail, 'default'].filter(Boolean).join(' · ');
+      }
+      item.documentation = markdown(memberMarkdown(value.owner, value.name, value.member));
+      return item;
+    });
+  }
   const ctx = memberContextAt(text, offset);
   if (!ctx) return globalCompletions(doc, pos);
 

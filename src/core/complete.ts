@@ -1,6 +1,6 @@
 // Text-based expression resolution for completion, hover and signature help.
 // Works on incomplete code (while typing), so it scans text instead of parsing.
-import { Resolved, resolveGlobal, resolveIndex, resolveMember } from './api';
+import { Resolved, resolveGlobal, resolveIndex, resolveMember, api, Member } from './api';
 
 const ID = /[A-Za-z_$][\w$]*/y;
 
@@ -194,4 +194,40 @@ export function callContextAt(text: string, offset: number): CallContext | undef
     return { callee, activeParameter: frame.commas, isNew };
   }
   return undefined;
+}
+
+export interface ValueContext {
+  /** The option being assigned, e.g. Game.DPIHandling. */
+  owner: string;
+  name: string;
+  member: Member;
+  /** What has been typed of the value so far, and where it starts. */
+  partial: string;
+  partialStart: number;
+  /** Values to offer: enum values as `Nucleus.Enum.Value`, or `true` / `false`. */
+  values: { value: string; detail?: string }[];
+}
+
+/** `Game.DPIHandling = |` or `Game.KeepAspectRatio = tr|`: the values the option takes.
+ *  Only for enum and boolean options (other types have no fixed set of values). */
+export function valueContextAt(text: string, offset: number): ValueContext | undefined {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const before = text.slice(lineStart, offset);
+  const m = before.match(/([\w$.\]\[]+)\s*=\s*([\w$.]*)$/);
+  if (!m) return undefined; // (a comparison like `a == b` or `a != b` doesn't match: no word right before the =)
+  const targetEnd = lineStart + before.length - m[0].length + m[1].length;
+  const r = resolveAt(text, targetEnd);
+  if (!r || r.resolved.kind !== 'member') return undefined;
+  const { owner, name, member } = r.resolved;
+  if (member.kind === 'method' || member.readonly) return undefined;
+  const t = member.type ?? '';
+  let values: ValueContext['values'] = [];
+  if (t.startsWith('enum:')) {
+    const e = t.slice(5);
+    values = Object.entries(api.enums[e]?.values ?? {}).map(([v, n]) => ({ value: `Nucleus.${e}.${v}`, detail: `= ${n}` }));
+  } else if (t === 'boolean') {
+    values = [{ value: 'true' }, { value: 'false' }];
+  }
+  if (!values.length) return undefined;
+  return { owner, name, member, partial: m[2], partialStart: offset - m[2].length, values };
 }
