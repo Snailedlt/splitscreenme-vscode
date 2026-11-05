@@ -12,7 +12,7 @@ npm run build       # esbuild: dist/extension.js, dist/cli.js, AND the skill's s
 npm test            # build + node:test (dist-test/*.test.js)
 npm run typecheck   # tsc --noEmit
 npm run package     # .vsix
-npm run generate    # regenerate data/nucleus-api.json + types/nucleus.d.ts (needs ../splitscreenme-nucleus and ../splitscreenme-www clones)
+npm run generate    # regenerate data/nucleus-api.json + types/nucleus.d.ts (needs ../splitscreenme-nucleus and ../splitscreenme-www clones; the Sync workflow does this daily by PR)
 claude plugin validate .   # validate .claude-plugin/marketplace.json and the plugin
 ```
 
@@ -30,6 +30,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
+- `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
 - `src/mcp.ts`: `nucleus mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.

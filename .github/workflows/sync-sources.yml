@@ -1,0 +1,62 @@
+name: Sync with Nucleus and the docs
+# Once a day, a tiny check (git ls-remote, a few hundred bytes) whether Nucleus Co-op's source or the
+# splitscreen.me docs moved past the commits data/nucleus-api.json was generated from. Only then: clone
+# both, regenerate the API model, docs and skill files, test, and open (or update) a pull request with
+# the diff, so new or changed options show up for review instead of silently.
+# Needs: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+on:
+  schedule:
+    - cron: '3 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-sources
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Did Nucleus or the docs move?
+        id: check
+        run: |
+          have_n=$(node -p "require('./data/nucleus-api.json').source.nucleus")
+          have_w=$(node -p "require('./data/nucleus-api.json').source.www")
+          n=$(git ls-remote https://github.com/SplitScreen-Me/splitscreenme-nucleus refs/heads/master | cut -c1-7)
+          w=$(git ls-remote https://github.com/SplitScreen-Me/splitscreenme-www HEAD | cut -c1-7)
+          echo "nucleus $have_n -> $n, docs $have_w -> $w"
+          if [ "$n" = "$have_n" ] && [ "$w" = "$have_w" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          echo "nucleus=$n" >> "$GITHUB_OUTPUT"; echo "www=$w" >> "$GITHUB_OUTPUT"
+      - if: steps.check.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Regenerate
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git clone --quiet --depth 1 --filter=blob:none https://github.com/SplitScreen-Me/splitscreenme-nucleus ../splitscreenme-nucleus
+          git clone --quiet --depth 1 --filter=blob:none https://github.com/SplitScreen-Me/splitscreenme-www ../splitscreenme-www
+          npm ci
+          npm run generate
+          npm run build
+          npm test
+      - name: Open or update the pull request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then echo "Upstream moved, but nothing in the API model changed."; exit 0; fi
+          branch=sync/upstream
+          git switch -C "$branch"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qam "API model from Nucleus ${{ steps.check.outputs.nucleus }} and docs ${{ steps.check.outputs.www }}"
+          git push -qf origin "$branch"
+          body="Nucleus Co-op's source or the splitscreen.me docs changed, so the generated API model, type definitions and skill reference were regenerated (tests pass).
+
+          Review the diff of \`data/nucleus-api.json\` for new, removed or renamed options. If users will notice the change, add a line to \`CHANGELOG.md\` under Unreleased before merging."
+          gh pr view "$branch" >/dev/null 2>&1 && gh pr edit "$branch" --body "$body" || gh pr create --head "$branch" --base main --title "Sync the API model with Nucleus and the docs" --body "$body"

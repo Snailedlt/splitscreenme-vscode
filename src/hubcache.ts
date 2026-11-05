@@ -1,7 +1,8 @@
 // A small on-disk cache in front of the Hub API, so these tools (people, CI and AI agents through the
 // CLI, the MCP server and the extension) don't add load to hub.splitscreen.me:
-// - the handler list is fetched at most once an hour (an agent searching ten times costs one fetch),
-//   and an older copy is used when the Hub can't be reached;
+// - the handler list comes from our daily index on GitHub (not the Hub's API), checked at most once an
+//   hour with its ETag (an agent searching ten times costs one tiny request); the Hub is asked only
+//   when the index is missing or stale, and an older copy is used when neither can be reached;
 // - a package is downloaded once per handler version, then read from disk (a version never changes);
 // - every request names the tool in its User-Agent, so the Hub's maintainers can see it and reach us.
 import fs from 'node:fs';
@@ -25,25 +26,42 @@ export function cacheDir(): string {
   return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'nucleus-tools');
 }
 
-let memory: { at: number; list: HubHandler[] } | undefined;
+/** Our daily copy of the Hub's list (the testbench's hub-sync workflow), served by GitHub, so people's
+ *  searches never reach the Hub's API. The Hub itself is only asked when the index is missing or stale. */
+export const HUB_INDEX_URL = 'https://raw.githubusercontent.com/Snailedlt/nucleuscoop-handler-testbench/data/hub-index.json';
+const STALE_MS = 3 * 24 * 60 * 60_000;
 
-/** The Hub's handler list, from memory or disk when it is less than an hour old. */
+interface Cached { at: number; list: HubHandler[]; etag?: string; from?: 'index' | 'hub' }
+let memory: Cached | undefined;
+
+/** The Hub's handler list: from memory or disk while less than an hour old, then our index
+ *  (revalidated with its ETag, so an unchanged index costs a 304), then the Hub as a last resort. */
 export async function hubHandlers(dir = cacheDir(), now = Date.now(), fetchImpl: typeof fetch = politeFetch): Promise<HubHandler[]> {
   if (memory && now - memory.at < LIST_TTL_MS) return memory.list;
   const file = path.join(dir, 'hub-handlers.json');
-  let stale: { at: number; list: HubHandler[] } | undefined;
+  let stale: Cached | undefined;
   try {
     stale = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (stale && now - stale.at < LIST_TTL_MS) return (memory = stale).list;
   } catch {}
-  try {
-    const list = await fetchHandlers(fetchImpl);
-    memory = { at: now, list };
+  const keep = (c: Cached) => {
+    memory = c;
     try {
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(memory));
+      fs.writeFileSync(file, JSON.stringify(c));
     } catch {}
-    return list;
+    return c.list;
+  };
+  try {
+    const res = await fetchImpl(HUB_INDEX_URL, { headers: stale?.etag && stale.from === 'index' ? { 'if-none-match': stale.etag } : {} });
+    if (res.status === 304 && stale) return keep({ ...stale, at: now });
+    if (!res.ok) throw new Error(`index ${res.status}`);
+    const idx = (await res.json()) as { syncedAt: string; handlers: HubHandler[] };
+    if (!(now - Date.parse(idx.syncedAt) < STALE_MS) || !Array.isArray(idx.handlers)) throw new Error('index is stale');
+    return keep({ at: now, list: idx.handlers, etag: res.headers.get('etag') ?? undefined, from: 'index' });
+  } catch {}
+  try {
+    return keep({ at: now, list: await fetchHandlers(fetchImpl), from: 'hub' });
   } catch (e) {
     if (stale) return (memory = stale).list; // the Hub is down or rate limiting: an older list beats none
     throw e;

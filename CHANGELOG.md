@@ -24,7 +24,8 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
-- **Easier on the Hub.** The command-line tool, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour and each handler version only once, and requests say which tool sent them. Agents are told to fetch one or two handlers, never in bulk.
+- **Easier on the Hub.** Searching Hub handlers (command-line tool, MCP server, Browse the Hub) reads our daily copy of the Hub's list instead of the Hub, checked at most once an hour; each handler version is downloaded once, and requests say which tool sent them. Agents are told to fetch one or two handlers, never in bulk.
+- **Options and docs stay current.** A daily check notices when Nucleus Co-op or the splitscreen.me docs change and proposes the updated options for review.
 
 ## 0.1.1 (beta) · 2026-11-05
 
