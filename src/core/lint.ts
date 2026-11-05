@@ -713,6 +713,18 @@ class Analyzer {
         });
         return;
       }
+      // `System.IO.File.Exsts(p)`: the value is undefined, and calling undefined throws a TypeError.
+      if (ctx.parent?.type === 'CallExpression' && ctx.parent.callee === n) {
+        this.report({
+          rule: 'unknown-member',
+          severity: 'error',
+          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws a TypeError and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          start: n.property.start,
+          end: n.property.end,
+          fixes,
+        });
+        return;
+      }
       const effect = isWrite ? 'Assigning it has no effect' : 'It will be undefined';
       this.report({
         rule: 'unknown-member',

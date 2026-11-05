@@ -437,6 +437,10 @@ test('System.*: listed .NET members resolve, typos are caught, unlisted ones are
   const typo = only(`${HEADER}Game.Play = function () { System.IO.File.Exsts("a"); };\n`, 'unknown-member');
   assert.equal(typo.length, 1);
   assert.match(typo[0].message, /Did you mean `Exists`/);
+  assert.equal(typo[0].severity, 'error', 'calling a member that does not exist throws');
+  assert.match(typo[0].message, /calling it throws/);
+  const read = only(`${HEADER}Game.Play = function () { var x = System.IO.File.Exsts; };\n`, 'unknown-member');
+  assert.equal(read[0].severity, 'warning', 'only reading it is a warning');
   const args = only(`${HEADER}Game.Play = function () { System.IO.File.Copy("a"); };\n`, 'wrong-arguments');
   assert.equal(args.length, 1, 'File.Copy needs 2 or 3 arguments');
   assert.ok(membersOf({ kind: 'object', type: 'System.IO.File' }).some((m) => m.name === 'Exists'), 'completion offers File.Exists');
