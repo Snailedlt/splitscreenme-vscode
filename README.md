@@ -2,6 +2,8 @@
 
 Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
 
+> **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/**
+
 <p>
   <img src="docs/images/vscode-problems.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one">
   <img src="docs/images/vscode-try-it.png" width="49%" alt="VS Code: the Try it panel beside StardewValley.js, showing what Nucleus would set up for each of 4 players">

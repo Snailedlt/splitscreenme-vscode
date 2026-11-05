@@ -22,6 +22,8 @@ Thanks for helping. These tools are for people who write Nucleus Co-op handlers,
 - Try it saying something Nucleus doesn't do.
 - Anything confusing, slow or missing.
 
+Short intro to share: https://snailedlt.github.io/nucleuscoop-handler-testbench/start/
+
 Report it with the [tester feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml). A workbench share link (**Copy link**) is the easiest way to include the handler.
 
 ## What it can't know
