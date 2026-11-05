@@ -373,12 +373,12 @@ test('callback-misuse', () => {
   assert.equal(only(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.GamePlayAfterLaunch = true;\n', 'callback-misuse').length, 1);
   const after = HEADER + 'Game.GamePlayAfterLaunch = true;\nGame.Play = function () {\n  Context.StartArguments = "-x";\n};\n';
   assert.match(only(after, 'callback-misuse')[0].message, /no effect/);
-  const keys = only(HEADER + 'Game.CustomHotkeys = ["Ctrl+F1", "Ctrl+F2"];\nGame.OnCustomHotKey_1 = function () {};\n', 'callback-misuse');
+  const keys = only(HEADER + 'Game.CustomHotkeys = ["true|Save|Ctrl|F1", "true|Load|Ctrl|F2"];\nGame.OnCustomHotKey_1 = function () {};\n', 'callback-misuse');
   assert.equal(keys.length, 1);
   assert.equal(keys[0].severity, 'error');
   assert.match(keys[0].message, /OnCustomHotKey_2/);
   // fine
-  assert.deepEqual(lint(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.Play = function () { Context.StartArguments = "-x"; };\nGame.CustomHotkeys = ["Ctrl+F1"];\nGame.OnCustomHotKey_1 = function () {};\n'), []);
+  assert.deepEqual(lint(HEADER + 'Game.GamePlayBeforeGameSetup = true;\nGame.Play = function () { Context.StartArguments = "-x"; };\nGame.CustomHotkeys = ["true|Save|Ctrl|F1"];\nGame.OnCustomHotKey_1 = function () {};\n'), []);
 });
 
 test('Nucleus classes: constructors, Globals, IniFile, ModifySaveFile entries', () => {
@@ -444,4 +444,29 @@ test('System.*: listed .NET members resolve, typos are caught, unlisted ones are
   const args = only(`${HEADER}Game.Play = function () { System.IO.File.Copy("a"); };\n`, 'wrong-arguments');
   assert.equal(args.length, 1, 'File.Copy needs 2 or 3 arguments');
   assert.ok(membersOf({ kind: 'object', type: 'System.IO.File' }).some((m) => m.name === 'Exists'), 'completion offers File.Exists');
+});
+
+test('value-format: options Nucleus parses from text', () => {
+  const f = (line: string) => only(`${HEADER}${line}\n`, 'value-format');
+  // CustomHotkeys
+  assert.equal(f('Game.CustomHotkeys = ["true|Toggle HUD|Ctrl|H", "false|Next|Alt|F5", "true|x||D1"];').length, 0, 'well formed');
+  assert.equal(f('Game.CustomHotkeys = ["true|Toggle HUD|H"];')[0].severity, 'error');
+  assert.equal(f('Game.CustomHotkeys = ["yes|Toggle HUD|Ctrl|H"];')[0].severity, 'error');
+  const lower = f('Game.CustomHotkeys = ["true|Toggle HUD|Ctrl|h"];');
+  assert.equal(lower[0].severity, 'error');
+  assert.equal(lower[0].fixes![0].edits[0].text, '"true|Toggle HUD|Ctrl|H"');
+  assert.equal(f('Game.CustomHotkeys = ["true|Toggle HUD|Control|H"];')[0].severity, 'warning');
+  assert.equal(f('Game.CustomHotkeys = ["true|a|Ctrl|A", "true|b|Ctrl|B", "true|c|Ctrl|C", "true|d|Ctrl|D"];')[0].severity, 'warning', 'a fourth is ignored');
+  // folder pairs
+  assert.equal(f('Game.CopyFoldersTo = ["Saves|Saves", "Config"];').length, 1);
+  assert.equal(f('Game.SymlinkFoldersTo = ["a|b"];').length, 0);
+  // SteamlessPatch
+  assert.equal(f('Game.SteamlessPatch = ["false", "--quiet --keepbind", "2500"];').length, 0);
+  assert.equal(f('Game.SteamlessPatch = ["no", "--quiet", "2.5s"];').length, 2);
+  // BinariesFolder
+  assert.equal(f('Game.BinariesFolder = "Binaries\\\\Win64";').length, 0);
+  assert.equal(f('Game.BinariesFolder = "";').length, 0);
+  const slash = f('Game.BinariesFolder = "\\\\Binaries/Win64\\\\";');
+  assert.equal(slash[0].severity, 'warning');
+  assert.equal(slash[0].fixes![0].edits[0].text, '"Binaries\\\\Win64"');
 });

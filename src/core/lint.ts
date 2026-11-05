@@ -17,6 +17,15 @@ import {
 
 export type Severity = 'error' | 'warning' | 'info' | 'hint';
 
+// System.Windows.Forms.Keys names (Enum.Parse is case-sensitive), for Game.CustomHotkeys.
+const KEY_NAMES = new Set([
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+  ...Array.from({ length: 10 }, (_, i) => `D${i}`),
+  ...Array.from({ length: 10 }, (_, i) => `NumPad${i}`),
+  ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
+  ...'Back Tab LineFeed Clear Return Enter ShiftKey ControlKey Menu Pause Capital CapsLock Escape Space Prior PageUp Next PageDown End Home Left Up Right Down Select Print Execute Snapshot PrintScreen Insert Delete Help LWin RWin Apps Sleep Multiply Add Separator Subtract Decimal Divide NumLock Scroll LShiftKey RShiftKey LControlKey RControlKey LMenu RMenu BrowserBack BrowserForward BrowserRefresh BrowserStop BrowserSearch BrowserFavorites BrowserHome VolumeMute VolumeDown VolumeUp MediaNextTrack MediaPreviousTrack MediaStop MediaPlayPause LaunchMail SelectMedia LaunchApplication1 LaunchApplication2 OemSemicolon Oem1 Oemplus Oemcomma OemMinus OemPeriod OemQuestion Oem2 Oemtilde Oem3 OemOpenBrackets Oem4 OemPipe Oem5 OemCloseBrackets Oem6 OemQuotes Oem7 Oem8 OemBackslash Oem102 ProcessKey Packet Attn Crsel Exsel EraseEof Play Zoom NoName Pa1 OemClear KanaMode HanguelMode HangulMode JunjaMode FinalMode HanjaMode KanjiMode IMEConvert IMENonconvert IMEAccept IMEAceept IMEModeChange Cancel LButton RButton MButton XButton1 XButton2 None'.split(' '),
+]);
+
 export const RULES = {
   'syntax-error': { severity: 'error', description: 'The file cannot be parsed.' },
   'es5-only': {
@@ -33,6 +42,10 @@ export const RULES = {
   },
   'readonly-member': { severity: 'warning', description: 'The property is read-only (computed by Nucleus); assigning it has no effect.' },
   'type-mismatch': { severity: 'warning', description: 'The assigned value does not match the type Nucleus expects.' },
+  'value-format': {
+    severity: 'error',
+    description: 'A text option with a fixed format (CustomHotkeys, CopyFoldersTo, SteamlessPatch, BinariesFolder, ...) is written in a way Nucleus can\'t read: setup fails with an error, or the option silently does nothing.',
+  },
   'wrong-arguments': {
     severity: 'error',
     description: 'No overload of this Nucleus method takes this number of arguments. Jint throws "No public methods with the specified arguments were found", so the handler fails to load (top level) or the instance setup fails (Game.Play).',
@@ -765,6 +778,68 @@ class Analyzer {
       return;
     }
     if (m.type) this.checkType(label, m, n.right);
+    this.checkFormat(label, n.right);
+  }
+
+  /** Options Nucleus parses from text (GenericGameHandler, HotkeysRegistration). Literal values only. */
+  private checkFormat(label: string, value: Node) {
+    const items: Node[] = value.type === 'ArrayExpression' ? value.elements.filter(Boolean) : [value];
+    const str = (x: Node): string | undefined => (x.type === 'Literal' && typeof x.value === 'string' ? x.value : undefined);
+    const report = (x: Node, message: string, severity?: Severity, fixed?: string) =>
+      this.report({
+        rule: 'value-format',
+        message,
+        start: x.start,
+        end: x.end,
+        ...(severity ? { severity } : {}),
+        ...(fixed === undefined ? {} : { fixes: [{ title: `Change to ${JSON.stringify(fixed)}`, edits: [{ start: x.start, end: x.end, text: JSON.stringify(fixed) }], preferred: true }] }),
+      });
+    switch (label) {
+      case 'Game.CustomHotkeys':
+        items.forEach((x, i) => {
+          const v = str(x);
+          if (v === undefined) return;
+          if (i === 3) report(x, 'Nucleus registers only the first three custom hotkeys (Game.OnCustomHotKey_1 to _3); this one and any after it are ignored.', 'warning');
+          if (i >= 3) return;
+          const parts = v.split('|');
+          if (parts.length < 4) return report(x, `A custom hotkey needs 4 parts, "passThrough|text|modifier|key", e.g. "true|Toggle HUD|Ctrl|H". With fewer, Nucleus shows "Error registering hotkeys" and none of the custom hotkeys work.`);
+          if (!/^\s*(true|false)\s*$/i.test(parts[0])) return report(x, `The first part of a custom hotkey is true or false (pass the key on to the game), not "${parts[0]}". Otherwise Nucleus shows "Error registering hotkeys" and none of them work.`);
+          if (parts[2] && !['Ctrl', 'Alt', 'Shift'].includes(parts[2])) {
+            const fix = ['Ctrl', 'Alt', 'Shift'].find((k) => k.toLowerCase() === parts[2].trim().toLowerCase());
+            report(x, `"${parts[2]}" means no modifier: Nucleus only knows Ctrl, Alt and Shift, spelled exactly like that.`, 'warning', fix && [parts[0], parts[1], fix, ...parts.slice(3)].join('|'));
+          }
+          const key = parts[3];
+          if (KEY_NAMES.has(key) || /^\d+$/.test(key)) return;
+          const fix = [...KEY_NAMES].find((k) => k.toLowerCase() === key.trim().toLowerCase());
+          if (fix) return report(x, `Key names are case-sensitive: "${key}" is not a key, "${fix}" is. Otherwise Nucleus shows "Error registering hotkeys" and none of them work.`, undefined, [...parts.slice(0, 3), fix, ...parts.slice(4)].join('|'));
+          report(x, `"${key}" is not a key name this check knows (letters A-Z, D0-D9 for the digits, F1-F24, NumPad0, Space, Home...). If it isn't a .NET Keys name, Nucleus shows "Error registering hotkeys" and none of them work.`, 'warning');
+        });
+        return;
+      case 'Game.CopyFoldersTo':
+      case 'Game.SymlinkFoldersTo':
+      case 'Game.HardlinkFoldersTo':
+        for (const x of items) {
+          const v = str(x);
+          if (v !== undefined && !v.includes('|')) report(x, `Each entry is "folder|destination" (relative to the game folder). Without the "|", setting up the first instance fails with an error and the session ends.`);
+        }
+        return;
+      case 'Game.SteamlessPatch': {
+        if (value.type !== 'ArrayExpression') return;
+        const [on, , ms] = value.elements;
+        if (!on || !ms) return report(value, 'Game.SteamlessPatch is ["true or false (patch the launcher)", "Steamless arguments", "milliseconds to wait"], e.g. ["false", "--quiet --keepbind", "2500"]. With fewer entries the setup fails with an error.');
+        if (str(on) !== undefined && !/^\s*(true|false)\s*$/i.test(str(on)!)) report(on, 'The first entry is "true" (patch Game.LauncherExe) or "false" (patch the game exe). Anything else fails the setup with an error.');
+        if (str(ms) !== undefined && !/^\s*[+-]?\d+\s*$/.test(str(ms)!)) report(ms, 'The third entry is how long to wait, in whole milliseconds, e.g. "2500". Anything else fails the setup with an error.');
+        return;
+      }
+      case 'Game.BinariesFolder': {
+        const v = str(value);
+        if (!v) return;
+        const fixed = v.replace(/\//g, '\\').replace(/^\\+|\\+$/g, '');
+        if (fixed === v) return;
+        report(value, `Write it like "Binaries\\Win64": with backslashes, and without one at the start or end. Nucleus finds the game's root by removing this text from the exe's folder; ${/^[\\/]/.test(v) ? 'a leading slash makes the path absolute, so the instances point at the drive root' : 'with a slash at the end or "/" it never matches, and the root becomes the exe folder'}.`, 'warning', fixed);
+        return;
+      }
+    }
   }
 
   private checkType(label: string, m: Member, value: Node) {
