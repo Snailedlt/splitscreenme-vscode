@@ -570,6 +570,18 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   const ratio = (a: number, b: number) => `${a / gcd(a, b)}:${b / gcd(a, b)}`;
   let controllers = 0;
   let lastCtx: { ctx: unknown; calls: string[]; player: unknown } | undefined;
+  // GenericGameHandler: a UserProfile path starting with "Documents\\" is moved to the matching
+  // Documents path (on Game itself too), and Context gets the converted value.
+  const docs = (from: 'Config' | 'Save') => {
+    const v = gameStore[`UserProfile${from}Path`];
+    if (typeof v !== 'string' || !v.toLowerCase().startsWith('documents\\')) return false;
+    gameStore[`Documents${from}Path`] = v.substring(10);
+    gameStore[`Documents${from}PathNoCopy`] = gameStore[`UserProfile${from}PathNoCopy`];
+    gameStore[`ForceDocuments${from}Copy`] = gameStore[`ForceUserProfile${from}Copy`];
+    return true;
+  };
+  const cfgToDocs = docs('Config');
+  const saveToDocs = docs('Save');
   // GenericGameInfo.PrePlay sets Context, Player, Handler for every player and only then calls
   // Play?.Invoke(): the callbacks see the last player's Context even without a Game.Play.
   {
@@ -599,6 +611,16 @@ export function simulate(src: string, opt: SimOptions): SimResult {
         CustomUserGeneralValues: ((gameStore.CustomUserGeneralPrompts as string[]) ?? []).map(() => 'answer'),
         CustomUserPlayerValues: ((gameStore.CustomUserPlayerPrompts as string[]) ?? []).map(() => 'answer'),
         CustomUserInstanceValues: ((gameStore.CustomUserInstancePrompts as string[]) ?? []).map(() => 'answer'),
+      });
+      // Set by hand after CreateContext (GenericGameHandler, before Game.Play).
+      Object.assign(ctxStore, {
+        UserProfileConfigPath: cfgToDocs ? gameStore.DocumentsConfigPath : gameStore.UserProfileConfigPath ?? null,
+        UserProfileSavePath: saveToDocs ? gameStore.DocumentsSavePath : gameStore.UserProfileSavePath ?? null,
+        UserProfileConvertedToDocuments: cfgToDocs || saveToDocs,
+        DocumentsConfigPath: gameStore.DocumentsConfigPath ?? null,
+        DocumentsSavePath: gameStore.DocumentsSavePath ?? null,
+        IsFullscreen: false,
+        ...(typeof gameStore.LauncherExe === 'string' && gameStore.LauncherExe ? { LauncherFolder: gameStore.LauncherExe.replace(/[\\/][^\\/]*$/, '') } : {}),
       });
       const options: Record<string, unknown> = {};
       // A list option gives its first entry; an empty list is free text, "" until the user types.

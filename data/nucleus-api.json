@@ -4646,7 +4646,7 @@
      "ts": "any",
      "readonly": true,
      "internal": true,
-     "doc": "Copied from `Game.HandlerType` for the current instance."
+     "doc": ""
     },
     "Options": {
      "kind": "property",
@@ -4654,7 +4654,7 @@
      "type": "any",
      "ts": "Record<string, any>",
      "readonly": true,
-     "doc": "Values chosen by the user for options added with `Game.AddOption`.\n\nCopied from `Game.Options` for the current instance."
+     "doc": "Values chosen by the user for options added with `Game.AddOption`."
     },
     "Arch": {
      "kind": "property",
@@ -4927,7 +4927,7 @@
      "type": "string",
      "ts": "string",
      "readonly": true,
-     "doc": "Get the raw gamepad guid\n\nCopied from `Game.GamepadGuid` for the current instance.",
+     "doc": "Get the raw gamepad guid",
      "example": "Context.GamepadGuid",
      "category": "Path variables"
     },
@@ -5081,7 +5081,7 @@
      "type": "string",
      "ts": "string",
      "readonly": true,
-     "doc": "Can be use to edit NemirtingasEpicEmu.json\nCan be use in start argument to setup user Epic language parameter\nex: Context.StartArguments = ' -AlwaysFocus -nosplash -nomoviestartup -nomouse' + Context.EpicLang; (if Epic Language is set to \"en\" return => \"-epiclocale=en\", Should not be necessary in most cases)\n\nCopied from `Game.EpicLang` for the current instance.",
+     "doc": "Can be use to edit NemirtingasEpicEmu.json\nCan be use in start argument to setup user Epic language parameter\nex: Context.StartArguments = ' -AlwaysFocus -nosplash -nomoviestartup -nomouse' + Context.EpicLang; (if Epic Language is set to \"en\" return => \"-epiclocale=en\", Should not be necessary in most cases)",
      "example": "Context.EpicLang",
      "category": "Path variables"
     },
@@ -5091,7 +5091,7 @@
      "type": "string",
      "ts": "string",
      "readonly": true,
-     "doc": "Can be use to edit NemirtingasGalaxyEmu.json from handlers\n\nCopied from `Game.GogLang` for the current instance.",
+     "doc": "Can be use to edit NemirtingasGalaxyEmu.json from handlers",
      "example": "Context.GogLang",
      "category": "Path variables"
     },
@@ -5101,7 +5101,7 @@
      "type": "string",
      "ts": "string",
      "readonly": true,
-     "doc": "Copied from `Game.SteamLang` for the current instance."
+     "doc": ""
     },
     "UserName": {
      "kind": "property",
@@ -5193,7 +5193,7 @@
      "csType": "string",
      "type": "string",
      "ts": "string",
-     "doc": "Relative path from user profile to game's config path | requires Game.UserProfileConfigPath be set.\n\nCopied from `Game.UserProfileConfigPath` for the current instance.",
+     "doc": "Relative path from user profile to game's config path | requires Game.UserProfileConfigPath be set.",
      "example": "Context.UserProfileConfigPath",
      "category": "Path variables"
     },
@@ -5202,7 +5202,7 @@
      "csType": "string",
      "type": "string",
      "ts": "string",
-     "doc": "Relative path from user profile to game's save path | requires Game.UserProfileSavePath be set.\n\nCopied from `Game.UserProfileSavePath` for the current instance.",
+     "doc": "Relative path from user profile to game's save path | requires Game.UserProfileSavePath be set.",
      "example": "Context.UserProfileSavePath",
      "category": "Path variables"
     },
@@ -5211,7 +5211,7 @@
      "csType": "string",
      "type": "string",
      "ts": "string",
-     "doc": "Relative path from user profile to game's config path | requires Game.DocumentsConfigPath be set.\n\nCopied from `Game.DocumentsConfigPath` for the current instance.",
+     "doc": "Relative path from user profile to game's config path | requires Game.DocumentsConfigPath be set.",
      "example": "Context.DocumentsConfigPath",
      "category": "Path variables"
     },
@@ -5220,7 +5220,7 @@
      "csType": "string",
      "type": "string",
      "ts": "string",
-     "doc": "Relative path from user profile to game's save path | requires Game.DocumentsSavePath be set.\n\nCopied from `Game.DocumentsSavePath` for the current instance.",
+     "doc": "Relative path from user profile to game's save path | requires Game.DocumentsSavePath be set.",
      "example": "Context.DocumentsSavePath",
      "category": "Path variables"
     },

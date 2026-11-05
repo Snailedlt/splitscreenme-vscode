@@ -732,11 +732,14 @@ const model = {
   },
 };
 
-// GenericGameInfo.CreateContext copies every same-named field onto the context,
-// so Context.X mirrors Game.X: reuse its docs.
+// GenericGameInfo.CreateContext copies Game's values onto same-named Context members of the same
+// kind (field to field, property to writable property) and the same type, so those Context.X
+// mirror Game.X: reuse its docs. Others (Options, the UserProfile/Documents paths, ...) are set
+// by GenericGameHandler or not at all, and keep their own docs.
 for (const [k, m] of Object.entries(model.objects.Context.members)) {
   const g = model.objects.Game.members[k];
-  if (g && m.kind !== 'method' && g.kind !== 'method') {
+  const copied = g && m.kind !== 'method' && g.kind === m.kind && g.csType === m.csType && !(m.kind === 'property' && m.readonly);
+  if (copied) {
     if (!m.doc && g.doc) m.doc = g.doc;
     m.doc = `${m.doc ? m.doc + '\n\n' : ''}Copied from \`Game.${k}\` for the current instance.`;
   }

@@ -2345,8 +2345,6 @@ Delete a registry key for current user, baseKey can either be "HKEY_LOCAL_MACHIN
 `DocumentsConfigPath: string`
 Path variables
 Relative path from user profile to game's config path | requires Game.DocumentsConfigPath be set.
-
-Copied from `Game.DocumentsConfigPath` for the current instance.
 Example: `Context.DocumentsConfigPath`
 
 ### Context.DocumentsPlayer
@@ -2365,8 +2363,6 @@ Example: `Context.DocumentsRoot`
 `DocumentsSavePath: string`
 Path variables
 Relative path from user profile to game's save path | requires Game.DocumentsSavePath be set.
-
-Copied from `Game.DocumentsSavePath` for the current instance.
 Example: `Context.DocumentsSavePath`
 
 ### Context.DPIHandling
@@ -2411,8 +2407,6 @@ read-only · Path variables
 Can be use to edit NemirtingasEpicEmu.json
 Can be use in start argument to setup user Epic language parameter
 ex: Context.StartArguments = ' -AlwaysFocus -nosplash -nomoviestartup -nomouse' + Context.EpicLang; (if Epic Language is set to "en" return => "-epiclocale=en", Should not be necessary in most cases)
-
-Copied from `Game.EpicLang` for the current instance.
 Example: `Context.EpicLang`
 
 ### Context.ExecutableContext
@@ -2475,8 +2469,6 @@ Copied from `Game.GameName` for the current instance.
 `(read-only) GamepadGuid: string`
 read-only · Path variables
 Get the raw gamepad guid
-
-Copied from `Game.GamepadGuid` for the current instance.
 Example: `Context.GamepadGuid`
 
 ### Context.GamepadId
@@ -2497,8 +2489,6 @@ Path to the Nucleus Co-op current instance root folder (Nucleus-Coop\content\GUI
 `(read-only) GogLang: string`
 read-only · Path variables
 Can be use to edit NemirtingasGalaxyEmu.json from handlers
-
-Copied from `Game.GogLang` for the current instance.
 Example: `Context.GogLang`
 
 ### Context.GoldbergNeedSteamInterface
@@ -2790,8 +2780,6 @@ default `0`
 read-only
 Values chosen by the user for options added with `Game.AddOption`.
 
-Copied from `Game.Options` for the current instance.
-
 ### Context.OrigAspectRatio
 `OrigAspectRatio: string`
 Path variables
@@ -3014,7 +3002,6 @@ Copied from `Game.SteamID` for the current instance.
 ### Context.SteamLang
 `(read-only) SteamLang: string`
 read-only
-Copied from `Game.SteamLang` for the current instance.
 
 ### Context.SupportsKeyboard
 `SupportsKeyboard: boolean`
@@ -3083,8 +3070,6 @@ Windows user name.
 `UserProfileConfigPath: string`
 Path variables
 Relative path from user profile to game's config path | requires Game.UserProfileConfigPath be set.
-
-Copied from `Game.UserProfileConfigPath` for the current instance.
 Example: `Context.UserProfileConfigPath`
 
 ### Context.UserProfileConvertedToDocuments
@@ -3094,8 +3079,6 @@ Example: `Context.UserProfileConfigPath`
 `UserProfileSavePath: string`
 Path variables
 Relative path from user profile to game's save path | requires Game.UserProfileSavePath be set.
-
-Copied from `Game.UserProfileSavePath` for the current instance.
 Example: `Context.UserProfileSavePath`
 
 ### Context.UseX360ce

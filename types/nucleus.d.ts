@@ -2342,14 +2342,9 @@ interface Context {
    */
   UtilFolder: string;
   readonly PlayerGameFilesBackupFolder: string;
-  /**
-   * Copied from `Game.HandlerType` for the current instance.
-   */
   readonly HandlerType: any;
   /**
    * Values chosen by the user for options added with `Game.AddOption`.
-   *
-   * Copied from `Game.Options` for the current instance.
    */
   readonly Options: Record<string, any>;
   /**
@@ -2457,8 +2452,6 @@ interface Context {
   readonly x360ceGamepadGuid: string;
   /**
    * Get the raw gamepad guid
-   *
-   * Copied from `Game.GamepadGuid` for the current instance.
    * @example Context.GamepadGuid
    */
   readonly GamepadGuid: string;
@@ -2504,21 +2497,14 @@ interface Context {
    * Can be use to edit NemirtingasEpicEmu.json
    * Can be use in start argument to setup user Epic language parameter
    * ex: Context.StartArguments = ' -AlwaysFocus -nosplash -nomoviestartup -nomouse' + Context.EpicLang; (if Epic Language is set to "en" return => "-epiclocale=en", Should not be necessary in most cases)
-   *
-   * Copied from `Game.EpicLang` for the current instance.
    * @example Context.EpicLang
    */
   readonly EpicLang: string;
   /**
    * Can be use to edit NemirtingasGalaxyEmu.json from handlers
-   *
-   * Copied from `Game.GogLang` for the current instance.
    * @example Context.GogLang
    */
   readonly GogLang: string;
-  /**
-   * Copied from `Game.SteamLang` for the current instance.
-   */
   readonly SteamLang: string;
   /**
    * Windows user name.
@@ -2566,29 +2552,21 @@ interface Context {
   readonly DocumentsRoot: string;
   /**
    * Relative path from user profile to game's config path | requires Game.UserProfileConfigPath be set.
-   *
-   * Copied from `Game.UserProfileConfigPath` for the current instance.
    * @example Context.UserProfileConfigPath
    */
   UserProfileConfigPath: string;
   /**
    * Relative path from user profile to game's save path | requires Game.UserProfileSavePath be set.
-   *
-   * Copied from `Game.UserProfileSavePath` for the current instance.
    * @example Context.UserProfileSavePath
    */
   UserProfileSavePath: string;
   /**
    * Relative path from user profile to game's config path | requires Game.DocumentsConfigPath be set.
-   *
-   * Copied from `Game.DocumentsConfigPath` for the current instance.
    * @example Context.DocumentsConfigPath
    */
   DocumentsConfigPath: string;
   /**
    * Relative path from user profile to game's save path | requires Game.DocumentsSavePath be set.
-   *
-   * Copied from `Game.DocumentsSavePath` for the current instance.
    * @example Context.DocumentsSavePath
    */
   DocumentsSavePath: string;

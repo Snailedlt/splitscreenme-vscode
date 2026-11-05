@@ -237,3 +237,17 @@ Game.OnStop = function () { var id = Context.PlayerID; };
   const never = simulateIsolated(code.replace('Game.OnFinishedSetup', 'Game.GamePlayBeforeGameSetup = true;\nGame.GamePlayAfterLaunch = true;\nGame.OnFinishedSetup'), { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 });
   assert.match(never.callbacks.find((c) => c.name === 'Game.OnStop')!.error ?? '', /Context is not defined/);
 });
+
+test('Context.UserProfileConfigPath: a "Documents\\" path moves to DocumentsConfigPath, as GenericGameHandler does', () => {
+  const code = `Game.GUID = "D";
+Game.GameName = "D";
+Game.ExecutableName = "d.exe";
+Game.UserProfileConfigPath = "Documents\\\\My Games\\\\Foo";
+Game.UserProfileSavePath = "AppData\\\\Local\\\\Foo";
+Game.Play = function () {
+  Context.StartArguments = [Context.UserProfileConfigPath, Context.DocumentsConfigPath, Context.UserProfileConvertedToDocuments, Context.UserProfileSavePath].join("|");
+};
+`;
+  const r = simulateIsolated(code, { players: 1, width: 1920, height: 1080, keyboardPlayer: -1 });
+  assert.equal(r.players[0].startArguments, 'My Games\\Foo|My Games\\Foo|true|AppData\\Local\\Foo');
+});
