@@ -67,6 +67,7 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 ## Conventions
 
 - When the maintainer has to run a workflow or change a setting, give the direct link (e.g. https://github.com/Snailedlt/splitscreenme-vscode/actions/workflows/release.yml) and the inputs to enter.
+- When you need network allowlist entries (hosts) or environment variables from the maintainer, always list them in a code block, one per line, ready to copy.
 
 - TypeScript strict; keep `src/core` free of `vscode` imports.
 - Handler code you generate (templates, snippets, skill docs) must be ES5 and lint-clean. Tests lint the templates and every `js` block in the skill docs.
