@@ -60,7 +60,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 
 ## Release notes
 
-Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, starting with a **short summary** in bold (the Discord post shows only that), then the details. To release: bump `package.json` (and `plugin/.claude-plugin/plugin.json`), rename `## Unreleased` to `## <version> (beta)`, then run the Release workflow. It publishes that section as the GitHub release notes (`scripts/release-notes.mjs`) and refuses to release without it; `--discord` prints the post for the testers' thread. A test checks the format.
+Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, starting with a **short summary** in bold (the Discord post shows only that), then the details. To release: bump `package.json` (and `plugin/.claude-plugin/plugin.json`), rename `## Unreleased` to `## <version> (beta)`, then run the Release workflow. It publishes that section as the GitHub release notes (`scripts/release-notes.mjs`) and refuses to release without it; `--discord` prints a one-line post for the testers' thread (the tools show what's new themselves: the extension after an update and in **Nucleus: What's New**, the workbench from its own `CHANGELOG.md`). A test checks the format.
 
 ## Conventions
 

@@ -2,7 +2,8 @@
 //   node scripts/release-notes.mjs [version] [--discord] [--tag vX.Y.Z-beta.N]
 // version defaults to package.json's. The section is "## <version>" (anything after the number,
 // like "(beta)", is fine). Each bullet starts with a **short summary**, then the details: the
-// GitHub notes show everything, the Discord post only the summaries.
+// GitHub notes show everything; the Discord post is one line with the top summaries and a link
+// (the extension and the workbench show what's new themselves).
 // Exits 1 when the version has no section: every release needs its notes written first.
 import fs from 'node:fs';
 
@@ -31,12 +32,14 @@ if (!body) {
 }
 const repo = 'https://github.com/Snailedlt/splitscreenme-vscode';
 if (args.includes('--discord')) {
+  // Short: the tools show what's new themselves now. A link, plus up to three highlights.
   const items = body
     .split('\n')
     .filter((l) => /^- /.test(l))
     .map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1] ?? l.slice(2).split(/(?<=\.)\s/)[0])
-    .map((s) => `• ${s.replace(/\.$/, '')}`);
-  console.log(`**VS Code extension ${tag}** 🛠️\n<${repo}/releases/tag/${tag}>\n${items.join('\n')}`);
+    .map((s) => s.replace(/\.$/, ''));
+  const top = items.slice(0, 3).join(' · ') + (items.length > 3 ? ` (+${items.length - 3} more)` : '');
+  console.log(`**VS Code extension ${tag} is out** 🛠️ ${top}\nWhat's new is shown in the extension. <${repo}/releases/tag/${tag}>`);
 } else {
   console.log(`${body}
 

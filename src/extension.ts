@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
+import { registerWhatsNew } from './whatsnew';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './core/complete';
 import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
 import { registerCommands } from './commands';
@@ -32,6 +33,7 @@ export function isHandler(doc: vscode.TextDocument): boolean {
 export function activate(context: vscode.ExtensionContext) {
   const collection = vscode.languages.createDiagnosticCollection(SOURCE);
   context.subscriptions.push(collection);
+  registerWhatsNew(context);
 
   // AI agents in VS Code (Copilot agent mode, VS Code 1.101+): offer the handler tools as an MCP
   // server, the bundled `nucleus mcp`, run by VS Code's own Node.

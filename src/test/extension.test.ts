@@ -163,3 +163,10 @@ test('completion after `=` offers the option values (enum values, true / false)'
     assert.ok(!r || !r.some((i: any) => i.label === 'true' || String(i.label).startsWith('Nucleus.DPI')), src);
   }
 });
+
+test("what's new: highlights of the version's CHANGELOG section", async () => {
+  const { highlights } = await import('../whatsnew');
+  const log = '# Changelog\n\n## Unreleased\n\n- **Next.** x\n\n## 0.2.0 (beta)\n\n- **Value suggestions as you type.** details\n- **AI agents.** more\n\n## 0.1.1 (beta)\n\n- **Old.** y\n';
+  assert.deepEqual(highlights(log, '0.2.0'), ['Value suggestions as you type', 'AI agents']);
+  assert.deepEqual(highlights(log, '9.9.9'), []);
+});

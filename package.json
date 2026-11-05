@@ -42,6 +42,11 @@
     ],
     "commands": [
       {
+        "command": "splitscreenme.whatsNew",
+        "title": "What's New",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.newHandler",
         "title": "New Handler\u2026",
         "category": "Nucleus"
@@ -156,6 +161,11 @@
             "Disable all handler features."
           ],
           "description": "Which JavaScript files are treated as Nucleus Co-op handlers."
+        },
+        "splitscreenme.showWhatsNew": {
+          "type": "boolean",
+          "default": true,
+          "description": "After an update, show a short note with what's new (the full list is in Nucleus: What's New)."
         },
         "splitscreenme.lint.enable": {
           "type": "boolean",

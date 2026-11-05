@@ -1,13 +1,14 @@
 # Changelog
 
-Every release has a section here; the release workflow publishes it as the release notes (and refuses to release without one). Add a line under **Unreleased** with each user-visible change: start it with a **short summary** (that is what the Discord post shows), then the details.
+Every release has a section here; the release workflow publishes it as the release notes (and refuses to release without one). Add a line under **Unreleased** with each user-visible change: start it with a **short summary** (the update note and the Discord post show only that), then the details. Keep the biggest changes first.
 
 ## Unreleased
 
-- **Easier on the Hub.** The CLI, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour, each handler version is downloaded once, and requests name the tool. Agents are told to fetch one or two handlers, never in bulk.
-- **The workbench as one offline file.** Releases include `workbench.html`, and `nucleus workbench` saves it: open it locally or host it yourself.
 - **Value suggestions as you type.** After `=`, completion offers the option's values: `Game.DPIHandling = ` offers `Nucleus.DPIHandling.True`, `.Scaled` and `.InvScaled` (the default preselected), and boolean options offer `true`/`false`.
 - **AI agents can use the tools directly.** `nucleus mcp` is an MCP server for Claude Desktop, Cursor, VS Code Copilot and others: lint, fix, simulate, API lookup and search, templates, Hub search and verified Hub handlers, plus the skill's guide as a prompt. The extension registers it with VS Code (1.101+), and releases include a single-file `nucleus.js`.
+- **The workbench as one offline file.** Releases include `workbench.html`, and `nucleus workbench` saves it: open it locally or host it yourself.
+- **What's new, in the extension.** After an update, one note with the highlights and a button to read them all. **Nucleus: What's New** opens this list any time; turn the note off with `splitscreenme.showWhatsNew`.
+- **Easier on the Hub.** The CLI, the MCP server and Browse the Hub share a cache: the handler list is fetched at most once an hour, each handler version is downloaded once, and requests name the tool. Agents are told to fetch one or two handlers, never in bulk.
 
 ## 0.1.1 (beta)
 

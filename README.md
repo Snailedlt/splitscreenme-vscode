@@ -191,6 +191,7 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | `splitscreenme.lint.rules` | `{}` | Per-rule severity: `error`, `warning`, `info`, `hint` or `off`. |
 | `splitscreenme.completion.enable` | `true` | The extension's completion/hover/signature help. Turned off by **Set Up Type Definitions**, because TypeScript then provides them. |
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
+| `splitscreenme.showWhatsNew` | `true` | After an update, a short note with what's new. **Nucleus: What's New** opens the changelog any time. |
 
 ## Try it
 
