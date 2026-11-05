@@ -14,6 +14,8 @@ test('CHANGELOG.md has notes for the next release, each starting with a short bo
   for (const line of first.split('\n').filter((l) => l.startsWith('- '))) assert.match(line, /^- \*\*.+?\*\*/, `start with a **short summary**: ${line.slice(0, 80)}`);
   // Groups people (and agents) can scan: the emoji headings listed at the top of the file.
   for (const h of first.split('\n').filter((l) => l.startsWith('### '))) assert.ok(['### ✨ New', '### 🛠️ Improved', '### 🐛 Fixed', '### ⚡ Faster', '### ⚠️ Changed', '### 🙏 Thanks'].includes(h.trim()), h);
+  // Thanks lines name the person in bold (a GitHub profile link when it came through GitHub).
+  for (const sec of log.split(/^### 🙏.*$/m).slice(1)) for (const l of sec.split(/^##/m)[0].split('\n').filter((x) => x.startsWith('- '))) assert.match(l, /^- \*\*(\[[^\]]+\]\(https:\/\/github\.com\/[\w-]+\)|[^*\[]+)\*\* for /, l);
   // Releases are separated by a --- line, so one doesn't run into the next.
   for (const m of log.matchAll(/\n(.*)\n\n## \d/g)) assert.equal(m[1], '---', 'a --- line before each release');
   // Released sections carry their date.

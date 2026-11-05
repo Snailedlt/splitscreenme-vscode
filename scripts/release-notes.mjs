@@ -40,7 +40,7 @@ if (args.includes('--discord')) {
     .map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1] ?? l.slice(2).split(/(?<=\.)\s/)[0])
     .map((s) => s.replace(/\.$/, ''));
   const top = items.slice(0, 3).join(' · ') + (items.length > 3 ? ` (+${items.length - 3} more)` : '');
-  const thanks = (body.split(/^### 🙏.*$/m)[1] ?? '').split('\n').map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1]).filter(Boolean);
+  const thanks = (body.split(/^### 🙏.*$/m)[1] ?? '').split('\n').map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1]?.replace(/^\[([^\]]+)\]\([^)]+\)$/, '$1')).filter(Boolean);
   console.log(`**VS Code extension ${tag} is out** 🛠️ ${top}\nWhat's new is shown in the extension. <${repo}/releases/tag/${tag}>${thanks.length ? `\nThanks ${thanks.join(', ')} 🙏` : ''}`);
 } else {
   console.log(`${body}

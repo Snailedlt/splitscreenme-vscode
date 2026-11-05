@@ -6,7 +6,7 @@ What changed in each release of the SplitScreen.Me / Nucleus Co-op handler tools
 How to write it (people and AI agents read this; the release workflow publishes each section as the release notes and refuses to release without one):
 - Add each user-visible change under "## Unreleased", in one of these groups, biggest change first:
   ### ✨ New · ### 🛠️ Improved · ### 🐛 Fixed · ### ⚡ Faster · ### ⚠️ Changed (what users must do differently) · ### 🙏 Thanks
-- 🙏 Thanks: one line per person who tested, reported a bug or contributed to this release, e.g. "- **Horah** for reporting …". Credit them inline too ("Reported by Horah.").
+- 🙏 Thanks: one line per person who tested, reported a bug or contributed to this release, e.g. "- **Horah** for reporting …". When it came through GitHub (an issue, a pull request, a review), link their profile: "- **[name](https://github.com/name)** for …". Credit them inline too ("Reported by Horah.").
 - One line per change: a **short summary** in bold (the update note and the Discord post show only that), then one or two plain sentences.
 - A screenshot for big, visible changes, indented under its line: `  ![What it shows](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/docs/images/changelog/<version>-<name>.png)` (≈1000 px wide, docs/images/changelog/).
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
