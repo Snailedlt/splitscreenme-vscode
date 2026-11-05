@@ -1,15 +1,17 @@
 name: Release
-# Builds the .vsix and attaches it to a GitHub release (a prerelease when the version has a "-",
-# e.g. v0.1.0-beta.1). Either push a tag like v0.1.0-beta.1, or run the workflow by hand with a
-# version: GitHub then creates the tag on the commit it built.
+run-name: Release ${{ inputs.version || github.ref_name || 'next beta' }}
+# Builds the .vsix, nucleus.js and the offline workbench, and publishes them as a GitHub release with
+# that version's CHANGELOG.md section as the notes. Run it by hand (leave the version empty for the
+# next beta), or push a tag like v0.2.0-beta.1. The run's summary has the links and the Discord post.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: Version tag to create, e.g. v0.1.0-beta.1
-        required: true
+        description: 'Version tag. Leave empty for the next beta of package.json''s version (e.g. v0.2.0-beta.2).'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -17,17 +19,20 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+      - name: Which version? (checked before anything is built)
+        id: version
+        run: node scripts/release-version.mjs "${{ inputs.version }}"
+        env: # a pushed tag already exists: then only check it matches package.json and has notes
+          PUSHED_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Release notes (CHANGELOG.md must have this version's section)
-        run: node scripts/release-notes.mjs --tag "$VERSION" > release-notes.md
+      - name: Release notes (from CHANGELOG.md)
+        run: node scripts/release-notes.mjs --tag "${{ steps.version.outputs.tag }}" > release-notes.md
       - run: npm run typecheck
       - run: npm test
       - name: Build the offline workbench (workbench.html)
@@ -36,13 +41,38 @@ jobs:
           cd testbench/playground && npm ci && node build.mjs --core ../.. --refresh-hub
           cp dist/workbench-standalone.html "$GITHUB_WORKSPACE/workbench.html"
       - name: Package
-        run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${VERSION}.vsix"
+        run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${{ steps.version.outputs.tag }}.vsix"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          case "$VERSION" in v*) ;; *) echo "Version must start with v"; exit 1;; esac
-          pre=""; case "$VERSION" in *-*) pre="--prerelease";; esac
+          pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
-          echo "Discord post:"; node scripts/release-notes.mjs --tag "$VERSION" --discord | tee -a "$GITHUB_STEP_SUMMARY"
-          gh release create "$VERSION" "splitscreenme-vscode-${VERSION}.vsix" nucleus.js workbench.html --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.md $pre
+          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
+      - name: Summary (links and the Discord post)
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          repo="https://github.com/${{ github.repository }}"
+          {
+            echo "## ✅ $TAG is out"
+            echo
+            echo "**Release:** $repo/releases/tag/$TAG · **Download:** [splitscreenme-vscode-$TAG.vsix]($repo/releases/download/$TAG/splitscreenme-vscode-$TAG.vsix)"
+            echo
+            echo "### 💬 Post this in the Discord thread"
+            echo
+            echo '```text'
+            node scripts/release-notes.mjs --tag "$TAG" --discord
+            echo '```'
+            echo
+            echo "The intro page's download link and the extension's update note pick up the new version by themselves."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: What went wrong
+        if: failure()
+        run: |
+          {
+            echo "## ❌ Not released"
+            echo
+            echo "Nothing was published. Open the step marked ❌ above for the reason; a version or release-notes problem is explained at the top of the run."
+          } >> "$GITHUB_STEP_SUMMARY"
