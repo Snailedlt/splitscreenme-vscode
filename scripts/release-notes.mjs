@@ -22,7 +22,7 @@ export function section(changelog, v) {
   if (start < 0) return undefined;
   let end = lines.findIndex((l, i) => i > start && /^## /.test(l));
   if (end < 0) end = lines.length;
-  return lines.slice(start + 1, end).join('\n').trim();
+  return lines.slice(start + 1, end).join('\n').trim().replace(/\n-{3,}$/, '').trim();
 }
 
 const body = section(fs.readFileSync(new URL('CHANGELOG.md', root), 'utf8'), version);
@@ -34,12 +34,14 @@ const repo = 'https://github.com/Snailedlt/splitscreenme-vscode';
 if (args.includes('--discord')) {
   // Short: the tools show what's new themselves now. A link, plus up to three highlights.
   const items = body
+    .split(/^### 🙏.*$/m)[0] // what changed, not the thanks
     .split('\n')
     .filter((l) => /^- /.test(l))
     .map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1] ?? l.slice(2).split(/(?<=\.)\s/)[0])
     .map((s) => s.replace(/\.$/, ''));
   const top = items.slice(0, 3).join(' · ') + (items.length > 3 ? ` (+${items.length - 3} more)` : '');
-  console.log(`**VS Code extension ${tag} is out** 🛠️ ${top}\nWhat's new is shown in the extension. <${repo}/releases/tag/${tag}>`);
+  const thanks = (body.split(/^### 🙏.*$/m)[1] ?? '').split('\n').map((l) => l.match(/^- \*\*(.+?)\*\*/)?.[1]).filter(Boolean);
+  console.log(`**VS Code extension ${tag} is out** 🛠️ ${top}\nWhat's new is shown in the extension. <${repo}/releases/tag/${tag}>${thanks.length ? `\nThanks ${thanks.join(', ')} 🙏` : ''}`);
 } else {
   console.log(`${body}
 

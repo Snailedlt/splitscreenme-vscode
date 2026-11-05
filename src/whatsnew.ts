@@ -12,6 +12,7 @@ export function highlights(changelog: string, version: string): string[] {
   const section = parts.find((p) => p.startsWith(version + ' ') || p.startsWith(version + '\n'));
   if (!section) return [];
   return section
+    .split(/^### 🙏.*$/m)[0] // what changed, not the thanks
     .split('\n')
     .filter((l) => l.startsWith('- '))
     .map((l) => (l.match(/^- \*\*(.+?)\*\*/)?.[1] ?? l.slice(2)).replace(/\.$/, ''));
