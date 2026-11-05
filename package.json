@@ -2,7 +2,7 @@
   "name": "splitscreenme-vscode",
   "displayName": "SplitScreen.Me / Nucleus Co-op Handler Tools",
   "description": "IntelliSense, docs, linting and packaging for Nucleus Co-op game handlers (SplitScreen.Me).",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "splitscreenme",
   "license": "MIT",
   "repository": {

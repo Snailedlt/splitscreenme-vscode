@@ -17,7 +17,7 @@ test('CHANGELOG.md has notes for the next release, each starting with a short bo
   // Thanks lines name the person in bold (a GitHub profile link when it came through GitHub).
   for (const sec of log.split(/^### 🙏.*$/m).slice(1)) for (const l of sec.split(/^##/m)[0].split('\n').filter((x) => x.startsWith('- '))) assert.match(l, /^- \*\*(\[[^\]]+\]\(https:\/\/github\.com\/[\w-]+\)|[^*\[]+)\*\* for /, l);
   // Releases are separated by a --- line, so one doesn't run into the next.
-  for (const m of log.matchAll(/\n(.*)\n\n## \d/g)) assert.equal(m[1], '---', 'a --- line before each release');
+  [...log.matchAll(/\n(.*)\n\n## /g)].slice(1).forEach((m) => assert.equal(m[1], '---', 'a --- line before each release (after the first)'));
   // Released sections carry their date.
   for (const h of heads.slice(1)) assert.match(h, /^\d+\.\d+\.\d+ \(beta\) · \d{4}-\d{2}-\d{2}$/, h);
 });
