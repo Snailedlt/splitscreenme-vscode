@@ -98,11 +98,14 @@ test('zip round trip with directory entries (Nucleus package layout)', () => {
   assert.equal(crc32(Buffer.from('123456789')), 0xcbf43926);
 });
 
-test('valueContextAt: values for enum and boolean options only', () => {
+test('valueContextAt: values for enum and boolean options, callbacks and BlockedMessages', () => {
   const at = (src: string) => valueContextAt(src.replace('|', ''), src.indexOf('|'));
   assert.deepEqual(at('Game.DPIHandling = |')?.values.map((v) => v.value), ['Nucleus.DPIHandling.True', 'Nucleus.DPIHandling.Scaled', 'Nucleus.DPIHandling.InvScaled']);
   assert.equal(at('Game.SymlinkGame = tr|')?.partial, 'tr');
   assert.equal(at('Game.GameName = |'), undefined);
   assert.equal(at('x = Game.SymlinkGame == |'), undefined);
-  assert.equal(at('Game.Play = |'), undefined);
+  assert.equal(at('Game.Play = |')?.values[0].value, 'function () {\n};');
+  assert.equal(at('Game.ProtoInput.OnInputLocked = fu|')?.values[0].snippet, 'function () {\n\t$0\n};');
+  assert.equal(at('Game.ProtoInput.BlockedMessages = |')?.values[0].value, '[0x0008, 0x02a1, 0x02a3];');
+  assert.equal(at('Game.MaxPlayers = |'), undefined);
 });

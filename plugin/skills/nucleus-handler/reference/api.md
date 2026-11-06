@@ -13,6 +13,7 @@ Handler definition (`GenericGameInfo`).
 ### Game.AddOption
 `AddOption(name: string | number | boolean, desc: string | number | boolean, key: string | number | boolean, value: any, defaultValue: any): void` / `Game.AddOption(name: string | number | boolean, desc: string | number | boolean, key: string | number | boolean, value: any): void`
 Adds a user-selectable option to the game profile. Read it back in `Game.Play` with `Context.Options["key"]`.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.AltEpicEmuArgs
 `AltEpicEmuArgs: boolean`
@@ -152,6 +153,7 @@ Example: `Game.CustomUserPlayerPrompts = ["Enter network Adapter name", "Enter c
 ### Game.Debug
 `Debug: boolean`
 Writes a detailed debug log while the handler runs.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.DeleteFiles
 `DeleteFiles: string[]`
@@ -307,6 +309,7 @@ Example: `Game.ExecutableName = "Game.exe";`
 ### Game.ExecutableNames
 `ExecutableNames: string[]`
 Alternative executable names this handler matches (e.g. different store versions).
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.ExecutableToLaunch
 `ExecutableToLaunch: string`
@@ -490,11 +493,13 @@ Example: `Game.GameName = "Game Name";`
 `GamePlayAfterLaunch: boolean`
 Extra
 Run `Game.Play` after the instance has been launched instead of before. Changes to `Context.StartArguments` then have no effect. Don't combine with `Game.GamePlayBeforeGameSetup`: if both are true, `Game.Play` never runs.
+_✎ Written by Claude (AI), based on Nucleus GenericGameHandler.cs (where it is called). Not from the official docs._
 
 ### Game.GamePlayBeforeGameSetup
 `GamePlayBeforeGameSetup: boolean`
 Extra
 Run `Game.Play` before the majority of the instance is set up (Goldberg, XInput DLLs, ...) instead of after it. Don't combine with `Game.GamePlayAfterLaunch`: if both are true, `Game.Play` never runs.
+_✎ Written by Claude (AI), based on Nucleus GenericGameHandler.cs (where it is called). Not from the official docs._
 Example: `Game.GamePlayBeforeGameSetup = false;`
 
 ### Game.GogLang
@@ -649,6 +654,7 @@ Example: `Game.HideTaskbar = true;`
 `(read-only) Hook: GameHook`
 read-only · default `new GameHookInfo()`
 Settings for Nucleus' custom xinput/x360ce hook DLL.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.HookDontUpdateLegacyInMouseMsg
 `HookDontUpdateLegacyInMouseMsg: boolean`
@@ -986,22 +992,27 @@ Example: `Game.NotTopMost = false;`
 ### Game.OnCustomHotKey_1
 `OnCustomHotKey_1: () => void`
 Called when the first custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.OnCustomHotKey_2
 `OnCustomHotKey_2: () => void`
 Called when the second custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.OnCustomHotKey_3
 `OnCustomHotKey_3: () => void`
 Called when the third custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player's, or undefined before the first instance is set up.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.OnFinishedSetup
 `OnFinishedSetup: () => void`
 Called once after all instances have been set up and started, with the last player's `Context`/`Player`. An error thrown here ends the session.
+_✎ Written by Claude (AI), based on Nucleus GenericGameHandler.cs (where it is called). Not from the official docs._
 
 ### Game.OnStop
 `OnStop: () => void`
 Called when the session ends, with the last player's `Context`/`Player`. If it throws, Nucleus skips its cleanup (leftover processes, registry restore, temporary users, backups), so keep it error-free. `Context` is undefined if the session ends before the first instance was set up.
+_✎ Written by Claude (AI), based on Nucleus GenericGameHandler.cs (where it is called). Not from the official docs._
 
 ### Game.OrigSteamDllPath
 `OrigSteamDllPath: string`
@@ -1062,6 +1073,7 @@ Example: `Game.PauseCMDBatchBefore = 10;`
 ### Game.Play
 `Play: () => void`
 Called once per instance (player), in player order. By default it runs after Nucleus has set up the instance (Goldberg, XInput DLLs, ...) and before the game starts, and `Context.StartArguments` is read after it. `Game.GamePlayBeforeGameSetup` runs it before that setup; `Game.GamePlayAfterLaunch` runs it after the game has started (then `Context.StartArguments` has no effect). If both are true it never runs. `Context`, `Player`, `PlayerList`, `Handler` and `ProtoInput` are available inside it. An error thrown here ends the whole session.
+_✎ Written by Claude (AI), based on Nucleus GenericGameHandler.cs (where it is called). Not from the official docs._
 
 ### Game.PlayersPerInstance
 `PlayersPerInstance: number`
@@ -1136,6 +1148,7 @@ Example: `Game.PromptProcessChangesAtEnd = false;`
 `(read-only) ProtoInput: GameProtoInput`
 read-only · default `new ProtoInputOptions()`
 Proto Input options (multiple mice/keyboards, focus hooks, input redirection). See https://www.splitscreen.me/docs/protoinput
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.RefreshWindowAfterStart
 `RefreshWindowAfterStart: boolean`
@@ -1257,6 +1270,7 @@ Example: `Game.SetWindowHookStart = false;`
 ### Game.ShowOptionAsStep
 `ShowOptionAsStep(optionKey: string | number | boolean, required: boolean, title: string | number | boolean): CustomStep`
 Shows a previously added option as its own setup step before launching.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Game.SplitDivCompatibility
 `SplitDivCompatibility: boolean`
@@ -2180,6 +2194,7 @@ Per-instance context (`GenericContext`).
 `(read-only) Arch: string`
 read-only · Path variables
 Architecture of the game executable ("x86" or "x64").
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.Arch`
 
 ### Context.AspectRatio
@@ -2300,6 +2315,7 @@ Copied from `Game.CopyFiles` for the current instance.
 `CopyScriptFolder(DestinationPath: string | number | boolean): boolean`
 Path variables
 Copies the handler's folder (Game.Folder) to the given destination.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.CreatedDate
 `CreatedDate(file: string | number | boolean, year: number, month: number, day: number, hour: number, minute: number, second: number): void` / `Context.CreatedDate(file: string | number | boolean, year: number, month: number, day: number): void`
@@ -2314,20 +2330,24 @@ Create a registry key for current user, baseKey can either be "HKEY_LOCAL_MACHIN
 ### Context.CustomUserGeneralValues
 `CustomUserGeneralValues: string[]`
 Answers to `Game.CustomUserGeneralPrompts`.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.CustomUserInstanceValues
 `CustomUserInstanceValues: string[]`
 Answers to `Game.CustomUserInstancePrompts` for the current instance.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.CustomUserPlayerValues
 `CustomUserPlayerValues: string[]`
 Answers to `Game.CustomUserPlayerPrompts` for the current player.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.Debug
 `Debug: boolean`
 Writes a detailed debug log while the handler runs.
 
 Copied from `Game.Debug` for the current instance.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Context.DeleteRegKey
 `DeleteRegKey(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean): void`
@@ -2420,6 +2440,7 @@ Copied from `Game.ExecutableName` for the current instance.
 ### Context.ExePath
 `ExePath: string`
 Full path of the executable being launched for this instance.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.ExtractZip
 `ExtractZip(sourceZip: string | number | boolean, contentDestination: string | number | boolean, password: string | number | boolean): boolean`
@@ -2526,17 +2547,20 @@ Copied from `Game.HasDynamicWindowTitle` for the current instance.
 `(read-only) HasKeyboardPlayer: boolean`
 read-only · Path variables
 True if any player in the session uses keyboard & mouse.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.HasKeyboardPlayer`
 
 ### Context.Height
 `(read-only) Height: number`
 read-only
 Height in pixels of this instance's window.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.HexEdit
 `HexEdit(fileToEdit: string | number | boolean, address: string | number | boolean, newBytes: number[]): boolean`
 Path variables
 Writes bytes at an address in a file.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.HideCursor
 `HideCursor: boolean`
@@ -2562,6 +2586,7 @@ default `new GameHookInfo()`
 Settings for Nucleus' custom xinput/x360ce hook DLL.
 
 Copied from `Game.Hook` for the current instance.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. Not from the official docs._
 
 ### Context.HookFocus
 `HookFocus: boolean`
@@ -2684,6 +2709,7 @@ Example: `Context.LocalIP`
 `Log(msg: string | number | boolean): void` / `Context.Log(msg: string | number | boolean, val: string | number | boolean): void` / `Context.Log(msg: string | number | boolean, val: number): void` / `Context.Log(msg: string | number | boolean, val: boolean): void` / `Context.Log(msg: string | number | boolean, val: number): void` / `Context.Log(msg: string | number | boolean, vals: string[]): void`
 Path variables
 Writes a line to the Nucleus debug log (requires `Game.Debug = true` or debug logging enabled).
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.MaxPlayers
 `MaxPlayers: number`
@@ -2705,17 +2731,20 @@ Change the last modified date of a file.
 ### Context.ModifySaveFile
 `ModifySaveFile(installSavePath: string | number | boolean, saveFullPath: string | number | boolean, type: Nucleus.SaveType | number | boolean, ...info: Nucleus.SaveInfo): boolean`
 Edits keys in an INI/CFG file. Example: `Context.ModifySaveFile(path, path, Nucleus.SaveType.INI, [new Nucleus.IniSaveInfo("Section", "Key", "Value")]);`
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.MonitorHeight
 `(read-only) MonitorHeight: number`
 read-only · Path variables
 Height of the monitor this instance is on.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.MonitorHeight`
 
 ### Context.MonitorWidth
 `(read-only) MonitorWidth: number`
 read-only · Path variables
 Width of the monitor this instance is on.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.MonitorWidth`
 
 ### Context.MoveFolder
@@ -2761,6 +2790,7 @@ Example: `Context.NucleusUserRoot`
 `(read-only) NumberOfPlayers: number`
 read-only · Path variables
 Total number of players in this session.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.NumberOfPlayers`
 
 ### Context.NumControllers
@@ -2775,6 +2805,7 @@ default `0`
 `(read-only) Options: Record<string, any>`
 read-only
 Values chosen by the user for options added with `Game.AddOption`.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.OrigAspectRatio
 `OrigAspectRatio: string`
@@ -2800,6 +2831,7 @@ Copied from `Game.OrigSteamDllPath` for the current instance.
 ### Context.PatchFile
 `PatchFile(originalFile: string | number | boolean, patchedFile: string | number | boolean, patchFind: number[], patchReplace: number[]): boolean` / `Context.PatchFile(originalFile: string | number | boolean, patchedFile: string | number | boolean, spatchFind: string | number | boolean, spatchReplace: string | number | boolean): boolean`
 Patches bytes in a file (copy of the original). The file must be excluded from symlinking (e.g. via `Game.FileSymlinkExclusions`).
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.PatchFileFindAll
 `PatchFileFindAll(originalFile: string | number | boolean, patchedFile: string | number | boolean, patchFind: number[], patchReplace: number[]): boolean`
@@ -2815,6 +2847,7 @@ read-only
 ### Context.PlayerID
 `PlayerID: number`
 Zero-based index of the player/instance being set up.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.PlayersPerInstance
 `PlayersPerInstance: number`
@@ -2826,6 +2859,7 @@ Copied from `Game.PlayersPerInstance` for the current instance.
 `(read-only) PlayerSteamID: string`
 read-only
 Steam ID assigned to the current player.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.PlayerSteamIDs
 `PlayerSteamIDs: string[]`
@@ -2843,12 +2877,14 @@ Copied from `Game.PostHookInstances` for the current instance.
 `(read-only) PosX: number`
 read-only · Path variables
 X position of this instance's window.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.PosX`
 
 ### Context.PosY
 `(read-only) PosY: number`
 read-only · Path variables
 Y position of this instance's window.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 Example: `Context.PosY`
 
 ### Context.PreventWindowDeactivation
@@ -2881,11 +2917,13 @@ Copied from `Game.PromptBetweenInstances` for the current instance.
 `RandomInt(min: number, max: number): number`
 Path variables
 Returns a random integer between min and max.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.RandomString
 `RandomString(size: number, lowerCase: boolean): string`
 Path variables
 Returns a random alphanumeric string of the given length.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.RawHID
 `(read-only) RawHID: string`
@@ -2926,6 +2964,7 @@ Copied from `Game.ResetWindows` for the current instance.
 ### Context.RootFolder
 `RootFolder: string`
 Root of the current instance's game folder (Nucleus-Coop\content\<GUID>\Instance<N>).
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.RootInstallFolder
 `RootInstallFolder: string`
@@ -2988,6 +3027,7 @@ Copied from `Game.StartHookInstances` for the current instance.
 ### Context.StartProcess
 `StartProcess(path: string | number | boolean, args: string | number | boolean, asAdmin: boolean): boolean`
 Starts a process with arguments, optionally elevated.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.SteamID
 `SteamID: string`
@@ -3061,6 +3101,7 @@ default `new UserInfo()`
 `(read-only) UserName: string`
 read-only
 Windows user name.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.UserProfileConfigPath
 `UserProfileConfigPath: string`
@@ -3090,11 +3131,13 @@ default `Globals.NucleusInstallRoot + "\\utils"`
 ### Context.Wait
 `Wait(wait: number): void`
 Pauses the handler for the given number of milliseconds.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.Width
 `(read-only) Width: number`
 read-only
 Width in pixels of this instance's window.
+_✎ Written by Claude (AI), based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.WorkingFolder
 `WorkingFolder: string`

@@ -1,6 +1,6 @@
 import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './core/wm';
 import * as vscode from 'vscode';
-import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
+import { api, claudeNote, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
 import { registerWhatsNew } from './whatsnew';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './core/complete';
 import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
@@ -308,9 +308,10 @@ function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.Com
   const value = valueContextAt(text, offset);
   if (value && !value.partial.includes('.')) {
     const range = new vscode.Range(doc.positionAt(value.partialStart), pos);
-    return value.values.map(({ value: v, detail }, i) => {
-      const item = new vscode.CompletionItem(v, v.startsWith('Nucleus.') ? vscode.CompletionItemKind.EnumMember : vscode.CompletionItemKind.Value);
+    return value.values.map(({ value: v, detail, snippet }, i) => {
+      const item = new vscode.CompletionItem(v.replace(/\n/g, ' ').replace(/\s+/g, ' '), v.startsWith('Nucleus.') ? vscode.CompletionItemKind.EnumMember : snippet ? vscode.CompletionItemKind.Snippet : vscode.CompletionItemKind.Value);
       item.range = range;
+      item.insertText = snippet ? new vscode.SnippetString(snippet) : v;
       item.detail = detail;
       item.sortText = String(i).padStart(3, '0');
       // The option's default first (preselected), then the rest in declared order.
@@ -441,7 +442,7 @@ function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.S
     const { owner, name, member } = c.callee;
     for (const o of member.overloads ?? []) {
       const label = `${ownerLabel(owner)}.${name}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`).join(', ')}): ${o.returns}`;
-      const sig = new vscode.SignatureInformation(label, markdown(member.doc));
+      const sig = new vscode.SignatureInformation(label, markdown(member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : '')));
       sig.parameters = o.params.map((p) => new vscode.ParameterInformation(`${p.rest ? '...' : ''}${p.name}: ${p.type}`));
       help.signatures.push(sig);
     }
