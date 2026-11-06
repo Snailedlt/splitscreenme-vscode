@@ -211,18 +211,47 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
     }).program as Node;
   } catch (e: any) {
     const pos = typeof e.pos === 'number' ? e.pos : 0;
-    out.push({
-      rule: 'syntax-error',
-      severity: 'error',
-      message: String(e.message).replace(/\s*\(\d+:\d+\)$/, ''),
-      start: pos,
-      end: Math.min(text.length, pos + 1),
-    });
+    // Put the marker where the code stops making sense: an error on the next line's first token
+    // (`player.` then `}`) belongs at the end of the line before.
+    let at = pos;
+    const before = text.slice(0, pos);
+    const prev = before.search(/\S\s*$/);
+    if (prev >= 0 && /\n/.test(before.slice(prev))) at = prev;
+    const dot = /([\w$\])]+)\s*\.$/.exec(text.slice(0, at + 1));
+    const message = dot && text[at] === '.'
+      ? `Unfinished: a name is missing after \`${dot[1]}.\``
+      : String(e.message).replace(/\s*\(\d+:\d+\)$/, '');
+    const start = dot && text[at] === '.' ? dot.index : at;
+    out.push({ rule: 'syntax-error', severity: 'error', message, start, end: Math.min(text.length, at + 1) });
+    // Keep checking the rest: blank out the line that doesn't parse (offsets stay the same) and lint what's left.
+    const recovered = recoverParse(text, [at, pos]);
+    if (recovered) {
+      const more: Diagnostic[] = [];
+      new Analyzer(recovered.text, recovered.program, more, options.plugins, options.published).run();
+      out.push(...more.filter((d) => d.rule !== 'missing-required' && !recovered.blank.some(([a, b]) => d.start < b && d.end > a)));
+    }
     return finalize(out, text, comments, options);
   }
 
   new Analyzer(text, program, out, options.plugins, options.published).run();
   return finalize(out, text, comments, options);
+}
+
+/** The file with the lines around a syntax error blanked (same length), if that parses. */
+function recoverParse(text: string, at: number[]): { text: string; program: Node; blank: [number, number][] } | undefined {
+  const lineAt = (i: number): [number, number] => [text.lastIndexOf('\n', i - 1) + 1, (text.indexOf('\n', i) + 1 || text.length + 1) - 1];
+  const tries: [number, number][][] = [];
+  for (const i of at) tries.push([lineAt(i)]);
+  tries.push(at.map(lineAt));
+  for (const blank of tries) {
+    let t = text;
+    for (const [a, b] of blank) t = t.slice(0, a) + ' '.repeat(b - a) + t.slice(b);
+    try {
+      const program = parseLikeJint(t, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowHashBang: true }).program as Node;
+      return { text: t, program, blank };
+    } catch { /* try the next */ }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

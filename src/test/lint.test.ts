@@ -602,3 +602,15 @@ test('needs-option: an option Nucleus only reads when another is on', () => {
   assert.equal(only(HEADER + 'Game.SendFakeFocusMsg = true;\nGame.FakeFocusSendActivate = true;\n', 'needs-option').length, 0);
   assert.equal(only(HEADER + 'Game.DrawFakeMouseCursorForControllers = false;\n', 'needs-option').length, 0);
 });
+
+test('a syntax error: marked where the code stops, and the rest is still checked', () => {
+  const src = HEADER + 'Context.PLayerID;\nGame.Play = function () {\n  var player = PlayerList[0];\n  player.\n};\n';
+  const d = lint(src);
+  const syn = d.find((x) => x.rule === 'syntax-error')!;
+  assert.equal(syn.message, 'Unfinished: a name is missing after `player.`');
+  assert.equal(src.slice(syn.start, syn.end), 'player.');
+  assert.ok(d.some((x) => x.rule === 'unknown-member' && /PLayerID/.test(x.message)), 'other checks still run');
+  assert.ok(!d.some((x) => x.rule === 'missing-required'));
+  // Not parseable at all: only the syntax error.
+  assert.deepEqual(lint(HEADER + '((((\n').map((x) => x.rule), ['syntax-error']);
+});
