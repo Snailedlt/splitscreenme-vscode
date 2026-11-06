@@ -603,6 +603,7 @@
      "csType": "Action",
      "type": "function",
      "ts": "() => void",
+     "internal": true,
      "doc": "Never called by Nucleus (declared but unused): assigning it has no effect."
     },
     "OnStop": {

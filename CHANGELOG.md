@@ -12,6 +12,18 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### 🛠️ Improved
+
+- **`Game.SetupSse` no longer suggested.** Nucleus never calls it, so completion and the Lines list leave it out; setting it still gets the warning that it never runs. Reported by messenils.
+
+### 🙏 Thanks
+
+- **messenils** for spotting that `Game.SetupSse` is never called.
+
+---
+
 ## 0.3.0 (beta) · 2026-11-05
 
 ### ✨ New

@@ -501,6 +501,7 @@ const INTERNAL = {
     'LoadCustomAssemblies', 'SetPlayerList', 'SetProtoInputValues', 'PrePlay', 'CreateContext', 'SaveType', 'SavePath',
     'Profiles_ConfigPath', 'Profiles_SavePath', 'Profiles_Documents_ConfigPath', 'Profiles_Documents_SavePath',
     'Players_BackupPath', 'Content_Folder', 'HandlerId',
+    'SetupSse', // never called by Nucleus: the linter says so where it's set (callback-misuse)
   ]),
   Context: new Set(['HandlerType', 'bHasKeyboardPlayer', 'searchType', 'Error', 'Interval']),
 };

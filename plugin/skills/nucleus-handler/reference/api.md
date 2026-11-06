@@ -1242,10 +1242,6 @@ Window manipulation
 Set the game windows to top most at the very end.
 Example: `Game.SetTopMostAtEnd = true;`
 
-### Game.SetupSse
-`SetupSse: () => void`
-Never called by Nucleus (declared but unused): assigning it has no effect.
-
 ### Game.SetWindowHook
 `SetWindowHook: boolean`
 Window manipulation
