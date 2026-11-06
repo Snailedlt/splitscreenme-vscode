@@ -309,12 +309,17 @@ export const claudeNote = (m: { docBy?: string; docBasis?: string; docCheckedBy?
   : m.docCheckedBy ? `Written by Claude (AI), based on ${m.docBasis}. Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.`
   : `Written by Claude (AI), based on ${m.docBasis}. Not from the official docs.`;
 
+/** The "Doc review" issue form for a Claude-written doc, with its name filled in (.github/ISSUE_TEMPLATE/doc-review.yml;
+ *  the doc-review workflow adds the doc itself as a comment the reporter can't remove). */
+export const docReviewUrl = (path: string) =>
+  `https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=doc-review.yml&title=${encodeURIComponent(`Doc review: ${path}`)}&member=${encodeURIComponent(path)}`;
+
 export function memberMarkdown(owner: string, name: string, m: Member): string {
   const parts: string[] = [];
   parts.push('```ts\n' + memberSignature(owner, name, m).join('\n') + '\n```');
   if (m.deprecated) parts.push(`**${m.deprecated}**`);
   if (m.doc) parts.push(m.doc);
-  if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_`);
+  if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_${m.docCheckedBy ? '' : ` [Is it wrong? Tell us](${docReviewUrl(`${ownerLabel(owner)}.${name}`)})`}`);
   const meta: string[] = [];
   if (m.default !== undefined) meta.push(`Default: \`${m.default}\``);
   if (m.category) meta.push(`Category: ${m.category}`);

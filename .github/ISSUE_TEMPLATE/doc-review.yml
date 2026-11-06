@@ -1,0 +1,40 @@
+name: Doc review (a doc written by Claude)
+description: A doc Claude wrote from the Nucleus source is wrong, unclear or missing something. Opened from the doc itself in the workbench or VS Code.
+title: "Doc review: "
+labels: [doc-review]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for checking! A bot adds the doc as Claude wrote it, with what it's based on and links to the Nucleus source, as the first comment, so you don't need to copy it.
+  - type: input
+    id: member
+    attributes:
+      label: Which name
+      description: Filled in when you open this from the doc, e.g. `Game.AddOption` or `ProtoInput.InstallHook`.
+      placeholder: Game.AddOption
+    validations:
+      required: true
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: What's the problem
+      options:
+        - It's wrong (Nucleus does something else)
+        - It's unclear or misleading
+        - It's missing something important
+        - It's right (I checked it in Nucleus)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What Nucleus really does
+      description: What should the doc say instead? Plain words are fine.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How you know
+      description: A handler you tested, a Nucleus version, a line in the Nucleus source, a Discord thread... Anything that helps us check.
