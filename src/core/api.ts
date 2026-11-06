@@ -41,6 +41,9 @@ export interface Member {
   docBy?: 'claude';
   /** What a Claude-written doc is based on (source files and functions). */
   docBasis?: string;
+  /** A person who checked a Claude-written doc against Nucleus (data/claude-docs.json "checkedBy"), and when. */
+  docCheckedBy?: string;
+  docCheckedOn?: string;
   example?: string;
   category?: string;
   deprecated?: string;
@@ -301,8 +304,10 @@ export function ownerLabel(owner: string): string {
 }
 
 /** The label shown with a doc Claude wrote (empty for human-written docs). */
-export const claudeNote = (m: { docBy?: string; docBasis?: string }) =>
-  m.docBy === 'claude' ? `Written by Claude (AI), based on ${m.docBasis}. Not from the official docs.` : '';
+export const claudeNote = (m: { docBy?: string; docBasis?: string; docCheckedBy?: string; docCheckedOn?: string }) =>
+  m.docBy !== 'claude' ? ''
+  : m.docCheckedBy ? `Written by Claude (AI), based on ${m.docBasis}. Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.`
+  : `Written by Claude (AI), based on ${m.docBasis}. Not from the official docs.`;
 
 export function memberMarkdown(owner: string, name: string, m: Member): string {
   const parts: string[] = [];
