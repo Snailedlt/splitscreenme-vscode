@@ -1220,8 +1220,12 @@ class Analyzer {
   private checkDuplicates() {
     for (const [chain, nodes] of this.topAssignments) {
       if (nodes.length < 2) continue;
+      const last = nodes[nodes.length - 1];
+      const lastStart = lineStart(this.text, last.start);
+      const lastEnd = nextLineStart(this.text, last.end);
+      const lastAlone = this.text.slice(lastStart, last.start).trim() === '' && /^\s*;?\s*(\/\/.*)?$/.test(this.text.slice(last.end, lastEnd).replace(/\r?\n$/, ''));
       for (const n of nodes.slice(0, -1)) {
-        const line = lineOf(this.text, nodes[nodes.length - 1].start) + 1;
+        const line = lineOf(this.text, last.start) + 1;
         const stmtStart = lineStart(this.text, n.start);
         const stmtEnd = nextLineStart(this.text, n.end);
         const onlyStatementOnLine = this.text.slice(stmtStart, n.start).trim() === '' && /^\s*;?\s*(\/\/.*)?$/.test(this.text.slice(n.end, stmtEnd).replace(/\r?\n$/, ''));
@@ -1232,9 +1236,11 @@ class Analyzer {
           end: n.end,
           tags: ['unnecessary'],
           // Safe to remove automatically when nothing reads the option in between.
-          fixes: onlyStatementOnLine
-            ? [{ title: 'Remove this assignment', edits: [{ start: stmtStart, end: stmtEnd, text: '' }], preferred: !this.text.slice(n.end, nodes[nodes.length - 1].start).includes(chain) }]
-            : undefined,
+          // Or keep this value: remove the later assignment instead (never automatic: only the author knows which is meant).
+          fixes: [
+            ...(onlyStatementOnLine ? [{ title: `Remove this assignment (keep line ${line})`, edits: [{ start: stmtStart, end: stmtEnd, text: '' }], preferred: !this.text.slice(n.end, last.start).includes(chain) }] : []),
+            ...(lastAlone && n === nodes[nodes.length - 2] ? [{ title: `Keep this value: remove line ${line}`, edits: [{ start: lastStart, end: lastEnd, text: '' }] }] : []),
+          ],
         });
       }
     }

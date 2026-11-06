@@ -624,3 +624,17 @@ test('needs-option: the Proto Input focus loop options need EnableFocusMessageLo
   // Started by the handler itself: no warning (turning the option loop on would run a second one).
   assert.equal(only(HEADER + pi + 'Game.ProtoInput.FocusLoopIntervalMilliseconds = 100;\nGame.ProtoInput.OnInputLocked = function () { ProtoInput.StartFocusMessageLoop(Player.ProtoInputInstanceHandle, 0, true, true, false, true, true); };\n', 'needs-option').length, 0);
 });
+
+test('duplicate-assignment: remove this one, or keep it and remove the later one', () => {
+  const src = HEADER + 'Game.MaxPlayers = 4;\nGame.MaxPlayers = 8;\n';
+  const d = only(src, 'duplicate-assignment');
+  assert.equal(d.length, 1);
+  const titles = d[0].fixes!.map((f) => f.title);
+  assert.equal(titles.length, 2);
+  assert.match(titles[0], /^Remove this assignment/);
+  assert.match(titles[1], /^Keep this value: remove line/);
+  const kept = d[0].fixes![1].edits.reduce((s, e) => s.slice(0, e.start) + e.text + s.slice(e.end), src);
+  assert.ok(kept.includes('Game.MaxPlayers = 4;') && !kept.includes('Game.MaxPlayers = 8;'));
+  // Fix all only applies the preferred one (the later value wins, as in Nucleus).
+  assert.equal(d[0].fixes!.filter((f) => f.preferred).length, 1);
+});
