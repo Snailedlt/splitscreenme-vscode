@@ -1645,11 +1645,21 @@ class Analyzer {
       { child: 'FakeFocusSendActivate', any: ['FakeFocus', 'SendFakeFocusMsg'], why: 'it is only read when fake focus messages are sent (`Game.FakeFocus` or `Game.SendFakeFocusMsg`)' },
       { child: 'DrawFakeMouseCursorForControllers', any: ['DrawFakeMouseCursor'], why: 'the fake cursors are only drawn with `Game.DrawFakeMouseCursor = true`' },
       { child: 'UpdateFakeMouseWithInternalInput', any: ['DrawFakeMouseCursor'], why: 'the fake cursors are only drawn with `Game.DrawFakeMouseCursor = true`' },
+      { child: 'ProtoInput.FocusLoopIntervalMilliseconds', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_ACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_ACTIVATEAPP', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_NCACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_MOUSEACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_SETFOCUS', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
       { child: 'SteamlessArgs', any: ['UseSteamless'], why: 'Steamless only runs with `Game.UseSteamless = true`' },
       { child: 'SteamlessTiming', any: ['UseSteamless'], why: 'Steamless only runs with `Game.UseSteamless = true`' },
     ];
     const on = (k: string) => [...this.text.matchAll(new RegExp(`\\bGame\\.${k}\\s*=\\s*([^;\\n]+)`, 'g'))].some((m) => !/^(false|0|null|""|'')(?![\w.])/.test(m[1].trim()));
+    // A handler that starts Proto Input's focus loop itself passes its own interval and messages: the options are
+    // leftovers there, and turning the option loop on would run a second loop.
+    const ownLoop = /\bStartFocusMessageLoop\s*\(/.test(this.text);
     for (const n of NEEDS) {
+      if (ownLoop && n.child.startsWith('ProtoInput.FocusLoop')) continue;
       const nodes = this.topAssignments.get(`Game.${n.child}`);
       const node = nodes?.[nodes.length - 1];
       if (!node) continue;

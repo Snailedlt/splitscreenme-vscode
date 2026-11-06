@@ -37,6 +37,10 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
 - `plugin/`: the Claude Code plugin (`.claude-plugin/plugin.json`, `skills/nucleus-handler/`). `.claude-plugin/marketplace.json` at the root publishes it.
 
+## Docs written by Claude
+
+`data/claude-docs.json` holds API docs Claude wrote from the Nucleus and Proto Input source, for members the official docs and the source comments leave out. Each entry has `doc` and `basis` (the files and functions it is based on). `npm run generate` uses one only where no human doc exists (or with `"override": true`, where the official text is wrong), and marks the member `docBy: "claude"`, `docBasis`. Every place docs show (hovers, completion, Reference, `api.md`, the `.d.ts`, the CLI) adds "Written by Claude (AI), based on …" (`claudeNote` in `core/api.ts`); human docs carry no label. When you write one, read the source first and state only what it shows; `src/test/docs.test.ts` checks every entry is a real member and still used.
+
 ## Generated files: never edit by hand
 
 `data/nucleus-api.json`, `types/nucleus.d.ts` (from `npm run generate`), and `plugin/skills/nucleus-handler/scripts/nucleus.js` and `plugin/skills/nucleus-handler/reference/api.md` (from `npm run build`). Fix the generator or the source instead.
@@ -55,7 +59,8 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `.nc` packages: `handler.js` at the root, plus top-level folders that need **explicit directory entries**. `Game.Folder` is `handlers/<js file name without .js>/`. A Hub install (DownloadPrompt.ExtractHandler) names that file after `Game.GameName` (raw line value, minus `/ : * ? " < > |`; a backslash stays and breaks the install) and merges the contents of every top-level folder of the package into `handlers/<GameName>/`; other files at the zip root are dropped. A saved profile gives every `Game.AddOption` value back as text (`GameProfile.LoadGameProfile`: `JToken.ToString()`), and Nucleus reads handlers as UTF-8. The simulator uses the Hub install's folder name.
 
 - Proto Input only starts with `Game.ProtoInput.InjectStartup` or an `InjectRuntime_…` option (GenericGameHandler); otherwise every `Game.ProtoInput.*` option is ignored. `BlockedMessages` and the `…Filter` options only act inside its message filter hook (`MessageFilterHook`; ProtoInputHooks `MessageFilterHook.cpp`). A blocked number goes through Proto Input's own message table (`MessageList.cpp`, `GenerateIndexTable`, reproduced in `core/wm.ts`): unlisted numbers land on another entry's switch, numbers past the end do nothing. `data/window-messages.json` comes from that file (`scripts/generate-wm.mjs`, part of `npm run generate`; needs a `../splitscreenme-protoInput` clone). Nucleus spells one option `WindowActvateAppFilter`.
-- Options Nucleus only reads inside another's `if` (`needs-option` in `core/lint.ts`): `FakeFocusInterval` and `FakeFocusSendActivateIgnoreKB` need `FakeFocus`; `FakeFocusSendActivate` needs `FakeFocus` or `SendFakeFocusMsg` (WindowFakeFocus); the fake-cursor options need `DrawFakeMouseCursor`; `SteamlessArgs`/`SteamlessTiming` need `UseSteamless`.
+- Options Nucleus only reads inside another's `if` (`needs-option` in `core/lint.ts`): `FakeFocusInterval` and `FakeFocusSendActivateIgnoreKB` need `FakeFocus`; `FakeFocusSendActivate` needs `FakeFocus` or `SendFakeFocusMsg` (WindowFakeFocus); the fake-cursor options need `DrawFakeMouseCursor`; `SteamlessArgs`/`SteamlessTiming` need `UseSteamless`; `Game.ProtoInput.FocusLoop_*` and `FocusLoopIntervalMilliseconds` need `Game.ProtoInput.EnableFocusMessageLoop` (ProtoInputLauncher; skipped when the handler calls `ProtoInput.StartFocusMessageLoop` itself).
+- `ProtoInput.Values.GetCursorInfoID` is a Nucleus bug: it holds `RemoveBorderHookID` (ProtoInput.cs ExposedValues), so installing it installs the remove-border hook.
 
 ## Changing lint rules
 

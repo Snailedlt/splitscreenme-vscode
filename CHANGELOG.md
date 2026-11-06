@@ -21,6 +21,8 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **Docs for 150 more API members.** Hovers, suggestions and the reference now explain the Proto Input functions and hook IDs, the `Player` members and the most used undocumented options, written from the Nucleus and Proto Input source. Each one says it was written by Claude (AI) and what it's based on, since the official docs don't cover them.
+- **Focus loop settings that do nothing.** `Game.ProtoInput.FocusLoop_…` and `FocusLoopIntervalMilliseconds` only work with `Game.ProtoInput.EnableFocusMessageLoop = true`; the `needs-option` check now says so (14 Hub handlers).
 - **More suggestions after `=`.** `Game.Play = ` (and the other callbacks) inserts `function () { }` with the cursor inside, and `Game.ProtoInput.BlockedMessages = ` offers the set most Hub handlers block.
 - **A typo no longer hides every other problem.** While a line doesn't parse yet (say you're halfway through `player.`), the rest of the handler is still checked, and the error sits on the unfinished code with a plain message ("a name is missing after `player.`") instead of on the next line.
 

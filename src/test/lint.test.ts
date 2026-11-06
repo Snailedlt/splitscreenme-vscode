@@ -614,3 +614,13 @@ test('a syntax error: marked where the code stops, and the rest is still checked
   // Not parseable at all: only the syntax error.
   assert.deepEqual(lint(HEADER + '((((\n').map((x) => x.rule), ['syntax-error']);
 });
+
+test('needs-option: the Proto Input focus loop options need EnableFocusMessageLoop', () => {
+  const pi = 'Game.ProtoInput.InjectStartup = true;\n';
+  const d = only(HEADER + pi + 'Game.ProtoInput.FocusLoopIntervalMilliseconds = 100;\n', 'needs-option');
+  assert.equal(d.length, 1);
+  assert.equal(d[0].fixes![0].edits[0].text, 'Game.ProtoInput.EnableFocusMessageLoop = true;\n');
+  assert.equal(only(HEADER + pi + 'Game.ProtoInput.EnableFocusMessageLoop = true;\nGame.ProtoInput.FocusLoop_WM_ACTIVATE = true;\n', 'needs-option').length, 0);
+  // Started by the handler itself: no warning (turning the option loop on would run a second one).
+  assert.equal(only(HEADER + pi + 'Game.ProtoInput.FocusLoopIntervalMilliseconds = 100;\nGame.ProtoInput.OnInputLocked = function () { ProtoInput.StartFocusMessageLoop(Player.ProtoInputInstanceHandle, 0, true, true, false, true, true); };\n', 'needs-option').length, 0);
+});

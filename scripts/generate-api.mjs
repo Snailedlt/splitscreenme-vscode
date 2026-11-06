@@ -511,7 +511,20 @@ const REQUIRED_GAME = ['GUID', 'GameName', 'ExecutableName'];
 
 const looseParam = (t) => (t === 'string' ? 'string | number | boolean' : t);
 
-function buildObject(objName, docPrefix, parsed, extraDoc = {}, override = {}) {
+// Docs written by Claude from the source (data/claude-docs.json): used where no human doc exists (or with
+// "override", where the official text is wrong), and marked as such (docBy, docBasis) so the tools can say so.
+const claudeDocs = JSON.parse(fs.readFileSync(path.join(root, 'data', 'claude-docs.json'), 'utf8')).docs;
+const usedClaude = new Set();
+function pickDoc(key, human) {
+  const c = claudeDocs[key];
+  if (c && (c.override || !human)) {
+    usedClaude.add(key);
+    return { doc: c.doc, docBy: 'claude', docBasis: c.basis };
+  }
+  return { doc: human || '' };
+}
+
+function buildObject(objName, docPrefix, parsed) {
   const result = {};
   for (const m of parsed) {
     if (m.isStatic && m.kind !== 'method') continue;
@@ -521,7 +534,7 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}, override = {}) {
     if (m.kind === 'method') {
       const entry = (result[m.name] ??= {
         kind: 'method',
-        doc: override[m.name] || d.doc || m.sourceDoc || extraDoc[m.name] || '',
+        ...pickDoc(key, d.doc || m.sourceDoc),
         overloads: [],
         ...(internal ? { internal } : {}),
         ...(d.category ? { category: d.category } : {}),
@@ -553,7 +566,7 @@ function buildObject(objName, docPrefix, parsed, extraDoc = {}, override = {}) {
       ...(m.default !== undefined ? { default: m.default } : {}),
       ...(m.readonly || READONLY[objName]?.has(m.name) ? { readonly: true } : {}),
       ...(internal ? { internal } : {}),
-      doc: override[m.name] || d.doc || m.sourceDoc || extraDoc[m.name] || '',
+      ...pickDoc(key, d.doc || m.sourceDoc),
       ...(d.example ? { example: d.example } : {}),
       ...(d.category ? { category: d.category } : {}),
       ...(d.deprecated ? { deprecated: d.deprecated } : {}),
@@ -576,70 +589,6 @@ const protoRtParsed = members(findTypeBody(protoRtText, 'class', 'ProtoInput'))
 const exposedParsed = parseClass('Coop/ProtoInput/ProtoInput.cs', 'ExposedValues');
 
 // Facts checked in the Nucleus source; these replace the docs site's text.
-const gameDocOverride = {
-  Play: 'Called once per instance (player), in player order. By default it runs after Nucleus has set up the instance (Goldberg, XInput DLLs, ...) and before the game starts, and `Context.StartArguments` is read after it. `Game.GamePlayBeforeGameSetup` runs it before that setup; `Game.GamePlayAfterLaunch` runs it after the game has started (then `Context.StartArguments` has no effect). If both are true it never runs. `Context`, `Player`, `PlayerList`, `Handler` and `ProtoInput` are available inside it. An error thrown here ends the whole session.',
-  GamePlayAfterLaunch: 'Run `Game.Play` after the instance has been launched instead of before. Changes to `Context.StartArguments` then have no effect. Don\'t combine with `Game.GamePlayBeforeGameSetup`: if both are true, `Game.Play` never runs.',
-  GamePlayBeforeGameSetup: 'Run `Game.Play` before the majority of the instance is set up (Goldberg, XInput DLLs, ...) instead of after it. Don\'t combine with `Game.GamePlayAfterLaunch`: if both are true, `Game.Play` never runs.',
-  OnStop: 'Called when the session ends, with the last player\'s `Context`/`Player`. If it throws, Nucleus skips its cleanup (leftover processes, registry restore, temporary users, backups), so keep it error-free. `Context` is undefined if the session ends before the first instance was set up.',
-  OnFinishedSetup: 'Called once after all instances have been set up and started, with the last player\'s `Context`/`Player`. An error thrown here ends the session.',
-  SetupSse: 'Never called by Nucleus (declared but unused): assigning it has no effect.',
-};
-const gameExtraDoc = {
-  AddOption: 'Adds a user-selectable option to the game profile. Read it back in `Game.Play` with `Context.Options["key"]`.',
-  ShowOptionAsStep: 'Shows a previously added option as its own setup step before launching.',
-  Folder: 'Path to this handler\'s own folder (Nucleus-Coop\\handlers\\<handler name>). Set by Nucleus before the handler runs; overwriting it changes where Game.Folder points for the rest of the handler.',
-  Hub: 'Hub metadata. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don\'t add or edit these lines yourself.',
-  Hook: 'Settings for Nucleus\' custom xinput/x360ce hook DLL.',
-  ProtoInput: 'Proto Input options (multiple mice/keyboards, focus hooks, input redirection). See https://www.splitscreen.me/docs/protoinput',
-  OnCustomHotKey_1: 'Called when the first custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
-  OnCustomHotKey_2: 'Called when the second custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
-  OnCustomHotKey_3: 'Called when the third custom hotkey from `Game.CustomHotkeys` is pressed. Required if that hotkey is defined (Nucleus calls it without checking). `Context` is the last player\'s, or undefined before the first instance is set up.',
-  Description: 'Text shown to the user when the game is selected in Nucleus (setup notes, known issues, ...).',
-  ExecutableNames: 'Alternative executable names this handler matches (e.g. different store versions).',
-  Debug: 'Writes a detailed debug log while the handler runs.',
-};
-const contextExtraDoc = {
-  Width: 'Width in pixels of this instance\'s window.',
-  Height: 'Height in pixels of this instance\'s window.',
-  PosX: 'X position of this instance\'s window.',
-  PosY: 'Y position of this instance\'s window.',
-  MonitorWidth: 'Width of the monitor this instance is on.',
-  MonitorHeight: 'Height of the monitor this instance is on.',
-  PlayerID: 'Zero-based index of the player/instance being set up.',
-  NumberOfPlayers: 'Total number of players in this session.',
-  Nickname: 'Nickname of the current player (set in Nucleus settings).',
-  PlayerSteamID: 'Steam ID assigned to the current player.',
-  GamepadId: 'One-based index of the current player\'s gamepad.',
-  IsKeyboardPlayer: 'True if the current player uses keyboard & mouse.',
-  HasKeyboardPlayer: 'True if any player in the session uses keyboard & mouse.',
-  AspectRatio: 'Aspect ratio of this instance as a string, e.g. "16:9".',
-  AspectRatioDecimal: 'Aspect ratio of this instance as a number (Width / Height).',
-  OrigAspectRatio: 'Aspect ratio of the full monitor as a string.',
-  OrigAspectRatioDecimal: 'Aspect ratio of the full monitor as a number.',
-  RootFolder: 'Root of the current instance\'s game folder (Nucleus-Coop\\content\\<GUID>\\Instance<N>).',
-  RootInstallFolder: 'Root of the original game installation.',
-  ExePath: 'Full path of the executable being launched for this instance.',
-  Options: 'Values chosen by the user for options added with `Game.AddOption`.',
-  Arch: 'Architecture of the game executable ("x86" or "x64").',
-  LocalIP: 'Local IP address of this PC.',
-  UserName: 'Windows user name.',
-  GetFolder: 'Returns the path of one of the well known folders. Example: `Context.GetFolder(Nucleus.Folder.InstancedGameFolder)`.',
-  ModifySaveFile: 'Edits keys in an INI/CFG file. Example: `Context.ModifySaveFile(path, path, Nucleus.SaveType.INI, [new Nucleus.IniSaveInfo("Section", "Key", "Value")]);`',
-  PatchFile: 'Patches bytes in a file (copy of the original). The file must be excluded from symlinking (e.g. via `Game.FileSymlinkExclusions`).',
-  WriteTextFile: 'Writes the given lines to a text file, replacing its contents.',
-  StartProcess: 'Starts a process with arguments, optionally elevated.',
-  Wait: 'Pauses the handler for the given number of milliseconds.',
-  Log: 'Writes a line to the Nucleus debug log (requires `Game.Debug = true` or debug logging enabled).',
-  RandomInt: 'Returns a random integer between min and max.',
-  RandomString: 'Returns a random alphanumeric string of the given length.',
-  HexEdit: 'Writes bytes at an address in a file.',
-  CopyScriptFolder: 'Copies the handler\'s folder (Game.Folder) to the given destination.',
-  EditRegKey: 'Edits a registry value (backed up and restored when Nucleus closes). Base key is e.g. "HKEY_CURRENT_USER".',
-  ReadRegKey: 'Reads a registry value.',
-  CustomUserGeneralValues: 'Answers to `Game.CustomUserGeneralPrompts`.',
-  CustomUserPlayerValues: 'Answers to `Game.CustomUserPlayerPrompts` for the current player.',
-  CustomUserInstanceValues: 'Answers to `Game.CustomUserInstancePrompts` for the current instance.',
-};
 
 const model = {
   $comment: 'Generated by scripts/generate-api.mjs. Do not edit by hand.',
@@ -663,10 +612,10 @@ const model = {
     ProtoInput: { type: 'ProtoInputRuntime', doc: 'Proto Input runtime API (install hooks, toggle message filters). Only available inside callbacks such as `Game.ProtoInput.OnInputLocked`.', topLevel: false },
   },
   objects: {
-    Game: { doc: 'Handler definition (`GenericGameInfo`).', members: buildObject('Game', 'Game', gameParsed, gameExtraDoc, gameDocOverride) },
+    Game: { doc: 'Handler definition (`GenericGameInfo`).', members: buildObject('Game', 'Game', gameParsed) },
     GameHook: { doc: 'Custom xinput/x360ce hook settings (`Game.Hook`).', members: buildObject('GameHook', 'Game.Hook', hookParsed) },
     GameProtoInput: { doc: 'Proto Input options (`Game.ProtoInput`).', members: buildObject('GameProtoInput', 'Game.ProtoInput', protoOptParsed) },
-    Context: { doc: 'Per-instance context (`GenericContext`).', members: buildObject('Context', 'Context', contextParsed, contextExtraDoc) },
+    Context: { doc: 'Per-instance context (`GenericContext`).', members: buildObject('Context', 'Context', contextParsed) },
     PlayerInfo: {
       doc: 'A player (`PlayerInfo`).',
       members: buildObject('PlayerInfo', 'Player', playerParsed.filter((m) => m.name !== 'Image')),
@@ -741,11 +690,13 @@ for (const [k, m] of Object.entries(model.objects.Context.members)) {
   const g = model.objects.Game.members[k];
   const copied = g && m.kind !== 'method' && g.kind === m.kind && g.csType === m.csType && !(m.kind === 'property' && m.readonly);
   if (copied) {
-    if (!m.doc && g.doc) m.doc = g.doc;
+    if (!m.doc && g.doc) Object.assign(m, { doc: g.doc }, g.docBy ? { docBy: g.docBy, docBasis: g.docBasis } : {});
     m.doc = `${m.doc ? m.doc + '\n\n' : ''}Copied from \`Game.${k}\` for the current instance.`;
   }
 }
 
+const unusedClaude = Object.keys(claudeDocs).filter((k) => !usedClaude.has(k));
+if (unusedClaude.length) console.log(`data/claude-docs.json entries not used (a human doc exists now, or no such member): ${unusedClaude.join(', ')}`);
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'nucleus-api.json'), JSON.stringify(model, null, 1) + '\n');
 
@@ -753,6 +704,7 @@ fs.writeFileSync(path.join(root, 'data', 'nucleus-api.json'), JSON.stringify(mod
 // TypeScript declarations
 // ---------------------------------------------------------------------------
 
+const claudeNote = (m) => (m.docBy === 'claude' ? [`(Written by Claude (AI), based on ${m.docBasis}. Not from the official docs.)`] : []);
 const jsdoc = (doc, extra = [], indent = '  ') => {
   const lines = [...(doc ? doc.split('\n') : []), ...extra].map((l) => l.replace(/\*\//g, '*\\/'));
   if (!lines.length) return '';
@@ -769,12 +721,12 @@ function iface(name, obj) {
         // .NET `params T[]` also accepts a single JS array.
         if (o.params.some((p) => p.rest)) variants.push(o.params.map((p) => `${safeIdent(p.name)}${p.optional ? '?' : ''}: ${p.rest ? `(${p.type})[]` : p.type}`));
         for (const params of variants) {
-          s += jsdoc(m.doc, m.internal ? ['@internal'] : []);
+          s += jsdoc(m.doc, [...claudeNote(m), ...(m.internal ? ['@internal'] : [])]);
           s += `  ${k}(${params.join(', ')}): ${o.returns};\n`;
         }
       }
     } else {
-      const extra = [];
+      const extra = [...claudeNote(m)];
       if (m.default !== undefined) extra.push(`@default ${m.default}`);
       if (m.example) extra.push(`@example ${m.example}`);
       if (m.deprecated) extra.push(`@deprecated ${m.deprecated}`);

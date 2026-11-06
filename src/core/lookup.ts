@@ -1,6 +1,6 @@
 // API lookup/search for agents and the CLI (`nucleus api ...`), and the
 // Markdown API reference shipped with the agent skill.
-import { api, Member, memberSignature, ownerLabel, suggest } from './api';
+import { api, claudeNote, Member, memberSignature, ownerLabel, suggest } from './api';
 
 export interface Entry {
   /** Display path, e.g. "Game.Hook.ForceFocus". */
@@ -119,6 +119,7 @@ export function formatEntry(e: Entry, verbose = true): string {
   if (meta.length) lines.push(`  (${meta.join('; ')})`);
   if (m.deprecated) lines.push(`  ${m.deprecated}`);
   if (verbose && m.doc) lines.push(...m.doc.split('\n').map((l) => `  ${l}`));
+  if (verbose && claudeNote(m)) lines.push(`  [${claudeNote(m)}]`);
   if (verbose && m.example) lines.push(`  Example: ${m.example}`);
   return lines.join('\n');
 }
@@ -150,6 +151,7 @@ export function markdownReference(): string {
       if (meta.length) out.push(meta.join(' · '));
       if (m.deprecated) out.push(`**${m.deprecated}**`);
       if (m.doc) out.push(m.doc);
+      if (claudeNote(m)) out.push(`_✎ ${claudeNote(m)}_`);
       if (m.example) out.push('Example: `' + m.example + '`');
       out.push('');
     }
