@@ -7428,7 +7428,9 @@
      "type": "any",
      "ts": "HubMaintainer",
      "internal": true,
-     "doc": "Handler maintainer on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The handler's uploader on hub.splitscreen.me, written by the Hub when the handler is uploaded. Nucleus doesn't read it.",
+     "docBy": "claude",
+     "docBasis": "Nucleus Hub.cs (declared, never read)"
     },
     "Handler": {
      "kind": "object",
@@ -7436,7 +7438,9 @@
      "type": "any",
      "ts": "HubHandler",
      "internal": true,
-     "doc": "Handler identity on hub.splitscreen.me, used for update checks. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The handler's identity on hub.splitscreen.me. The Hub writes these lines when the handler is uploaded and again on every update; handler authors don't add or change them.",
+     "docBy": "claude",
+     "docBasis": "Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs"
     }
    }
   },
@@ -7448,14 +7452,18 @@
      "type": "string",
      "ts": "string",
      "internal": true,
-     "doc": "Maintainer display name. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The uploader's name on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.",
+     "docBy": "claude",
+     "docBasis": "Nucleus Hub.cs (declared, never read)"
     },
     "Id": {
      "kind": "field",
      "type": "string",
      "ts": "string",
      "internal": true,
-     "doc": "Maintainer user id on the hub. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The uploader's user ID on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.",
+     "docBy": "claude",
+     "docBasis": "Nucleus Hub.cs (declared, never read)"
     }
    }
   },
@@ -7467,14 +7475,18 @@
      "type": "number",
      "ts": "number",
      "internal": true,
-     "doc": "Published version number. Nucleus compares it with the hub to offer updates. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The published version number, written by the Hub on upload. With `Hub.Handler.Id`, Nucleus uses it to tell whether a newer version is on the Hub. Keep it as the Hub wrote it; the next upload sets the new number.",
+     "docBy": "claude",
+     "docBasis": "Nucleus HubWebView.cs (installed handlers), GenericGameInfo.cs"
     },
     "Id": {
      "kind": "field",
      "type": "string",
      "ts": "string",
      "internal": true,
-     "doc": "Handler id on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself."
+     "doc": "The handler's ID on hub.splitscreen.me, written by the Hub on upload. Nucleus uses it to link the installed handler to its Hub page: details, cover and screenshots, and update checks. Keep it exactly as the Hub wrote it, and don't copy it into another handler: a handler without it still works, it just isn't linked to the Hub.",
+     "docBy": "claude",
+     "docBasis": "Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs"
     }
    }
   },

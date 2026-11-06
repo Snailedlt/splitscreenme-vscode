@@ -3983,9 +3983,29 @@ _✎ Written by Claude (AI), based on Nucleus ProtoInput.cs (ExposedValues, Prot
 
 Hub handler identity.
 
+### Hub.Handler.Id
+`Id: string`
+The handler's ID on hub.splitscreen.me, written by the Hub on upload. Nucleus uses it to link the installed handler to its Hub page: details, cover and screenshots, and update checks. Keep it exactly as the Hub wrote it, and don't copy it into another handler: a handler without it still works, it just isn't linked to the Hub.
+_✎ Written by Claude (AI), based on Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs. Not from the official docs._
+
+### Hub.Handler.Version
+`Version: number`
+The published version number, written by the Hub on upload. With `Hub.Handler.Id`, Nucleus uses it to tell whether a newer version is on the Hub. Keep it as the Hub wrote it; the next upload sets the new number.
+_✎ Written by Claude (AI), based on Nucleus HubWebView.cs (installed handlers), GenericGameInfo.cs. Not from the official docs._
+
 ## Hub.Maintainer
 
 Hub maintainer.
+
+### Hub.Maintainer.Id
+`Id: string`
+The uploader's user ID on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.
+_✎ Written by Claude (AI), based on Nucleus Hub.cs (declared, never read). Not from the official docs._
+
+### Hub.Maintainer.Name
+`Name: string`
+The uploader's name on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.
+_✎ Written by Claude (AI), based on Nucleus Hub.cs (declared, never read). Not from the official docs._
 
 ## System.IO.File
 

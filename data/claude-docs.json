@@ -686,6 +686,30 @@
   "ProtoInput.Values.SetWindowsHookHookID": {
    "doc": "Selects the SetWindowsHook hook (ID 23): the game's low-level keyboard, low-level mouse and `GetMessage` hooks are not registered with Windows; Proto Input calls them itself with the instance's input and focus messages. Pass it to `ProtoInput.InstallHook` or `ProtoInput.UninstallHook`.",
    "basis": "Nucleus ProtoInput.cs (ExposedValues, ProtoHookIDs), ProtoInputHooks SetWindowsHookHook.cpp, FakeMouseKeyboard.cpp, FocusMessageLoop.cpp, RawInput.cpp (FireFake...)"
+  },
+  "Hub.Handler": {
+   "doc": "The handler's identity on hub.splitscreen.me. The Hub writes these lines when the handler is uploaded and again on every update; handler authors don't add or change them.",
+   "basis": "Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs"
+  },
+  "Hub.Maintainer": {
+   "doc": "The handler's uploader on hub.splitscreen.me, written by the Hub when the handler is uploaded. Nucleus doesn't read it.",
+   "basis": "Nucleus Hub.cs (declared, never read)"
+  },
+  "Hub.Handler.Id": {
+   "doc": "The handler's ID on hub.splitscreen.me, written by the Hub on upload. Nucleus uses it to link the installed handler to its Hub page: details, cover and screenshots, and update checks. Keep it exactly as the Hub wrote it, and don't copy it into another handler: a handler without it still works, it just isn't linked to the Hub.",
+   "basis": "Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs"
+  },
+  "Hub.Handler.Version": {
+   "doc": "The published version number, written by the Hub on upload. With `Hub.Handler.Id`, Nucleus uses it to tell whether a newer version is on the Hub. Keep it as the Hub wrote it; the next upload sets the new number.",
+   "basis": "Nucleus HubWebView.cs (installed handlers), GenericGameInfo.cs"
+  },
+  "Hub.Maintainer.Name": {
+   "doc": "The uploader's name on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.",
+   "basis": "Nucleus Hub.cs (declared, never read)"
+  },
+  "Hub.Maintainer.Id": {
+   "doc": "The uploader's user ID on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.",
+   "basis": "Nucleus Hub.cs (declared, never read)"
   }
  }
 }

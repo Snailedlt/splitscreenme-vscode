@@ -3068,11 +3068,13 @@ interface PlayerInfo {
  */
 interface Hub {
   /**
-   * Handler maintainer on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The handler's uploader on hub.splitscreen.me, written by the Hub when the handler is uploaded. Nucleus doesn't read it.
+   * (Written by Claude (AI), based on Nucleus Hub.cs (declared, never read). Not from the official docs.)
    */
   Maintainer: HubMaintainer;
   /**
-   * Handler identity on hub.splitscreen.me, used for update checks. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The handler's identity on hub.splitscreen.me. The Hub writes these lines when the handler is uploaded and again on every update; handler authors don't add or change them.
+   * (Written by Claude (AI), based on Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs. Not from the official docs.)
    */
   Handler: HubHandler;
 }
@@ -3082,11 +3084,13 @@ interface Hub {
  */
 interface HubMaintainer {
   /**
-   * Maintainer display name. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The uploader's name on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.
+   * (Written by Claude (AI), based on Nucleus Hub.cs (declared, never read). Not from the official docs.)
    */
   Name: string;
   /**
-   * Maintainer user id on the hub. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The uploader's user ID on hub.splitscreen.me, written by the Hub on upload. Nucleus doesn't read it.
+   * (Written by Claude (AI), based on Nucleus Hub.cs (declared, never read). Not from the official docs.)
    */
   Id: string;
 }
@@ -3096,11 +3100,13 @@ interface HubMaintainer {
  */
 interface HubHandler {
   /**
-   * Published version number. Nucleus compares it with the hub to offer updates. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The published version number, written by the Hub on upload. With `Hub.Handler.Id`, Nucleus uses it to tell whether a newer version is on the Hub. Keep it as the Hub wrote it; the next upload sets the new number.
+   * (Written by Claude (AI), based on Nucleus HubWebView.cs (installed handlers), GenericGameInfo.cs. Not from the official docs.)
    */
   Version: number;
   /**
-   * Handler id on hub.splitscreen.me. Written by hub.splitscreen.me when the handler is uploaded, and kept up to date there. Don't add or edit these lines yourself.
+   * The handler's ID on hub.splitscreen.me, written by the Hub on upload. Nucleus uses it to link the installed handler to its Hub page: details, cover and screenshots, and update checks. Keep it exactly as the Hub wrote it, and don't copy it into another handler: a handler without it still works, it just isn't linked to the Hub.
+   * (Written by Claude (AI), based on Nucleus GenericGameInfo.cs (HandlerId), UI_Functions.cs, AssetsDownloader.cs, HubWebView.cs (installed handlers), SearchGame.cs. Not from the official docs.)
    */
   Id: string;
 }

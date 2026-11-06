@@ -695,6 +695,10 @@ for (const [k, m] of Object.entries(model.objects.Context.members)) {
   }
 }
 
+// The Hub objects are written out by hand above: their docs come from data/claude-docs.json too.
+for (const [obj, prefix] of [['Hub', 'Hub'], ['HubHandler', 'Hub.Handler'], ['HubMaintainer', 'Hub.Maintainer']]) {
+  for (const [name, m] of Object.entries(model.objects[obj].members)) Object.assign(m, pickDoc(`${prefix}.${name}`, ''), m.doc && !claudeDocs[`${prefix}.${name}`] ? { doc: m.doc } : {});
+}
 const unusedClaude = Object.keys(claudeDocs).filter((k) => !usedClaude.has(k));
 if (unusedClaude.length) console.log(`data/claude-docs.json entries not used (a human doc exists now, or no such member): ${unusedClaude.join(', ')}`);
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
