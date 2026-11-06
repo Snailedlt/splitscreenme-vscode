@@ -708,7 +708,7 @@ fs.writeFileSync(path.join(root, 'data', 'nucleus-api.json'), JSON.stringify(mod
 // TypeScript declarations
 // ---------------------------------------------------------------------------
 
-const claudeNote = (m) => (m.docBy === 'claude' ? [`(Written by Claude (AI), based on ${m.docBasis}.${m.docCheckedBy ? ` Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.` : ' Not from the official docs.'})`] : []);
+const claudeNote = (m) => (m.docBy === 'claude' ? [`(AI-written, based on ${m.docBasis}.${m.docCheckedBy ? ` Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.` : ' Not from the official docs.'})`] : []);
 const jsdoc = (doc, extra = [], indent = '  ') => {
   const lines = [...(doc ? doc.split('\n') : []), ...extra].map((l) => l.replace(/\*\//g, '*\\/'));
   if (!lines.length) return '';

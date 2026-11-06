@@ -306,8 +306,8 @@ export function ownerLabel(owner: string): string {
 /** The label shown with a doc Claude wrote (empty for human-written docs). */
 export const claudeNote = (m: { docBy?: string; docBasis?: string; docCheckedBy?: string; docCheckedOn?: string }) =>
   m.docBy !== 'claude' ? ''
-  : m.docCheckedBy ? `Written by Claude (AI), based on ${m.docBasis}. Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.`
-  : `Written by Claude (AI), based on ${m.docBasis}. Not from the official docs.`;
+  : m.docCheckedBy ? `AI-written, based on ${m.docBasis}. Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.`
+  : `AI-written, based on ${m.docBasis}. Not from the official docs.`;
 
 /** The "Doc review" issue form for a Claude-written doc, with its name filled in (.github/ISSUE_TEMPLATE/doc-review.yml;
  *  the doc-review workflow adds the doc itself as a comment the reporter can't remove). */

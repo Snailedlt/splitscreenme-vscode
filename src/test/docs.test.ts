@@ -21,8 +21,8 @@ test('Claude-written docs: each says what it is based on, and the tools label it
   }
   const [owner, name] = ['Game', 'Play'];
   const md = memberMarkdown(owner, name, api.objects.Game.members.Play);
-  assert.match(md, /Written by Claude \(AI\), based on Nucleus/);
-  assert.match(markdownReference(), /_✎ Written by Claude/);
+  assert.match(md, /AI-written, based on Nucleus/);
+  assert.match(markdownReference(), /_✎ AI-written/);
   // Human docs carry no label.
   const human = Object.values(api.objects.Game.members).find((m) => m.doc && !m.docBy)!;
   assert.equal(claudeNote(human), '');

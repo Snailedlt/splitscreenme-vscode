@@ -1,5 +1,5 @@
 name: Doc review
-# A "Doc review" issue (.github/ISSUE_TEMPLATE/doc-review.yml): the bot adds the doc as Claude wrote it, with what it's
+# A "Doc review" issue (.github/ISSUE_TEMPLATE/doc-review.yml): the bot adds the AI-written doc as it was, with what it's
 # based on and links to the Nucleus source, as a comment the reporter can't remove. It stays as it was when the issue
 # was opened, even if the doc changes later. Only reads data/claude-docs.json; never runs code from the issue.
 on:
@@ -31,13 +31,13 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: issue.number });
             const mine = comments.find((c) => c.user.type === 'Bot' && (c.body || '').includes(marker));
             // Once attached, the doc stays as it was when the issue was opened.
-            if (mine && mine.body.includes('**Doc as Claude wrote it**')) return;
+            if (mine && mine.body.includes('**The AI-written doc**')) return;
             const sha = context.sha.slice(0, 7);
             const search = (file) => `https://github.com/search?q=repo%3ASplitScreen-Me%2Fsplitscreenme-nucleus+path%3A${encodeURIComponent(file)}&type=code`;
             const files = d ? [...new Set((d.basis.match(/[\w.]+\.(cs|cpp|h)\b/g) || []))] : [];
             const text = d
-              ? `${marker}\n**Doc as Claude wrote it** for \`${member}\` (data/claude-docs.json @ ${sha}):\n\n> ${d.doc.replace(/\n/g, '\n> ')}\n\n**Based on:** ${d.basis}\n\n${files.length ? `**Source:** ${files.map((f) => `[${f}](${search(f)})`).join(' · ')}\n\n` : ''}A maintainer checks the report against Nucleus. When it's settled, the doc is fixed or marked \`checkedBy\` in data/claude-docs.json.`
-              : `${marker}\nI couldn't find a doc written by Claude for \`${member || '(no name given)'}\`. Please put the exact name in **Which name** (e.g. \`Game.AddOption\`) by editing the issue, and I'll add the doc here.`;
+              ? `${marker}\n**The AI-written doc** for \`${member}\` (data/claude-docs.json @ ${sha}):\n\n> ${d.doc.replace(/\n/g, '\n> ')}\n\n**Based on:** ${d.basis}\n\n${files.length ? `**Source:** ${files.map((f) => `[${f}](${search(f)})`).join(' · ')}\n\n` : ''}A maintainer checks the report against Nucleus. When it's settled, the doc is fixed or marked \`checkedBy\` in data/claude-docs.json.`
+              : `${marker}\nI couldn't find an AI-written doc for \`${member || '(no name given)'}\`. Please put the exact name in **Which name** (e.g. \`Game.AddOption\`) by editing the issue, and I'll add the doc here.`;
             if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body: text });
             else await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: text });
             if (d && !issue.title.includes(member)) await github.rest.issues.update({ ...context.repo, issue_number: issue.number, title: `Doc review: ${member}` });

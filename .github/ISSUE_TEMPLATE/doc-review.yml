@@ -1,12 +1,12 @@
-name: Doc review (a doc written by Claude)
-description: A doc Claude wrote from the Nucleus source is wrong, unclear or missing something. Opened from the doc itself in the workbench or VS Code.
+name: Doc review (an AI-written doc)
+description: An AI-written doc (written from the Nucleus source) is wrong, unclear or missing something. Opened from the doc itself in the workbench or VS Code.
 title: "Doc review: "
 labels: [doc-review]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for checking! A bot adds the doc as Claude wrote it, with what it's based on and links to the Nucleus source, as the first comment, so you don't need to copy it.
+        Thanks for checking! A bot adds the doc as it was written, with what it's based on and links to the Nucleus source, as the first comment, so you don't need to copy it.
   - type: input
     id: member
     attributes:
