@@ -46,6 +46,7 @@ jobs:
         run: |
           git clone --quiet --depth 1 --filter=blob:none https://github.com/SplitScreen-Me/splitscreenme-nucleus ../splitscreenme-nucleus
           git clone --quiet --depth 1 --filter=blob:none https://github.com/SplitScreen-Me/splitscreenme-www ../splitscreenme-www
+          git clone --quiet --depth 1 --filter=blob:none https://github.com/SplitScreen-Me/splitscreenme-protoInput ../splitscreenme-protoInput
           npm ci
           npm run generate
           npm run build

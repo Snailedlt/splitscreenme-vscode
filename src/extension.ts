@@ -1,3 +1,4 @@
+import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './core/wm';
 import * as vscode from 'vscode';
 import { api, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
 import { registerWhatsNew } from './whatsnew';
@@ -111,8 +112,22 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.workspace.applyEdit(edit.edit);
       vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
     }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' '),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ','),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
+    // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
+    vscode.languages.registerInlayHintsProvider(SELECTOR, {
+      provideInlayHints: (d) => {
+        if (!featuresOn(d)) return [];
+        const text = d.getText();
+        return blockedLists(text).flatMap((l) => l.items.map((it) => {
+          const t = blockTarget(it.id);
+          const h = new vscode.InlayHint(d.positionAt(it.end), t.kind === 'ok' ? t.name : t.kind === 'out' ? 'unknown' : `→ ${t.name}?`);
+          h.paddingLeft = true;
+          h.tooltip = new vscode.MarkdownString(messageMarkdown(it.id));
+          return h;
+        }));
+      },
+    }),
     // Format Document (Shift+Alt+F): indentation and spacing only (core/format.ts).
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
       provideDocumentFormattingEdits: (doc, opts) => (isHandler(doc) ? formatEdits(doc, opts) : []),
@@ -274,6 +289,21 @@ function valueSnippet(m: Member): string {
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
   const text = doc.getText();
   const offset = doc.offsetAt(pos);
+  // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
+  const list = blockedListAt(text, offset);
+  if (list && !blockedItemAt(text, offset)) {
+    const have = new Set(list.items.map((i) => i.id));
+    const before = text.slice(list.open + 1, offset).trim();
+    return COMMON_MESSAGES.filter((m) => !have.has(m.id)).map((m, i) => {
+      const item = new vscode.CompletionItem({ label: m.name, description: hex(m.id) }, vscode.CompletionItemKind.Constant);
+      item.insertText = `${before && !before.endsWith(',') ? ', ' : ''}${hex(m.id)}`;
+      item.filterText = `${m.name} ${hex(m.id)}`;
+      item.detail = m.hub ? `Blocked by ${m.hub} of 600 Hub handlers` : 'Window message';
+      item.documentation = new vscode.MarkdownString(messageMarkdown(m.id));
+      item.sortText = String(i).padStart(2, '0');
+      return item;
+    });
+  }
   // `Game.DPIHandling = |`: the option's values (enum values, true / false).
   const value = valueContextAt(text, offset);
   if (value && !value.partial.includes('.')) {
@@ -368,6 +398,9 @@ function markdown(s: string) {
 
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
   const text = doc.getText();
+  // A number in Game.ProtoInput.BlockedMessages: the window message's name and what it does.
+  const msg = blockedItemAt(text, doc.offsetAt(pos));
+  if (msg) return new vscode.Hover(new vscode.MarkdownString(messageMarkdown(msg.id)), new vscode.Range(doc.positionAt(msg.start), doc.positionAt(msg.end)));
   const r = resolveAt(text, doc.offsetAt(pos));
   if (!r) return undefined;
   const range = new vscode.Range(doc.positionAt(r.start), doc.positionAt(r.end));

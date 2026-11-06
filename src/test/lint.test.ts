@@ -1,3 +1,4 @@
+import { blockTarget, wmName } from '../core/wm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
@@ -114,7 +115,7 @@ Game.Play = function () {
 
 test('nested objects and enums are checked', () => {
   const src = HEADER + 'Game.Hook.ForceFocuss = true;\nGame.ProtoInput.FocusHook = true;\nvar f = Nucleus.Folder.Instanced;\nGame.DPIHandling = Nucleus.SaveType.INI;\n';
-  const d = lint(src).filter((x) => x.rule !== 'protoinput-legacy-hooks');
+  const d = lint(src).filter((x) => x.rule !== 'protoinput-legacy-hooks' && x.rule !== 'protoinput-inactive');
   assert.deepEqual(rules(d), ['unknown-member', 'unknown-member', 'unknown-member', 'type-mismatch']);
   assert.equal(d[0].fixes![0].edits[0].text, 'ForceFocus');
   assert.equal(d[1].fixes![0].edits[0].text, 'FocusHooks');
@@ -276,9 +277,9 @@ test('booleans assigned to enums: DPIHandling true means Scaled', () => {
 });
 
 test('Proto Input enums are reachable as Nucleus.<Enum>', () => {
-  assert.deepEqual(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResize;\n'), []);
-  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResiz;\n')), ['unknown-member']);
-  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.SetWindowPosHook = Nucleus.DrawFakeCursor.Fix;\n')), ['type-mismatch']);
+  assert.deepEqual(lint(HEADER + 'Game.ProtoInput.InjectStartup = true;\nGame.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResize;\n'), []);
+  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.InjectStartup = true;\nGame.ProtoInput.SetWindowPosHook = Nucleus.SetWindowPosHook.DontResiz;\n')), ['unknown-member']);
+  assert.deepEqual(rules(lint(HEADER + 'Game.ProtoInput.InjectStartup = true;\nGame.ProtoInput.SetWindowPosHook = Nucleus.DrawFakeCursor.Fix;\n')), ['type-mismatch']);
 });
 
 test('wrong argument counts are errors', () => {
@@ -557,4 +558,47 @@ test('guid-changed: compared with the published version when the host has it', (
   assert.equal(apply(code, d[0].fixes![0]).includes('Game.GUID = "Old Guid"'), true);
   assert.deepEqual(lint(code, { published: { guid } }).filter((x) => x.rule === 'guid-changed'), []);
   assert.deepEqual(lint(code).filter((x) => x.rule === 'guid-changed'), []);
+});
+
+// Proto Input wiring (ProtoInputLauncher, GenericGameHandler, ProtoInputHooks MessageFilterHook/MessageList).
+const PI = 'Game.ProtoInput.InjectStartup = true;\n';
+test('protoinput-inactive: options without any way to start Proto Input', () => {
+  const d = only(HEADER + 'Game.ProtoInput.FocusHooks = true;\n', 'protoinput-inactive');
+  assert.equal(d.length, 1);
+  assert.match(d[0].fixes![0].edits[0].text, /InjectStartup = true/);
+  assert.equal(only(HEADER + PI + 'Game.ProtoInput.FocusHooks = true;\n', 'protoinput-inactive').length, 0);
+  assert.equal(only(HEADER + 'Game.ProtoInput.InjectRuntime_EasyHookMethod = true;\nGame.ProtoInput.FocusHooks = true;\n', 'protoinput-inactive').length, 0);
+  // Only options turned off: nothing to say.
+  assert.equal(only(HEADER + 'Game.ProtoInput.FocusHooks = false;\n', 'protoinput-inactive').length, 0);
+});
+test('protoinput-needs-hook: BlockedMessages and filters need MessageFilterHook', () => {
+  const d = only(HEADER + PI + 'Game.ProtoInput.BlockedMessages = [0x0008];\nGame.ProtoInput.MouseMoveFilter = true;\n', 'protoinput-needs-hook');
+  assert.equal(d.length, 1);
+  assert.match(d[0].message, /BlockedMessages.*MouseMoveFilter/);
+  assert.equal(d[0].fixes![0].edits[0].text, 'Game.ProtoInput.MessageFilterHook = true;\n');
+  assert.equal(only(HEADER + PI + 'Game.ProtoInput.MessageFilterHook = true;\nGame.ProtoInput.BlockedMessages = [0x0008];\n', 'protoinput-needs-hook').length, 0);
+  assert.equal(only(HEADER + PI + 'Game.ProtoInput.BlockedMessages = [];\n', 'protoinput-needs-hook').length, 0);
+});
+test('blocked-message: unlisted, past the end, and repeated numbers', () => {
+  const ok = HEADER + PI + 'Game.ProtoInput.MessageFilterHook = true;\nGame.ProtoInput.BlockedMessages = [0x0008, 0x02a3, 0x02a1, 6];\n';
+  assert.equal(only(ok, 'blocked-message').length, 0);
+  const d = only(HEADER + PI + 'Game.ProtoInput.MessageFilterHook = true;\nGame.ProtoInput.BlockedMessages = [0x0008, 0x0004, 0xFFFF, 0x0008];\n', 'blocked-message');
+  assert.deepEqual(d.map((x) => x.severity), ['warning', 'warning', 'info']);
+  assert.match(d[0].message, /WM_NULL/); // 4 isn't listed: it lands on WM_NULL's switch
+  assert.match(d[1].message, /past the end/);
+});
+test('wm: names and what blocking a number switches on', () => {
+  assert.equal(wmName(8), 'WM_KILLFOCUS');
+  assert.equal(wmName(0x2a1), 'WM_MOUSEHOVER');
+  assert.deepEqual(blockTarget(0x2a3), { kind: 'ok', name: 'WM_MOUSELEAVE' });
+  assert.equal(blockTarget(0x10000).kind, 'out');
+});
+
+test('needs-option: an option Nucleus only reads when another is on', () => {
+  const d = only(HEADER + 'Game.FakeFocusInterval = 1000;\nGame.SteamlessArgs = "--quiet";\n', 'needs-option');
+  assert.equal(d.length, 2);
+  assert.equal(d[0].fixes![0].edits[0].text, 'Game.FakeFocus = true;\n');
+  assert.equal(only(HEADER + 'Game.FakeFocus = true;\nGame.FakeFocusInterval = 1000;\n', 'needs-option').length, 0);
+  assert.equal(only(HEADER + 'Game.SendFakeFocusMsg = true;\nGame.FakeFocusSendActivate = true;\n', 'needs-option').length, 0);
+  assert.equal(only(HEADER + 'Game.DrawFakeMouseCursorForControllers = false;\n', 'needs-option').length, 0);
 });

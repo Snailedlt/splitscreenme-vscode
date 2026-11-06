@@ -12,6 +12,19 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### ✨ New
+
+- **Window messages by name.** In `Game.ProtoInput.BlockedMessages = [0x0008, 0x02a3, 0x02a1]`, each number shows its name after it (`WM_KILLFOCUS`, `WM_MOUSELEAVE`, `WM_MOUSEHOVER`), hovering says what it does and how many Hub handlers block it, and typing inside the brackets suggests the common ones. The names come from Proto Input's own list. Suggested by messenils.
+- **Settings that silently do nothing.** Four new checks, each from Nucleus' and Proto Input's source: Proto Input options with no way to start it (`protoinput-inactive`); `BlockedMessages` and the message filters without `Game.ProtoInput.MessageFilterHook` (`protoinput-needs-hook`); a blocked number Proto Input can't block as written (`blocked-message`); and options only read when another is on, like `FakeFocusInterval` without `FakeFocus` (`needs-option`). On the Hub they find 15 handlers with settings that never take effect. Each comes with a fix.
+
+### 🙏 Thanks
+
+- **messenils** for the idea of naming the window messages.
+
+---
+
 ## 0.3.1 (beta) · 2026-11-06
 
 ### 🛠️ Improved

@@ -65,6 +65,11 @@ export class CompletionItem {
     this.kind = kind;
   }
 }
+export class InlayHint {
+  paddingLeft?: boolean;
+  tooltip?: unknown;
+  constructor(public position: Position, public label: string) {}
+}
 export class Hover {
   constructor(public contents: MarkdownString, public range?: Range) {}
 }
@@ -116,6 +121,7 @@ export const languages = {
   registerSignatureHelpProvider: (_s: any, p: any) => (__registered.signature.push(p), disposable),
   registerDocumentFormattingEditProvider: (_s: any, p: any) => (__registered.formatting.push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
+  registerInlayHintsProvider: (_s: any, p: any) => ((__registered as any).inlay = [...((__registered as any).inlay ?? []), p], disposable),
 };
 export const __applied: WorkspaceEdit[] = [];
 export const workspace = {
