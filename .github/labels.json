@@ -30,6 +30,11 @@
     "description": "Planned, not started"
   },
   {
+    "name": "full release",
+    "color": "5319e7",
+    "description": "Do it when the tools leave beta"
+  },
+  {
     "name": "community idea",
     "color": "d876e3",
     "description": "Suggested by someone in the community (Discord, GitHub)"
