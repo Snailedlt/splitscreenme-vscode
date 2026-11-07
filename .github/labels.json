@@ -10,6 +10,11 @@
     "description": "Something doesn't work as it should"
   },
   {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "READMEs, AGENTS.md, docs, screenshots and SEO"
+  },
+  {
     "name": "in progress",
     "color": "fbca04",
     "description": "Being worked on now"
