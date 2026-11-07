@@ -228,6 +228,10 @@ node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is inst
 
 `--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. `format` re-indents and spaces handlers (`--write` saves, `--check` exits 1 when a file isn't formatted), and `--hub` compares `Game.GUID` with the Hub version. It also has `simulate`, `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
 
+## Other editors
+
+`nucleus lsp` is a Language Server with the same features (problems and quick fixes, hover, completion, signature help, Format Document, window-message hints, Try it), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client. It needs only Node.js 18+ and the one-file CLI. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
+
 ## Development
 
 ```bash

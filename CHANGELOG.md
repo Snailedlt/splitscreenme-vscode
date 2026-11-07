@@ -16,6 +16,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### ✨ New
 
+- **Other editors: a Language Server.** `nucleus lsp` brings the checks with their quick fixes, hover docs, suggestions, signature help, Format Document, window-message names and Try it to Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs, Kate and any other editor with LSP support. [PORTING.md](PORTING.md) has the setup for each one.
 - **Window messages by name.** In `Game.ProtoInput.BlockedMessages = [0x0008, 0x02a3, 0x02a1]`, each number shows its name after it (`WM_KILLFOCUS`, `WM_MOUSELEAVE`, `WM_MOUSEHOVER`), hovering says what it does and how many Hub handlers block it, and typing inside the brackets suggests the common ones. The names come from Proto Input's own list. Suggested by messenils.
 - **Settings that silently do nothing.** Four new checks, each from Nucleus' and Proto Input's source: Proto Input options with no way to start it (`protoinput-inactive`); `BlockedMessages` and the message filters without `Game.ProtoInput.MessageFilterHook` (`protoinput-needs-hook`); a blocked number Proto Input can't block as written (`blocked-message`); and options only read when another is on, like `FakeFocusInterval` without `FakeFocus` (`needs-option`). On the Hub they find 15 handlers with settings that never take effect. Each comes with a fix.
 
@@ -27,6 +28,10 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **Focus loop settings that do nothing.** `Game.ProtoInput.FocusLoop_…` and `FocusLoopIntervalMilliseconds` only work with `Game.ProtoInput.EnableFocusMessageLoop = true`; the `needs-option` check now says so (14 Hub handlers).
 - **More suggestions after `=`.** `Game.Play = ` (and the other callbacks) inserts `function () { }` with the cursor inside, and `Game.ProtoInput.BlockedMessages = ` offers the set most Hub handlers block.
 - **A typo no longer hides every other problem.** While a line doesn't parse yet (say you're halfway through `player.`), the rest of the handler is still checked, and the error sits on the unfinished code with a plain message ("a name is missing after `player.`") instead of on the next line.
+
+### 🐛 Fixed
+
+- **Format Document no longer splits `=>`.** In code that isn't ES5 yet, formatting turned `() => 1` into `() = > 1` (also `**` and `??`); these now stay in one piece.
 
 ### 🙏 Thanks
 

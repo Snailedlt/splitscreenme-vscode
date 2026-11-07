@@ -1,24 +1,19 @@
-import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './core/wm';
 import * as vscode from 'vscode';
-import { api, claudeNote, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './core/api';
 import { registerWhatsNew } from './whatsnew';
-import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './core/complete';
-import { Diagnostic as LintDiagnostic, Fix, lint, looksLikeHandler, RuleId, RULES, Severity } from './core/lint';
+import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
-import { fixAll } from './core/fix';
-import { formatHandler } from './core/format';
+import { CodeActionEntry, CompletionKind, completionsAt, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 
 const SOURCE = 'nucleus';
-const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
 const SELECTOR: vscode.DocumentSelector = [
   { language: 'javascript', scheme: 'file' },
   { language: 'javascript', scheme: 'untitled' },
 ];
 
-const fixesByDiagnostic = new WeakMap<vscode.Diagnostic, Fix[]>();
+const lintDiagnosticOf = new WeakMap<vscode.Diagnostic, LintDiagnostic>();
 
 function config() {
   return vscode.workspace.getConfiguration('splitscreenme');
@@ -28,10 +23,7 @@ function config() {
 export function isHandler(doc: vscode.TextDocument): boolean {
   if (doc.languageId !== 'javascript') return false;
   const mode = config().get<'auto' | 'always' | 'off'>('detection', 'auto');
-  if (mode === 'off') return false;
-  if (mode === 'always') return true;
-  if (/[\\/]handlers[\\/][^\\/]+\.js$/i.test(doc.fileName)) return true;
-  return looksLikeHandler(doc.getText());
+  return isHandlerFile(doc.fileName, doc.getText(), mode);
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -116,17 +108,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
     vscode.languages.registerInlayHintsProvider(SELECTOR, {
-      provideInlayHints: (d) => {
-        if (!featuresOn(d)) return [];
-        const text = d.getText();
-        return blockedLists(text).flatMap((l) => l.items.map((it) => {
-          const t = blockTarget(it.id);
-          const h = new vscode.InlayHint(d.positionAt(it.end), t.kind === 'ok' ? t.name : t.kind === 'out' ? 'unknown' : `→ ${t.name}?`);
-          h.paddingLeft = true;
-          h.tooltip = new vscode.MarkdownString(messageMarkdown(it.id));
-          return h;
-        }));
-      },
+      provideInlayHints: (d) =>
+        featuresOn(d)
+          ? inlayHints(d.getText()).map((x) => {
+              const h = new vscode.InlayHint(d.positionAt(x.offset), x.label);
+              h.paddingLeft = true;
+              h.tooltip = new vscode.MarkdownString(x.tooltip);
+              return h;
+            })
+          : [],
     }),
     // Format Document (Shift+Alt+F): indentation and spacing only (core/format.ts).
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
@@ -187,205 +177,92 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
     if (d.tags) {
       v.tags = d.tags.map((t) => (t === 'deprecated' ? vscode.DiagnosticTag.Deprecated : vscode.DiagnosticTag.Unnecessary));
     }
-    if (d.fixes) fixesByDiagnostic.set(v, d.fixes);
+    lintDiagnosticOf.set(v, d);
     return v;
   });
 }
 
 /** The edit that formats a handler (core/format.ts), or none. */
 function formatEdits(doc: vscode.TextDocument, opts: { insertSpaces: boolean; tabSize: number }): vscode.TextEdit[] {
-  const text = doc.getText();
-  const r = formatHandler(text, { indent: opts.insertSpaces ? ' '.repeat(opts.tabSize) : '\t' });
-  if (!r.ok) {
-    void vscode.window.showWarningMessage(`Nucleus: ${r.reason}`);
+  const r = coreFormatEdits(doc.getText(), opts);
+  if ('error' in r) {
+    void vscode.window.showWarningMessage(`Nucleus: ${r.error}`);
     return [];
   }
-  return r.changed ? [vscode.TextEdit.replace(new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), r.code)] : [];
+  return r.edits.map((e) => vscode.TextEdit.replace(toRange(doc, e), e.text));
 }
 
 const FIX_ALL_KIND = vscode.CodeActionKind.SourceFixAll.append('nucleus');
 
 /** One edit replacing the document with the result of "Fix all", or undefined if nothing changes. */
 function fixAllEdit(doc: vscode.TextDocument): { edit: vscode.WorkspaceEdit; count: number } | undefined {
-  const text = doc.getText();
-  const r = fixAll(text, { rules: ruleOverrides() });
-  if (r.code === text) return undefined;
+  const fix = fixAllAction(doc.getText(), ruleOverrides());
+  if (!fix) return undefined;
   const edit = new vscode.WorkspaceEdit();
-  edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), r.code);
-  return { edit, count: r.applied.length };
+  edit.replace(doc.uri, toRange(doc, fix.edit), fix.edit.text);
+  return { edit, count: fix.count };
+}
+
+function toCodeAction(doc: vscode.TextDocument, a: CodeActionEntry, diag?: vscode.Diagnostic): vscode.CodeAction {
+  const action = new vscode.CodeAction(a.title, a.kind === 'source.fixAll' ? FIX_ALL_KIND : vscode.CodeActionKind.QuickFix);
+  if (diag) action.diagnostics = [diag];
+  if (a.preferred !== undefined) action.isPreferred = a.preferred;
+  action.edit = new vscode.WorkspaceEdit();
+  for (const e of a.edits) {
+    if (e.start === e.end) action.edit.insert(doc.uri, doc.positionAt(e.start), e.text);
+    else action.edit.replace(doc.uri, toRange(doc, e), e.text);
+  }
+  return action;
 }
 
 class FixProvider implements vscode.CodeActionProvider {
   provideCodeActions(doc: vscode.TextDocument, _range: vscode.Range, ctx: vscode.CodeActionContext): vscode.CodeAction[] {
-    const actions: vscode.CodeAction[] = [];
     // "Fix all" (also runs on save with "editor.codeActionsOnSave": {"source.fixAll.nucleus": "explicit"}).
     if (ctx.only && FIX_ALL_KIND.intersects(ctx.only)) {
       if (!isHandler(doc)) return [];
-      const fix = fixAllEdit(doc);
-      if (!fix) return [];
-      const a = new vscode.CodeAction(`Fix ${fix.count} auto-fixable Nucleus problem${fix.count === 1 ? '' : 's'}`, FIX_ALL_KIND);
-      a.edit = fix.edit;
-      return [a];
+      const a = fixAllCodeAction(doc.getText(), ruleOverrides());
+      return a ? [toCodeAction(doc, a)] : [];
     }
-    for (const diag of ctx.diagnostics) {
-      if (diag.source !== SOURCE) continue;
-      for (const fix of fixesByDiagnostic.get(diag) ?? []) {
-        const a = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
-        a.diagnostics = [diag];
-        a.isPreferred = fix.preferred;
-        a.edit = new vscode.WorkspaceEdit();
-        for (const e of fix.edits) a.edit.replace(doc.uri, new vscode.Range(doc.positionAt(e.start), doc.positionAt(e.end)), e.text);
-        actions.push(a);
-      }
-      if (!actions.some((a) => a.kind === FIX_ALL_KIND) && fixesByDiagnostic.get(diag)?.some((f) => f.preferred)) {
-        const fix = fixAllEdit(doc);
-        if (fix && fix.count > 1) {
-          const a = new vscode.CodeAction(`Fix all ${fix.count} auto-fixable problems`, FIX_ALL_KIND);
-          a.edit = fix.edit;
-          a.diagnostics = [diag];
-          actions.push(a);
-        }
-      }
-      const rule = typeof diag.code === 'object' ? String(diag.code.value) : String(diag.code);
-      if (rule in RULES && rule !== 'syntax-error') {
-        const line = doc.lineAt(diag.range.start.line);
-        const indent = line.text.slice(0, line.firstNonWhitespaceCharacterIndex);
-        const a = new vscode.CodeAction(`Disable ${rule} for this line`, vscode.CodeActionKind.QuickFix);
-        a.diagnostics = [diag];
-        a.edit = new vscode.WorkspaceEdit();
-        a.edit.insert(doc.uri, line.range.start, `${indent}// nucleus-lint-disable-next-line ${rule}\n`);
-        actions.push(a);
-      }
-    }
-    return actions;
+    const ours = ctx.diagnostics.filter((d) => d.source === SOURCE && lintDiagnosticOf.has(d));
+    const byLint = new Map(ours.map((d) => [lintDiagnosticOf.get(d)!, d]));
+    return quickFixes(doc.getText(), [...byLint.keys()], ruleOverrides()).map((a) => toCodeAction(doc, a, a.diagnostic && byLint.get(a.diagnostic)));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Completion
+// Completion, hover, signature help: core/features.ts, converted to VS Code types.
 
-const KIND: Record<Member['kind'], vscode.CompletionItemKind> = {
+const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
   field: vscode.CompletionItemKind.Field,
   property: vscode.CompletionItemKind.Property,
   method: vscode.CompletionItemKind.Method,
-  object: vscode.CompletionItemKind.Module,
+  module: vscode.CompletionItemKind.Module,
+  variable: vscode.CompletionItemKind.Variable,
+  class: vscode.CompletionItemKind.Class,
+  enum: vscode.CompletionItemKind.Enum,
+  enumMember: vscode.CompletionItemKind.EnumMember,
+  constant: vscode.CompletionItemKind.Constant,
+  value: vscode.CompletionItemKind.Value,
+  snippet: vscode.CompletionItemKind.Snippet,
 };
 
-function valueSnippet(m: Member): string {
-  const t = m.type ?? 'any';
-  if (t === 'boolean') return '${1|true,false|}';
-  if (t === 'number') return `\${1:${/^-?\d+(\.\d+)?$/.test(m.default ?? '') ? m.default : '0'}}`;
-  if (t === 'string') return '"$1"';
-  if (t.endsWith('[]')) return '["$1"]';
-  if (t === 'function') return 'function () {\n\t$0\n}';
-  if (t.startsWith('enum:')) {
-    const e = t.slice(5);
-    const values = api.enums[e] ? Object.keys(api.enums[e].values) : [];
-    return values.length ? `Nucleus.${e}.\${1|${values.join(',')}|}` : '${1:true}';
-  }
-  return '$1';
-}
+const toRange = (doc: vscode.TextDocument, s: Span) => new vscode.Range(doc.positionAt(s.start), doc.positionAt(s.end));
 
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
-  const text = doc.getText();
-  const offset = doc.offsetAt(pos);
-  // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
-  const list = blockedListAt(text, offset);
-  if (list && !blockedItemAt(text, offset)) {
-    const have = new Set(list.items.map((i) => i.id));
-    const before = text.slice(list.open + 1, offset).trim();
-    return COMMON_MESSAGES.filter((m) => !have.has(m.id)).map((m, i) => {
-      const item = new vscode.CompletionItem({ label: m.name, description: hex(m.id) }, vscode.CompletionItemKind.Constant);
-      item.insertText = `${before && !before.endsWith(',') ? ', ' : ''}${hex(m.id)}`;
-      item.filterText = `${m.name} ${hex(m.id)}`;
-      item.detail = m.hub ? `Blocked by ${m.hub} of 600 Hub handlers` : 'Window message';
-      item.documentation = new vscode.MarkdownString(messageMarkdown(m.id));
-      item.sortText = String(i).padStart(2, '0');
-      return item;
-    });
-  }
-  // `Game.DPIHandling = |`: the option's values (enum values, true / false).
-  const value = valueContextAt(text, offset);
-  if (value && !value.partial.includes('.')) {
-    const range = new vscode.Range(doc.positionAt(value.partialStart), pos);
-    return value.values.map(({ value: v, detail, snippet }, i) => {
-      const item = new vscode.CompletionItem(v.replace(/\n/g, ' ').replace(/\s+/g, ' '), v.startsWith('Nucleus.') ? vscode.CompletionItemKind.EnumMember : snippet ? vscode.CompletionItemKind.Snippet : vscode.CompletionItemKind.Value);
-      item.range = range;
-      item.insertText = snippet ? new vscode.SnippetString(snippet) : v;
-      item.detail = detail;
-      item.sortText = String(i).padStart(3, '0');
-      // The option's default first (preselected), then the rest in declared order.
-      const def = value.member.default?.replace(/^(\w+)\.(\w+)$/, 'Nucleus.$1.$2');
-      if (def && (def === v || value.member.default === v)) {
-        item.preselect = true;
-        item.detail = [detail, 'default'].filter(Boolean).join(' · ');
-      }
-      item.documentation = markdown(memberMarkdown(value.owner, value.name, value.member));
-      return item;
-    });
-  }
-  const ctx = memberContextAt(text, offset);
-  if (!ctx) return globalCompletions(doc, pos);
-
-  const lineText = doc.lineAt(pos.line).text;
-  const before = lineText.slice(0, pos.character - ctx.partial.length);
-  const after = lineText.slice(pos.character).replace(/^[\w$]*/, '');
-  // `Game.Foo|` on its own line: complete the whole assignment.
-  const assignmentContext = /^\s*(Game|Game\.Hook|Game\.ProtoInput|Context|Context\.Hook)\.$/.test(before) && after.trim() === '';
-  const range = new vscode.Range(doc.positionAt(ctx.partialStart), pos.with(undefined, pos.character + (lineText.slice(pos.character).match(/^[\w$]*/)?.[0].length ?? 0)));
-
-  return membersOf(ctx.base).map(({ name, member, enumValue, detail }, i) => {
-    const item = new vscode.CompletionItem(name);
-    item.range = range;
-    if (member) {
-      const owner = ownerOf(ctx.base);
-      item.kind = KIND[member.kind];
-      item.detail = memberSignature(owner, name, member)[0] + (member.overloads && member.overloads.length > 1 ? ` (+${member.overloads.length - 1} overloads)` : '');
-      item.documentation = markdown(memberMarkdown(owner, name, member));
-      if (member.deprecated) item.tags = [vscode.CompletionItemTag.Deprecated];
-      // Required and documented options first, deprecated last.
-      const rank = member.required ? 0 : member.deprecated ? 3 : member.doc ? 1 : 2;
-      item.sortText = `${rank}_${name}`;
-      if (member.kind === 'method') {
-        item.insertText = new vscode.SnippetString(`${name}($1)`);
-        item.command = { command: 'editor.action.triggerParameterHints', title: '' };
-      } else if (assignmentContext && member.kind !== 'object' && !member.readonly) {
-        item.insertText = new vscode.SnippetString(`${name} = ${valueSnippet(member)};`);
-      }
-    } else {
-      item.kind = enumValue !== undefined ? vscode.CompletionItemKind.EnumMember : vscode.CompletionItemKind.Class;
-      if (ctx.base.kind === 'nucleus') item.kind = detail === 'enum' ? vscode.CompletionItemKind.Enum : vscode.CompletionItemKind.Class;
-      item.detail = detail;
-      item.sortText = String(i).padStart(4, '0');
-      if (ctx.base.kind === 'nucleus') {
-        const info = api.enums[name] ?? api.nucleusClasses[name];
-        if (info?.doc) item.documentation = markdown(info.doc);
-      }
-    }
+  const entries = completionsAt(doc.getText(), doc.offsetAt(pos));
+  return entries?.map((e) => {
+    const item = new vscode.CompletionItem(e.labelDetail ? { label: e.label, description: e.labelDetail } : e.label, KIND[e.kind]);
+    if (e.range) item.range = toRange(doc, e.range);
+    if (e.insertText !== undefined) item.insertText = e.snippet ? new vscode.SnippetString(e.insertText) : e.insertText;
+    if (e.filterText) item.filterText = e.filterText;
+    if (e.detail !== undefined) item.detail = e.detail;
+    if (e.documentation !== undefined) item.documentation = markdown(e.documentation);
+    if (e.sortText) item.sortText = e.sortText;
+    if (e.preselect) item.preselect = true;
+    if (e.deprecated) item.tags = [vscode.CompletionItemTag.Deprecated];
+    if (e.signatureHelp) item.command = { command: 'editor.action.triggerParameterHints', title: '' };
     return item;
   });
-}
-
-function globalCompletions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
-  const range = doc.getWordRangeAtPosition(pos, /[\w$]+/);
-  const word = range ? doc.getText(range) : '';
-  if (!word || !/^[A-Z]/.test(word)) return undefined;
-  // only at the start of an expression
-  const charBefore = range && range.start.character > 0 ? doc.lineAt(pos.line).text[range.start.character - 1] : '';
-  if (charBefore === '.') return undefined;
-  return Object.entries(api.globals).filter(([, g]) => !g.hidden).map(([name, g]) => {
-    const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Variable);
-    item.detail = `${name}: ${g.type}`;
-    item.documentation = markdown(g.doc + (g.topLevel ? '' : '\n\n_Only available inside callbacks such as `Game.Play`._'));
-    item.sortText = `0_${name}`;
-    return item;
-  });
-}
-
-function ownerOf(base: Resolved): string {
-  if (base.kind === 'object') return base.type;
-  if (base.kind === 'member' && base.member.ref) return base.member.ref;
-  return '';
 }
 
 function markdown(s: string) {
@@ -394,67 +271,21 @@ function markdown(s: string) {
   return md;
 }
 
-// ---------------------------------------------------------------------------
-// Hover
-
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
-  const text = doc.getText();
-  // A number in Game.ProtoInput.BlockedMessages: the window message's name and what it does.
-  const msg = blockedItemAt(text, doc.offsetAt(pos));
-  if (msg) return new vscode.Hover(new vscode.MarkdownString(messageMarkdown(msg.id)), new vscode.Range(doc.positionAt(msg.start), doc.positionAt(msg.end)));
-  const r = resolveAt(text, doc.offsetAt(pos));
-  if (!r) return undefined;
-  const range = new vscode.Range(doc.positionAt(r.start), doc.positionAt(r.end));
-  const word = text.slice(r.start, r.end);
-  const res = r.resolved;
-  switch (res.kind) {
-    case 'member':
-      return new vscode.Hover(markdown(memberMarkdown(res.owner, res.name, res.member)), range);
-    case 'enum': {
-      const e = api.enums[res.name];
-      return new vscode.Hover(markdown('```ts\nenum Nucleus.' + res.name + '\n```\n\n' + (e.doc ?? '') + '\n\n' + Object.entries(e.values).map(([k, v]) => `- \`${k}\` = ${v}`).join('\n')), range);
-    }
-    case 'enumValue':
-      return new vscode.Hover(markdown('```ts\nNucleus.' + res.enumName + '.' + res.value + ' = ' + api.enums[res.enumName].values[res.value] + '\n```\n\n' + (api.enums[res.enumName].doc ?? '')), range);
-    case 'nucleusClass': {
-      const c = api.nucleusClasses[res.name];
-      return new vscode.Hover(markdown('```ts\nnew Nucleus.' + res.name + '(' + c.params.join(', ') + ')\n```\n\n' + c.doc), range);
-    }
-    case 'object':
-    case 'list':
-    case 'nucleus': {
-      const g = api.globals[word];
-      if (!g) return undefined;
-      return new vscode.Hover(markdown('```ts\n' + `${word}: ${g.type}` + '\n```\n\n' + g.doc + (g.topLevel ? '' : '\n\n_Only available inside callbacks such as `Game.Play`._') + `\n\n[Handler API docs](${DOCS_URL})`), range);
-    }
-  }
-  return undefined;
+  const h = hoverAt(doc.getText(), doc.offsetAt(pos));
+  return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
 }
 
-// ---------------------------------------------------------------------------
-// Signature help
-
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {
-  const c = callContextAt(doc.getText(), doc.offsetAt(pos));
-  if (!c) return undefined;
+  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos));
+  if (!s) return undefined;
   const help = new vscode.SignatureHelp();
-  if (c.callee.kind === 'member' && c.callee.member.kind === 'method') {
-    const { owner, name, member } = c.callee;
-    for (const o of member.overloads ?? []) {
-      const label = `${ownerLabel(owner)}.${name}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`).join(', ')}): ${o.returns}`;
-      const sig = new vscode.SignatureInformation(label, markdown(member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : '')));
-      sig.parameters = o.params.map((p) => new vscode.ParameterInformation(`${p.rest ? '...' : ''}${p.name}: ${p.type}`));
-      help.signatures.push(sig);
-    }
-    // Prefer the first overload that has enough parameters for the cursor position.
-    const idx = (member.overloads ?? []).findIndex((o) => o.params.length > c.activeParameter || o.params.some((p) => p.rest));
-    help.activeSignature = Math.max(0, idx);
-  } else if (c.callee.kind === 'nucleusClass') {
-    const cls = api.nucleusClasses[c.callee.name];
-    const sig = new vscode.SignatureInformation(`new Nucleus.${c.callee.name}(${cls.params.map((p) => `${p}: string`).join(', ')})`, markdown(cls.doc));
-    sig.parameters = cls.params.map((p) => new vscode.ParameterInformation(`${p}: string`));
-    help.signatures.push(sig);
-  } else return undefined;
-  help.activeParameter = c.activeParameter;
+  for (const sig of s.signatures) {
+    const info = new vscode.SignatureInformation(sig.label, sig.documentation === undefined ? undefined : markdown(sig.documentation));
+    info.parameters = sig.parameters.map((p) => new vscode.ParameterInformation(p));
+    help.signatures.push(info);
+  }
+  help.activeSignature = s.activeSignature;
+  help.activeParameter = s.activeParameter;
   return help;
 }

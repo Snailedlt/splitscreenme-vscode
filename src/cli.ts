@@ -16,6 +16,7 @@ import { pluginsFor, simulateIsolated } from './sandbox';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 import { serve } from './mcp';
+import { serve as serveLsp } from './lsp';
 
 const HELP = `Usage: nucleus <command> [options]
 
@@ -51,6 +52,8 @@ Commands:
   mcp                         Run as an MCP server (stdio) for AI agents: Claude Desktop, Cursor,
                               VS Code Copilot, ... Tools: lint, fix, simulate, API lookup/search,
                               templates, Hub search and verified Hub handlers
+  lsp [--stdio]               Run as a Language Server (stdio) for other editors: Neovim, Helix,
+                              Zed, Sublime Text, Emacs, JetBrains (LSP4IJ), Kate, ... (PORTING.md)
 
 Common options:
   --json                      Machine-readable output
@@ -74,7 +77,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -93,7 +96,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'workbench'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'workbench'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -128,6 +131,9 @@ async function main(argv: string[]): Promise<number> {
       return cmdInitAgent(args, json);
     case 'mcp':
       return serve();
+    case 'lsp':
+      // Exit when the client says so, even with a Hub lookup or a lint timer still pending.
+      return serveLsp().then((code) => process.exit(code));
     case 'workbench':
       return cmdWorkbench(args, json);
   }

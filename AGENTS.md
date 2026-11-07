@@ -25,6 +25,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
   - `lint.ts`: the linter (acorn AST). `RULES` is the rule registry.
   - `format.ts`: Format Document / `nucleus format`: indentation and spacing only. Line breaks never move and the result is re-tokenized and compared with the original; any difference and it refuses. Keep that guarantee.
   - `complete.ts`: text-based resolution for completion/hover/signature help (works on incomplete code).
+  - `features.ts`: the editor features as plain data (hover, completion, signature help, quick fixes, Format Document edits, inlay hints, handler detection). `extension.ts` and `lsp.ts` only convert them.
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
@@ -32,6 +33,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
 - `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
+- `src/lsp.ts`: `nucleus lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.
 - `src/mcp.ts`: `nucleus mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
@@ -81,5 +83,6 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 - When you need network allowlist entries (hosts) or environment variables from the maintainer, always list them in a code block, one per line, ready to copy.
 
 - TypeScript strict; keep `src/core` free of `vscode` imports.
+- New editor features go in `src/core/features.ts` first (plain data, offsets), then into every adapter: `src/extension.ts` and `src/lsp.ts` (PORTING.md).
 - Handler code you generate (templates, snippets, skill docs) must be ES5 and lint-clean. Tests lint the templates and every `js` block in the skill docs.
 - The skill docs must only name real API members. A test resolves every `Game.*`/`Context.*` path mentioned in them.
