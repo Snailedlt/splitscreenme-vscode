@@ -78,6 +78,39 @@ export interface SimResult {
 
 class JintError extends Error {}
 
+/** What the debugger (core/debug.ts) sees of a run. Only set while simulate() runs with hooks. */
+export interface SimPhase {
+  kind: 'top' | 'play' | 'callback';
+  /** "Game.Play", "Game.OnFinishedSetup", "Game.ProtoInput.OnInputLocked", ...; for 'top': "top of the file" */
+  name: string;
+  /** 0-based player index ('play'; callbacks see the last player's Context) */
+  player?: number;
+  players?: number;
+}
+export interface SimEnv {
+  /** The handler's global scope: Game, Context, Player, Handler, implicit globals, ... */
+  scope: Record<string, unknown>;
+  /** The Game options set to something other than Nucleus' default, as raw values. */
+  options(): { path: string; value: unknown }[];
+}
+export interface SimHooks {
+  /** Rewrites the handler source before it runs (same names, same behaviour). */
+  instrument(src: string): string;
+  /** Passed to the handler code as `__dbg`. */
+  runtime: unknown;
+  phase(p: SimPhase, env: SimEnv): void;
+  /** An uncaught error ended the current phase. */
+  error(message: string): void;
+  /** A recorded call (`effect`: its plain-language line, for the ones that change something). */
+  call(line: string, effect: string | null): void;
+}
+let tracer: SimHooks | null = null;
+/** What the .NET stand-ins are, for the debugger's value views (a WeakMap: the handler can't see it). */
+export const dotnetLabels = new WeakMap<object, string>();
+const traceCall = (line: string, effect: () => string | null) => {
+  if (tracer) tracer.call(line, effect());
+};
+
 let effects: string[] | null = null;
 const base = (p: unknown) => String(p ?? '').split(/[\\/]/).filter(Boolean).pop() ?? String(p);
 const plainValue = (v: unknown) => (typeof v === 'string' ? v : v && typeof v === 'object' && 'Value' in (v as any) ? String((v as any).Value) : String(v));
@@ -193,7 +226,7 @@ function clr(type: string, label: string, log: string[], ignored: string[], stor
     else if (m.kind !== 'method') store[k] = parseDefault(m);
   }
   const target = { __label: label };
-  return new Proxy(target, {
+  const proxy = new Proxy(target, {
     has: (_t, p) => typeof p === 'string' && !!jintMemberName(members, p),
     get(_t, p) {
       if (p === '__label') return label;
@@ -212,6 +245,7 @@ function clr(type: string, label: string, log: string[], ignored: string[], stor
             return args.length >= req && args.length <= max;
           });
           log.push(`${label}.${key}(${args.map(fmt).join(', ')})`);
+          traceCall(log[log.length - 1], () => describeCall(label, key, args));
           const fx = effects && describeCall(label, key, args);
           if (fx) effects!.push(fx);
           if (!ok) throw new JintError('No public methods with the specified arguments were found.');
@@ -245,6 +279,8 @@ function clr(type: string, label: string, log: string[], ignored: string[], stor
       return true;
     },
   });
+  dotnetLabels.set(proxy, label);
+  return proxy;
 }
 
 /** Fake .NET `System` namespace: records calls, returns plausible values. Where core/dotnet.ts
@@ -256,7 +292,7 @@ function systemNs(log: string[], path = 'System'): any {
   const fn = function () {} as any;
   const owner = path.slice(0, path.lastIndexOf('.'));
   const member = DOTNET_OBJECTS[owner]?.members[path.slice(owner.length + 1)];
-  return new Proxy(fn, {
+  const proxy = new Proxy(fn, {
     get(_t, p) {
       if (typeof p !== 'string' || p === 'then') return undefined;
       if (p.startsWith(NOJINT)) p = p.slice(NOJINT.length);
@@ -274,6 +310,7 @@ function systemNs(log: string[], path = 'System'): any {
         throw new JintError('No public methods with the specified arguments were found.');
       }
       log.push(`${path}(${args.map(fmt).join(', ')})`);
+      traceCall(log[log.length - 1], () => describeSystem(path, args));
       const fx = effects && describeSystem(path, args);
       if (fx) effects!.push(fx);
       if (/Path\.Combine$/.test(path)) return args.join('\\');
@@ -282,6 +319,8 @@ function systemNs(log: string[], path = 'System'): any {
       return undefined;
     },
   });
+  dotnetLabels.set(proxy, path);
+  return proxy;
 }
 
 function nucleusNs(log: string[], ignored: string[]): any {
@@ -374,8 +413,8 @@ export function sessionSummary(r: SimResult): string {
 function handlerObject(log: string[], values: Record<string, unknown>): unknown {
   const t: Record<string, unknown> = {
     ...values,
-    Log: (msg: unknown) => void log.push(`Handler.Log(${fmt(msg)})`),
-    End: (fromStopButton: unknown) => void log.push(`Handler.End(${fmt(fromStopButton)})`),
+    Log: (msg: unknown) => void (log.push(`Handler.Log(${fmt(msg)})`), traceCall(log[log.length - 1], () => null)),
+    End: (fromStopButton: unknown) => void (log.push(`Handler.End(${fmt(fromStopButton)})`), traceCall(log[log.length - 1], () => null)),
   };
   return new Proxy(t, { get: (o, p) => (typeof p !== 'string' ? undefined : p in o ? o[p] : o[p[0].toUpperCase() + p.slice(1)] ?? o[p[0].toLowerCase() + p.slice(1)]) });
 }
@@ -464,7 +503,30 @@ export function hubFolderName(src: string): string {
   return 'MyHandler';
 }
 
-export function simulate(src: string, opt: SimOptions): SimResult {
+/** Runs the handler. `hooks` is for the debugger (core/debug.ts traceHandler); the result is the same with or without. */
+export function simulate(src: string, opt: SimOptions, hooks?: SimHooks): SimResult {
+  tracer = hooks ?? null;
+  try {
+    return runSimulation(src, opt);
+  } finally {
+    tracer = null;
+  }
+}
+
+/** The Game (or other object's) values that differ from Nucleus' defaults. */
+function changedOptions(label: string, type: string, store: Record<string, unknown>): { path: string; value: unknown }[] {
+  const out: { path: string; value: unknown }[] = [];
+  for (const [k, m] of Object.entries(api.objects[type].members)) {
+    if (m.kind === 'method' || m.kind === 'object' || m.internal) continue;
+    const v = store[k];
+    if (v === undefined || v === null || v === parseDefault(m)) continue;
+    if (Array.isArray(v) && !v.length) continue;
+    out.push({ path: `${label}.${k}`, value: v });
+  }
+  return out;
+}
+
+function runSimulation(src: string, opt: SimOptions): SimResult {
   const result: SimResult = { loaded: false, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opt.players };
   const blocker = lint(src).find((d) => d.severity === 'error' && LOAD_BLOCKERS.has(d.rule));
   if (blocker) {
@@ -493,7 +555,7 @@ export function simulate(src: string, opt: SimOptions): SimResult {
   for (const [name, types] of Object.entries(opt.plugins ?? {})) {
     scope[name] = Object.fromEntries(types.map((t) => [t, systemNs(loadLog, `${name}.${t}`)]));
   }
-  const { code, declared } = withoutModernBuiltins(src);
+  const { code, declared } = withoutModernBuiltins(tracer ? tracer.instrument(src) : src);
   const missing = [...MISSING_GLOBALS].filter((g) => !declared.has(g));
   const scopeProxy = new Proxy(scope, {
     // Context, Player, ... are only in scope while a callback runs; outside, the lookup falls
@@ -511,27 +573,22 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     },
   });
 
+  const env: SimEnv = { scope, options: () => changedOptions('Game', 'Game', gameStore) };
+  const phase = (p: SimPhase) => tracer?.phase(p, env);
+  const failed = (msg: string) => (tracer?.error(msg), msg);
   try {
+    phase({ kind: 'top', name: 'top of the file' });
     // eslint-disable-next-line no-new-func
-    new Function('__scope', `with (__scope) {\n${code}\n}`)(scopeProxy);
+    new Function('__scope', '__dbg', `with (__scope) {\n${code}\n}`)(scopeProxy, tracer?.runtime);
     result.loaded = true;
   } catch (e: any) {
-    result.loadError = engineError(e);
+    result.loadError = failed(engineError(e));
     if (typeof gameStore.GUID === 'string' && gameStore.GUID) result.partialLoad = true;
     return result;
   }
 
   // What the handler configured (values that differ from Nucleus' defaults).
-  const snapshot = (label: string, type: string, store: Record<string, unknown>) => {
-    for (const [k, m] of Object.entries(api.objects[type].members)) {
-      if (m.kind === 'method' || m.kind === 'object' || m.internal) continue;
-      const v = store[k];
-      if (v === undefined || v === null || v === parseDefault(m)) continue;
-      if (Array.isArray(v) && !v.length) continue;
-      result.options.push({ path: `${label}.${k}`, value: fmt(v) });
-    }
-  };
-  snapshot('Game', 'Game', gameStore);
+  for (const o of changedOptions('Game', 'Game', gameStore)) result.options.push({ path: o.path, value: fmt(o.value) });
 
   const play = gameStore.Play;
   result.hasPlay = typeof play === 'function';
@@ -675,9 +732,12 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       effects = run.effects;
       try {
         if (playNeverRuns) run.note = 'Game.Play never runs: both Game.GamePlayBeforeGameSetup and Game.GamePlayAfterLaunch are true.';
-        else if (result.hasPlay) (play as () => void)();
+        else if (result.hasPlay) {
+          phase({ kind: 'play', name: 'Game.Play', player: i, players: opt.players });
+          (play as () => void)();
+        }
       } catch (e: any) {
-        run.error = engineError(e);
+        run.error = failed(engineError(e));
       } finally {
         effects = null;
       }
@@ -711,9 +771,10 @@ export function simulate(src: string, opt: SimOptions): SimResult {
       delete scope.Player;
     }
     try {
+      phase({ kind: 'callback', name: `Game.${name}`, ...(lastCtx ? { player: opt.players - 1, players: opt.players } : {}) });
       (cb as () => void)();
     } catch (e: any) {
-      entry.error = engineError(e);
+      entry.error = failed(engineError(e));
       entry.note =
         name === 'OnStop'
           ? "Nucleus skips its cleanup after this (leftover processes, registry restore, temporary users, backups)."
@@ -735,9 +796,10 @@ export function simulate(src: string, opt: SimOptions): SimResult {
     protoLog.length = 0;
     const entry: { name: string; calls: string[]; error?: string } = { name: `Game.ProtoInput.${name}`, calls: [] };
     try {
+      phase({ kind: 'callback', name: `Game.ProtoInput.${name}`, ...(lastCtx ? { player: opt.players - 1, players: opt.players } : {}) });
       cb();
     } catch (e: any) {
-      entry.error = engineError(e);
+      entry.error = failed(engineError(e));
     }
     entry.calls = [...protoLog];
     result.callbacks.push(entry);

@@ -219,6 +219,12 @@ node dist/cli.js simulate MyGame.js --players 4 --keyboard none --resolution 256
 
 The exit code is 1 when the handler fails to load or a player's setup fails.
 
+`nucleus debug` runs the handler the same way and stops where you ask: at a line (`--break 14`), at a line for one player (`--break "14 if Context.PlayerID == 1"`) and wherever an error ends a phase. Each stop says where it is (the top of the file, `Game.Play` for player 2 of 4, `Game.OnStop`, ...) and shows the variables, the call stack, any `--watch` values and what the handler did so far; `--step` lists every line it runs. It records the run and reads values without running anything of the handler's, so the result is the same as without it.
+
+```bash
+node dist/cli.js debug MyGame.js --break "14 if Context.PlayerID == 1" --watch Context.StartArguments
+```
+
 ## Command-line linter
 
 ```bash
