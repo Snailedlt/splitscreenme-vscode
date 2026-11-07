@@ -38,3 +38,9 @@ body:
     attributes:
       label: How you know
       description: A handler you tested, a Nucleus version, a line in the Nucleus source, a Discord thread... Anything that helps us check.
+  - type: textarea
+    id: context
+    attributes:
+      label: Details from the workbench
+      description: Filled in for you when you open this form from the workbench (build, browser, settings, which handler; never your code). Please leave it as it is. A bot keeps a copy as the first comment.
+      render: text
