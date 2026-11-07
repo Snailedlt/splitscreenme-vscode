@@ -13,26 +13,13 @@ jobs:
     if: contains(github.event.issue.body, '### Details from the workbench')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/issue-bots.mjs
+          sparse-checkout-cone-mode: false
       - uses: actions/github-script@v7
         with:
           script: |
-            const body = (context.payload.issue.body || '').replace(/\r\n/g, '\n');
-            const m = body.match(/###\s*Details from the workbench\s*\n+(?:```\w*\n)?([\s\S]*?)(?:\n```|\n###|$)/);
-            const block = (m ? m[1] : '').trim();
-            if (!block || block === '_No response_') return;
-            const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
-            const sumLine = lines.findIndex((l) => /^Check: [0-9a-f]{8}$/.test(l));
-            // The same FNV-1a as checksum() in report.ts.
-            const fnv = (ls) => {
-              let h = 0x811c9dc5;
-              for (const ch of ls.join('\n')) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
-              return h.toString(16).padStart(8, '0');
-            };
-            const ok = sumLine > 0 && fnv(lines.slice(0, sumLine)) === lines[sumLine].slice(7) && sumLine === lines.length - 1;
-            const status = ok ? '✅ As the workbench filled it in.' : sumLine < 0 ? '⚠️ No checksum: typed or pasted by hand, not filled in by the workbench.' : '⚠️ Changed before sending: it no longer matches its checksum.';
-            const safe = lines.join('\n').replace(/```/g, "'''").slice(0, 4000);
-            await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number: context.payload.issue.number,
-              body: `<!-- report-details-bot -->\n**Details from the workbench**, as sent. ${status}\n\n\`\`\`text\n${safe}\n\`\`\`\n\nThis copy stays as it is if the issue is edited later.`,
-            });
+            // The logic is in scripts/issue-bots.mjs (tested by src/test/bots.test.ts).
+            const bots = await import(`${process.env.GITHUB_WORKSPACE}/scripts/issue-bots.mjs`);
+            await bots.runReportDetails({ github, context });
