@@ -1,0 +1,57 @@
+[
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "A new feature or a better way to do something"
+  },
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Something doesn't work as it should"
+  },
+  {
+    "name": "in progress",
+    "color": "fbca04",
+    "description": "Being worked on now"
+  },
+  {
+    "name": "in preview",
+    "color": "0e8a16",
+    "description": "Built on the preview branch; ships with the next release"
+  },
+  {
+    "name": "backlog",
+    "color": "c5def5",
+    "description": "Planned, not started"
+  },
+  {
+    "name": "community idea",
+    "color": "d876e3",
+    "description": "Suggested by someone in the community (Discord, GitHub)"
+  },
+  {
+    "name": "needs windows",
+    "color": "0078d4",
+    "description": "Needs a Windows PC with Nucleus Co-op to build or test"
+  },
+  {
+    "name": "area: debugger",
+    "color": "b60205",
+    "description": "Stepping through handlers (core/debug.ts, nucleus debug)"
+  },
+  {
+    "name": "area: cli",
+    "color": "0b5394",
+    "description": "The nucleus command-line tool and MCP server"
+  },
+  {
+    "name": "feedback",
+    "color": "fef2c0",
+    "description": "Tester feedback (from the issue form)"
+  },
+  {
+    "name": "doc-review",
+    "color": "7057ff",
+    "description": "A report about an AI-written doc (from the issue form)"
+  }
+]

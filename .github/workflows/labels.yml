@@ -1,0 +1,31 @@
+name: Labels
+# Keeps the issue labels' colours and descriptions as listed in .github/labels.json (creates missing ones, never
+# deletes). Runs when that file changes, or by hand.
+on:
+  push:
+    paths: ['.github/labels.json', '.github/workflows/labels.yml']
+  workflow_dispatch:
+permissions:
+  issues: write
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/labels.json
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = JSON.parse(require('fs').readFileSync('.github/labels.json', 'utf8'));
+            for (const l of labels) {
+              try {
+                await github.rest.issues.updateLabel({ ...context.repo, name: l.name, color: l.color, description: l.description });
+                core.info(`updated ${l.name}`);
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                await github.rest.issues.createLabel({ ...context.repo, name: l.name, color: l.color, description: l.description });
+                core.info(`created ${l.name}`);
+              }
+            }
