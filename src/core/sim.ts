@@ -505,7 +505,8 @@ export function hubFolderName(src: string): string {
 
 /** Runs the handler. `hooks` is for the debugger (core/debug.ts traceHandler); the result is the same with or without. */
 export function simulate(src: string, opt: SimOptions, hooks?: SimHooks): SimResult {
-  tracer = hooks ?? null;
+  // Only real debugger hooks (core/debug.ts); anything else, like a file name passed by an old caller, is ignored.
+  tracer = hooks && typeof hooks.instrument === 'function' ? hooks : null;
   try {
     return runSimulation(src, opt);
   } finally {
