@@ -1,6 +1,6 @@
 // API lookup/search for agents and the CLI (`nucleus api ...`), and the
 // Markdown API reference shipped with the agent skill.
-import { api, Member, memberSignature, ownerLabel, suggest } from './api';
+import { api, claudeNote, Member, memberSignature, ownerLabel, suggest } from './api';
 
 export interface Entry {
   /** Display path, e.g. "Game.Hook.ForceFocus". */
@@ -27,17 +27,20 @@ const ROOTS: [string, string][] = [
   ['System.Threading.Thread', 'System.Threading.Thread'],
 ];
 
-let cache: Entry[] | undefined;
-export function allEntries(): Entry[] {
-  if (cache) return cache;
-  cache = [];
+const caches: Record<string, Entry[]> = {};
+/** Every API member handlers can use. With `withHub`, also the `Hub.*` lines hub.splitscreen.me writes on upload:
+ *  for the reference and lookups (so they're explained), never for completion or the Lines list. */
+export function allEntries(withHub = false): Entry[] {
+  const key = String(withHub);
+  if (caches[key]) return caches[key];
+  const out: Entry[] = (caches[key] = []);
   for (const [owner, label] of ROOTS) {
     for (const [name, member] of Object.entries(api.objects[owner].members)) {
-      if (member.internal) continue;
-      cache.push({ path: `${label}.${name}`, owner, name, member });
+      if (member.internal && !(withHub && owner.startsWith('Hub'))) continue;
+      out.push({ path: `${label}.${name}`, owner, name, member });
     }
   }
-  return cache;
+  return out;
 }
 
 /** Normalise "player.X" / "PlayerList[i].X" / "Nucleus.X" spellings. */
@@ -58,7 +61,7 @@ export type LookupResult =
 /** Exact lookup by path ("Game.KillMutex") or bare member name ("KillMutex"). */
 export function lookup(query: string): LookupResult {
   const q = normalise(query);
-  const entries = allEntries();
+  const entries = allEntries(true);
   // Paths follow Jint's rule: only the first letter of a member name may differ in case.
   const jintEq = (a: string, b: string) => a === b || (a.length === b.length && a[0].toLowerCase() === b[0].toLowerCase() && a.slice(1) === b.slice(1));
   const byPath = entries.filter((e) => {
@@ -86,7 +89,7 @@ export function lookup(query: string): LookupResult {
 export function search(query: string, limit = 20): Entry[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
-  const scored = allEntries()
+  const scored = allEntries(true)
     .map((e) => {
       const name = e.path.toLowerCase();
       const doc = `${e.member.doc} ${e.member.category ?? ''}`.toLowerCase();
@@ -119,6 +122,7 @@ export function formatEntry(e: Entry, verbose = true): string {
   if (meta.length) lines.push(`  (${meta.join('; ')})`);
   if (m.deprecated) lines.push(`  ${m.deprecated}`);
   if (verbose && m.doc) lines.push(...m.doc.split('\n').map((l) => `  ${l}`));
+  if (verbose && claudeNote(m)) lines.push(`  [${claudeNote(m)}]`);
   if (verbose && m.example) lines.push(`  Example: ${m.example}`);
   return lines.join('\n');
 }
@@ -137,7 +141,7 @@ export function markdownReference(): string {
   ];
   for (const [owner, label] of ROOTS) {
     out.push(`## ${label}`, '', api.objects[owner].doc, '');
-    const entries = allEntries().filter((e) => e.owner === owner).sort((a, b) => a.name.localeCompare(b.name));
+    const entries = allEntries(true).filter((e) => e.owner === owner).sort((a, b) => a.name.localeCompare(b.name));
     for (const e of entries) {
       const m = e.member;
       out.push(`### ${e.path}`);
@@ -150,6 +154,7 @@ export function markdownReference(): string {
       if (meta.length) out.push(meta.join(' · '));
       if (m.deprecated) out.push(`**${m.deprecated}**`);
       if (m.doc) out.push(m.doc);
+      if (claudeNote(m)) out.push(`_✎ ${claudeNote(m)}_`);
       if (m.example) out.push('Example: `' + m.example + '`');
       out.push('');
     }

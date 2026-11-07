@@ -54,3 +54,7 @@ test('format: never glues operators into new ones, and refuses code that is not 
   const bad = formatHandler('var a = `x`;\n');
   assert.equal(bad.ok, false);
 });
+
+test('format: operators newer than ES5 (=>, **, ??) stay in one piece', () => {
+  assert.equal(fmt('var f = () => 1;\nvar p = a ** 2;\nvar q = a ?? b;\nf=x=>x;\n'), 'var f = () => 1;\nvar p = a ** 2;\nvar q = a ?? b;\nf = x => x;\n');
+});

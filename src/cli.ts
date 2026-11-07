@@ -12,10 +12,13 @@ import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
+import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
+import type { Stop, ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 import { serve } from './mcp';
+import { serve as serveLsp } from './lsp';
 
 const HELP = `Usage: nucleus <command> [options]
 
@@ -35,6 +38,12 @@ Commands:
                               the game. Shows each player's window, launch arguments and file
                               changes. File, registry and process calls are recorded, never
                               performed, and the handler has no access to this computer.
+  debug <handler.js> [--break <line>[ if <condition>]]... [--watch <expr>]... [--step]
+        [--players N] [--resolution 1920x1080] [--keyboard 1|all|none]
+                              Run the handler as simulate does and print where it stops: at each
+                              breakpoint (e.g. --break "14 if Context.PlayerID == 1"), and where an
+                              error ends a phase, with the variables, the call stack and the
+                              --watch values. --step prints every line it runs instead
   hub search <words>          Search handlers on hub.splitscreen.me
   hub fetch <id> [--out dir]  Download a Hub handler package and extract it (default ./hub-handlers/<title>)
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
@@ -51,6 +60,8 @@ Commands:
   mcp                         Run as an MCP server (stdio) for AI agents: Claude Desktop, Cursor,
                               VS Code Copilot, ... Tools: lint, fix, simulate, API lookup/search,
                               templates, Hub search and verified Hub handlers
+  lsp [--stdio]               Run as a Language Server (stdio) for other editors: Neovim, Helix,
+                              Zed, Sublime Text, Emacs, JetBrains (LSP4IJ), Kate, ... (PORTING.md)
 
 Common options:
   --json                      Machine-readable output
@@ -74,7 +85,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--json', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -93,7 +104,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'workbench'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'workbench', 'debug'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -116,6 +127,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdFormat(args, json);
     case 'simulate':
       return cmdSimulate(args, json);
+    case 'debug':
+      return cmdDebug(args, json);
     case 'api':
       return cmdApi(args, json);
     case 'hub':
@@ -128,6 +141,9 @@ async function main(argv: string[]): Promise<number> {
       return cmdInitAgent(args, json);
     case 'mcp':
       return serve();
+    case 'lsp':
+      // Exit when the client says so, even with a Hub lookup or a lint timer still pending.
+      return serveLsp().then((code) => process.exit(code));
     case 'workbench':
       return cmdWorkbench(args, json);
   }
@@ -238,9 +254,9 @@ function cmdFormat(args: Args, json: boolean): number {
   return bad.length || (checkOnly && unformatted.length) ? 1 : 0;
 }
 
-function cmdSimulate(args: Args, json: boolean): number {
+function simArgs(args: Args, cmd: string) {
   const file = args.positional[0];
-  if (!file || args.positional.length > 1) throw new Usage('simulate: give one handler file');
+  if (!file || args.positional.length > 1) throw new Usage(`${cmd}: give one handler file`);
   const players = Number(flag(args, '--players') ?? 2);
   if (!Number.isInteger(players) || players < 1 || players > 16) throw new Usage('--players must be 1 to 16');
   const res = (flag(args, '--resolution') ?? '1920x1080').match(/^(\d+)x(\d+)$/);
@@ -250,10 +266,55 @@ function cmdSimulate(args: Args, json: boolean): number {
   const keyboardPlayer = kbArg === 'none' ? -1 : kbArg === 'all' ? EVERY_KEYBOARD : Number(kbArg) - 1;
   if (kbArg !== 'none' && kbArg !== 'all' && (!Number.isInteger(keyboardPlayer) || keyboardPlayer < 0 || keyboardPlayer >= players)) throw new Usage(`--keyboard must be a player number (1-${players}), "all" (each player their own) or "none"`);
   const src = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
-  const r = simulateIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(file) });
+  return { file, src, keyboardPlayer, opts: { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(file) } };
+}
+
+function cmdSimulate(args: Args, json: boolean): number {
+  const { file, src, keyboardPlayer, opts } = simArgs(args, 'simulate');
+  const r = simulateIsolated(src, opts);
   const failed = !r.loaded || r.players.some((p) => p.error) || r.callbacks.some((c) => c.error);
   print(json, { file, ...r }, () => formatSimulation(r, keyboardPlayer));
   return failed ? 1 : 0;
+}
+
+function cmdDebug(args: Args, json: boolean): number {
+  const { file, src, opts } = simArgs(args, 'debug');
+  const breakpoints = (args.flags.get('--break') ?? []).map((b) => {
+    const m = /^\s*(\d+)\s*(?:if\s+(.+))?$/s.exec(b);
+    if (!m) throw new Usage(`--break must be a line number, optionally with a condition: --break "14 if Context.PlayerID == 1" (got "${b}")`);
+    return { line: Number(m[1]), ...(m[2] ? { condition: m[2].trim() } : {}) };
+  });
+  const watches = args.flags.get('--watch') ?? [];
+  const trace = traceIsolated(src, opts);
+  const stops: Stop[] = [];
+  const MAX_STOPS = 200;
+  for (let s = nextStop(trace, -1, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true }); s && stops.length < MAX_STOPS; ) {
+    stops.push(s);
+    s = nextStop(trace, s.index, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true });
+  }
+  const show = (v: ValueView) => `${v.text}${v.type === '.NET' || v.type === 'function' || v.type === 'null' || v.type === 'undefined' || v.type === 'default' ? '' : ` (${v.type})`}`;
+  const items = stops.map((s) => {
+    const step = trace.steps[s.index];
+    return { ...s, step, description: describeStep(step), watches: watches.map((w) => ({ expr: w, ...evaluateWatch(trace, s.index, w) })), did: callsBefore(trace, s.index).filter((c) => c.effect).map((c) => c.effect!) };
+  });
+  print(json, { file, stops: items, steps: trace.steps.length, truncated: trace.truncated, truncatedPhases: trace.truncatedPhases, error: trace.error, result: trace.result }, () => {
+    const out: string[] = [];
+    if (trace.error && !trace.steps.length) out.push(trace.error);
+    for (const it of items) {
+      out.push(`${it.description}${it.conditionError ? ` (the breakpoint's condition failed: ${it.conditionError})` : ''}`);
+      const locals = Object.entries(it.step.locals);
+      if (locals.length) out.push(`  Variables: ${locals.map(([k, v]) => `${k} = ${show(v)}`).join(', ')}`);
+      if (it.step.stack.length > 1) out.push(`  Call stack: ${it.step.stack.map((f) => `${f.name} (line ${f.line})`).join(' < ')}`);
+      for (const w of it.watches) out.push(`  ${w.expr} = ${w.error ? `(${w.error})` : show(w.value!)}`);
+      if (it.did.length && !has(args, '--step')) out.push(`  So far: ${it.did.join('; ')}`);
+    }
+    if (!items.length && !trace.error) out.push(breakpoints.length ? `No breakpoint was hit (${trace.steps.length} statements ran).` : `No errors (${trace.steps.length} statements ran). Add --break <line> to stop somewhere.`);
+    if (stops.length >= MAX_STOPS) out.push(`(only the first ${MAX_STOPS} stops are shown)`);
+    if (trace.truncated) out.push(`Not every statement was recorded (limits: ${trace.maxSteps} in all, fewer per phase)${trace.truncatedPhases.length ? `: ${trace.truncatedPhases.join('; ')}` : ''}.`);
+    if (trace.error && trace.steps.length) out.push(trace.error);
+    return out.join('\n');
+  });
+  return trace.error || items.some((i) => i.reason === 'error') ? 1 : 0;
 }
 
 function cmdApi(args: Args, json: boolean): number {

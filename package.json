@@ -2,7 +2,7 @@
   "name": "splitscreenme-vscode",
   "displayName": "SplitScreen.Me / Nucleus Co-op Handler Tools",
   "description": "IntelliSense, docs, linting and packaging for Nucleus Co-op game handlers (SplitScreen.Me).",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "publisher": "splitscreenme",
   "license": "MIT",
   "repository": {
@@ -413,6 +413,46 @@
                 "hint",
                 "off"
               ]
+            },
+            "protoinput-inactive": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "protoinput-needs-hook": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "blocked-message": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "needs-option": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
             }
           },
           "additionalProperties": false
@@ -432,7 +472,7 @@
     }
   },
   "scripts": {
-    "generate": "node scripts/generate-api.mjs",
+    "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit -p .",

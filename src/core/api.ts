@@ -37,6 +37,13 @@ export interface Member {
   internal?: boolean;
   required?: boolean;
   doc: string;
+  /** Set when the doc was written by Claude (data/claude-docs.json) rather than taken from the official docs. */
+  docBy?: 'claude';
+  /** What a Claude-written doc is based on (source files and functions). */
+  docBasis?: string;
+  /** A person who checked a Claude-written doc against Nucleus (data/claude-docs.json "checkedBy"), and when. */
+  docCheckedBy?: string;
+  docCheckedOn?: string;
   example?: string;
   category?: string;
   deprecated?: string;
@@ -296,11 +303,23 @@ export function ownerLabel(owner: string): string {
   }
 }
 
+/** The label shown with a doc Claude wrote (empty for human-written docs). */
+export const claudeNote = (m: { docBy?: string; docBasis?: string; docCheckedBy?: string; docCheckedOn?: string }) =>
+  m.docBy !== 'claude' ? ''
+  : m.docCheckedBy ? `AI-written, based on ${m.docBasis}. Checked by ${m.docCheckedBy}${m.docCheckedOn ? ` on ${m.docCheckedOn}` : ''}.`
+  : `AI-written, based on ${m.docBasis}. Not from the official docs.`;
+
+/** The "Doc review" issue form for a Claude-written doc, with its name filled in (.github/ISSUE_TEMPLATE/doc-review.yml;
+ *  the doc-review workflow adds the doc itself as a comment the reporter can't remove). */
+export const docReviewUrl = (path: string) =>
+  `https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=doc-review.yml&title=${encodeURIComponent(`Doc review: ${path}`)}&member=${encodeURIComponent(path)}`;
+
 export function memberMarkdown(owner: string, name: string, m: Member): string {
   const parts: string[] = [];
   parts.push('```ts\n' + memberSignature(owner, name, m).join('\n') + '\n```');
   if (m.deprecated) parts.push(`**${m.deprecated}**`);
   if (m.doc) parts.push(m.doc);
+  if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_${m.docCheckedBy ? '' : ` [Is it wrong? Tell us](${docReviewUrl(`${ownerLabel(owner)}.${name}`)})`}`);
   const meta: string[] = [];
   if (m.default !== undefined) meta.push(`Default: \`${m.default}\``);
   if (m.category) meta.push(`Category: ${m.category}`);

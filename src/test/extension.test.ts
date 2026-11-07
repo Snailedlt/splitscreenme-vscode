@@ -170,3 +170,19 @@ test("what's new: highlights of the version's CHANGELOG section", async () => {
   assert.deepEqual(highlights(log, '0.2.0'), ['Value suggestions as you type', 'AI agents']);
   assert.deepEqual(highlights(log, '9.9.9'), []);
 });
+
+test('Game.ProtoInput.BlockedMessages: names on hover, as hints, and suggestions inside the brackets', () => {
+  const src = HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008, 0x02a3, |];';
+  const { doc, pos } = at(src);
+  const h = m.__registered.hover[0].provideHover(...Object.values(at(HEADER + 'Game.ProtoInput.BlockedMessages = [0x00|08];')));
+  assert.match(h.contents.value, /WM_KILLFOCUS/);
+  assert.match(h.contents.value, /MessageFilterHook/);
+  const hints = (m.__registered as any).inlay[0].provideInlayHints(doc);
+  assert.deepEqual(hints.map((x: any) => x.label), ['WM_KILLFOCUS', 'WM_MOUSELEAVE']);
+  const items = m.__registered.completion[0].provideCompletionItems(doc, pos);
+  const names = items.map((i: any) => i.label.label);
+  assert.ok(names.includes('WM_MOUSEHOVER') && !names.includes('WM_KILLFOCUS')); // ones already in the list are left out
+  assert.equal(items[0].insertText, '0x02a1'); // after a comma: just the number
+  const end = at(HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008 |];');
+  assert.equal(m.__registered.completion[0].provideCompletionItems(end.doc, end.pos)[0].insertText, ', 0x02a1');
+});

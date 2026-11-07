@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-nucleus ../splitscreenme-nucleus
       - run: git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-www ../splitscreenme-www
+      - run: git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-protoInput ../splitscreenme-protoInput
       - run: npm run generate
       - run: npm test
       - uses: peter-evans/create-pull-request@v6

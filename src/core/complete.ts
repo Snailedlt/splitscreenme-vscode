@@ -204,12 +204,13 @@ export interface ValueContext {
   /** What has been typed of the value so far, and where it starts. */
   partial: string;
   partialStart: number;
-  /** Values to offer: enum values as `Nucleus.Enum.Value`, or `true` / `false`. */
-  values: { value: string; detail?: string }[];
+  /** Values to offer: enum values as `Nucleus.Enum.Value`, `true` / `false`, a function for callbacks, the usual
+   *  window messages for `Game.ProtoInput.BlockedMessages`. `snippet` is the VS Code snippet form ($0 = cursor). */
+  values: { value: string; detail?: string; snippet?: string }[];
 }
 
 /** `Game.DPIHandling = |` or `Game.KeepAspectRatio = tr|`: the values the option takes.
- *  Only for enum and boolean options (other types have no fixed set of values). */
+ *  For enum and boolean options, callbacks (`Game.Play = function () { ... };`) and BlockedMessages. */
 export function valueContextAt(text: string, offset: number): ValueContext | undefined {
   const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
   const before = text.slice(lineStart, offset);
@@ -227,6 +228,11 @@ export function valueContextAt(text: string, offset: number): ValueContext | und
     values = Object.entries(api.enums[e]?.values ?? {}).map(([v, n]) => ({ value: `Nucleus.${e}.${v}`, detail: `= ${n}` }));
   } else if (t === 'boolean') {
     values = [{ value: 'true' }, { value: 'false' }];
+  } else if (t === 'function') {
+    values = [{ value: 'function () {\n};', detail: 'Nucleus calls it', snippet: 'function () {\n\t$0\n};' }];
+  } else if (owner === 'GameProtoInput' && name === 'BlockedMessages') {
+    // The set most Hub handlers block (core/wm.ts COMMON_MESSAGES).
+    values = [{ value: '[0x0008, 0x02a1, 0x02a3];', detail: 'WM_KILLFOCUS, WM_MOUSEHOVER, WM_MOUSELEAVE: the usual set' }];
   }
   if (!values.length) return undefined;
   return { owner, name, member, partial: m[2], partialStart: offset - m[2].length, values };

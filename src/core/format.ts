@@ -25,6 +25,8 @@ type Item = Tok | Com;
 const CONTROL = new Set(['if', 'for', 'while', 'switch', 'catch', 'with']);
 const OPENERS = new Set(['(', '[', '{', '${']);
 const CLOSERS = new Set([')', ']', '}']);
+/** Operators newer than ES5, which ES5's tokenizer splits in two. */
+const GLUED = new Set(['=>', '**', '**=', '?.', '??']);
 
 function lex(text: string): { items: Item[]; lineStarts: number[] } | string {
   const lineStarts = [0];
@@ -113,6 +115,9 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     const B = b.value;
     // Never glue tokens into a different one: a - -b, a + +b, a - --b.
     if ((A.endsWith('+') && B.startsWith('+')) || (A.endsWith('-') && B.startsWith('-'))) return ' ';
+    // ES5 reads `=>` (and `**`, `?.`, `??`) as two tokens; written together, they stay together, so
+    // code that isn't ES5 yet keeps its meaning (`() => 1` must not become `() = > 1`).
+    if (a.end === b.start && GLUED.has(A + B)) return '';
     if (B === ',' || B === ';' || B === ')' || B === ']') return '';
     if (A === '(' || A === '[') return '';
     if (A === '.' || B === '.') return '';

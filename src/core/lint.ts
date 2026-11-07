@@ -1,5 +1,6 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
+import { blockTarget, hex, wmName } from './wm';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
 import { BEFORE_SESSION } from './lifecycle';
@@ -80,6 +81,22 @@ export const RULES = {
   'protoinput-legacy-hooks': {
     severity: 'warning',
     description: 'With Proto Input and multiple keyboards/mice, the legacy input options (Game.HookGetCursorPos, Game.SendNormalMouseInput, ...) must be set to false; several default to true and would run alongside Proto Input.',
+  },
+  'protoinput-inactive': {
+    severity: 'warning',
+    description: 'The handler sets Game.ProtoInput options, but none of the ways to start Proto Input (Game.ProtoInput.InjectStartup, InjectRuntime_RemoteLoadMethod, InjectRuntime_EasyHookMethod, InjectRuntime_EasyHookStealthMethod) is true, so Nucleus never starts it and ignores every one of them.',
+  },
+  'protoinput-needs-hook': {
+    severity: 'warning',
+    description: 'Game.ProtoInput.BlockedMessages and the message filters (MouseMoveFilter, WindowActivateFilter, ...) only work inside Proto Input\'s message filter hook: without Game.ProtoInput.MessageFilterHook = true they do nothing.',
+  },
+  'blocked-message': {
+    severity: 'warning',
+    description: 'A number in Game.ProtoInput.BlockedMessages that Proto Input can\'t block as written: it isn\'t in Proto Input\'s message list (it then blocks a different entry, or nothing), or it is listed twice.',
+  },
+  'needs-option': {
+    severity: 'warning',
+    description: 'An option Nucleus only reads when another one is on (FakeFocusInterval needs FakeFocus, SteamlessArgs needs UseSteamless, DrawFakeMouseCursorForControllers needs DrawFakeMouseCursor, ...): set alone, it does nothing.',
   },
   'guid-changed': {
     severity: 'warning',
@@ -194,18 +211,47 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
     }).program as Node;
   } catch (e: any) {
     const pos = typeof e.pos === 'number' ? e.pos : 0;
-    out.push({
-      rule: 'syntax-error',
-      severity: 'error',
-      message: String(e.message).replace(/\s*\(\d+:\d+\)$/, ''),
-      start: pos,
-      end: Math.min(text.length, pos + 1),
-    });
+    // Put the marker where the code stops making sense: an error on the next line's first token
+    // (`player.` then `}`) belongs at the end of the line before.
+    let at = pos;
+    const before = text.slice(0, pos);
+    const prev = before.search(/\S\s*$/);
+    if (prev >= 0 && /\n/.test(before.slice(prev))) at = prev;
+    const dot = /([\w$\])]+)\s*\.$/.exec(text.slice(0, at + 1));
+    const message = dot && text[at] === '.'
+      ? `Unfinished: a name is missing after \`${dot[1]}.\``
+      : String(e.message).replace(/\s*\(\d+:\d+\)$/, '');
+    const start = dot && text[at] === '.' ? dot.index : at;
+    out.push({ rule: 'syntax-error', severity: 'error', message, start, end: Math.min(text.length, at + 1) });
+    // Keep checking the rest: blank out the line that doesn't parse (offsets stay the same) and lint what's left.
+    const recovered = recoverParse(text, [at, pos]);
+    if (recovered) {
+      const more: Diagnostic[] = [];
+      new Analyzer(recovered.text, recovered.program, more, options.plugins, options.published).run();
+      out.push(...more.filter((d) => d.rule !== 'missing-required' && !recovered.blank.some(([a, b]) => d.start < b && d.end > a)));
+    }
     return finalize(out, text, comments, options);
   }
 
   new Analyzer(text, program, out, options.plugins, options.published).run();
   return finalize(out, text, comments, options);
+}
+
+/** The file with the lines around a syntax error blanked (same length), if that parses. */
+function recoverParse(text: string, at: number[]): { text: string; program: Node; blank: [number, number][] } | undefined {
+  const lineAt = (i: number): [number, number] => [text.lastIndexOf('\n', i - 1) + 1, (text.indexOf('\n', i) + 1 || text.length + 1) - 1];
+  const tries: [number, number][][] = [];
+  for (const i of at) tries.push([lineAt(i)]);
+  tries.push(at.map(lineAt));
+  for (const blank of tries) {
+    let t = text;
+    for (const [a, b] of blank) t = t.slice(0, a) + ' '.repeat(b - a) + t.slice(b);
+    try {
+      const program = parseLikeJint(t, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowHashBang: true }).program as Node;
+      return { text: t, program, blank };
+    } catch { /* try the next */ }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +300,8 @@ class Analyzer {
     this.checkCallbacks();
     this.checkExeName();
     this.checkProtoInputLegacy();
+    this.checkProtoInputWiring();
+    this.checkNeedsOption();
     this.checkGuid();
     this.checkPublishedGuid();
     this.checkEncoding();
@@ -1172,8 +1220,12 @@ class Analyzer {
   private checkDuplicates() {
     for (const [chain, nodes] of this.topAssignments) {
       if (nodes.length < 2) continue;
+      const last = nodes[nodes.length - 1];
+      const lastStart = lineStart(this.text, last.start);
+      const lastEnd = nextLineStart(this.text, last.end);
+      const lastAlone = this.text.slice(lastStart, last.start).trim() === '' && /^\s*;?\s*(\/\/.*)?$/.test(this.text.slice(last.end, lastEnd).replace(/\r?\n$/, ''));
       for (const n of nodes.slice(0, -1)) {
-        const line = lineOf(this.text, nodes[nodes.length - 1].start) + 1;
+        const line = lineOf(this.text, last.start) + 1;
         const stmtStart = lineStart(this.text, n.start);
         const stmtEnd = nextLineStart(this.text, n.end);
         const onlyStatementOnLine = this.text.slice(stmtStart, n.start).trim() === '' && /^\s*;?\s*(\/\/.*)?$/.test(this.text.slice(n.end, stmtEnd).replace(/\r?\n$/, ''));
@@ -1184,9 +1236,11 @@ class Analyzer {
           end: n.end,
           tags: ['unnecessary'],
           // Safe to remove automatically when nothing reads the option in between.
-          fixes: onlyStatementOnLine
-            ? [{ title: 'Remove this assignment', edits: [{ start: stmtStart, end: stmtEnd, text: '' }], preferred: !this.text.slice(n.end, nodes[nodes.length - 1].start).includes(chain) }]
-            : undefined,
+          // Or keep this value: remove the later assignment instead (never automatic: only the author knows which is meant).
+          fixes: [
+            ...(onlyStatementOnLine ? [{ title: `Remove this assignment (keep line ${line})`, edits: [{ start: stmtStart, end: stmtEnd, text: '' }], preferred: !this.text.slice(n.end, last.start).includes(chain) }] : []),
+            ...(lastAlone && n === nodes[nodes.length - 2] ? [{ title: `Keep this value: remove line ${line}`, edits: [{ start: lastStart, end: lastEnd, text: '' }] }] : []),
+          ],
         });
       }
     }
@@ -1535,6 +1589,98 @@ class Analyzer {
         ? [{ title: 'Turn off the legacy input options', edits: [{ start: at, end: at, text: `// Legacy input options: off when using Proto Input\n${missing.map((k) => `Game.${k} = false;`).join('\n')}\n` }] }]
         : undefined,
     });
+  }
+
+  // Proto Input is only started by one of its injection options; BlockedMessages and the message filters only act
+  // inside its message filter hook (ProtoInputLauncher.SetupInstance, GenericGameHandler; ProtoInputHooks:
+  // MessageFilterHook.cpp FilterMessage). And a blocked number goes through Proto Input's own message table (core/wm.ts).
+  private checkProtoInputWiring() {
+    const proto = [...this.topAssignments.entries()].filter(([k]) => k.startsWith('Game.ProtoInput.'));
+    if (!proto.length) return;
+    const last = (k: string) => { const ns = this.topAssignments.get(`Game.ProtoInput.${k}`); return ns?.[ns.length - 1]; };
+    // On anywhere in the handler (also set from Game.Play): any value but a literal false.
+    const on = (k: string) => [...this.text.matchAll(new RegExp(`\\bProtoInput\\.${k}\\s*=\\s*([^;\\n]+)`, 'g'))].some((m) => !/^false\b/.test(m[1].trim()));
+    const isOff = (n: Node) => n.right.type === 'Literal' && (n.right.value === false || n.right.value === 0 || n.right.value === null);
+    const used = proto.filter(([, ns]) => !isOff(ns[ns.length - 1]));
+    const INJECT = ['InjectStartup', 'InjectRuntime_RemoteLoadMethod', 'InjectRuntime_EasyHookMethod', 'InjectRuntime_EasyHookStealthMethod'];
+    if (used.length && !INJECT.some(on)) {
+      const n = used[0][1][0];
+      this.report({
+        rule: 'protoinput-inactive',
+        message: 'Proto Input is never started for this handler: none of `Game.ProtoInput.InjectStartup` or the `InjectRuntime_…` options is `true`, so Nucleus ignores every `Game.ProtoInput` option here.',
+        start: n.left.start,
+        end: n.left.end,
+        fixes: [{ title: 'Start Proto Input with the game (InjectStartup)', edits: [{ start: lineStart(this.text, n.start), end: lineStart(this.text, n.start), text: 'Game.ProtoInput.InjectStartup = true;\n' }] }],
+      });
+    }
+    const blocked = last('BlockedMessages');
+    const list = blocked?.right.type === 'ArrayExpression' ? blocked.right.elements : [];
+    const filters = proto.filter(([k, ns]) => /Filter$/.test(k) && !isOff(ns[ns.length - 1]));
+    const needers = [...(list.length ? [['Game.ProtoInput.BlockedMessages', [blocked!]] as [string, Node[]]] : []), ...filters];
+    if (needers.length && !on('MessageFilterHook')) {
+      const n = needers[0][1][0];
+      const names = needers.map(([k]) => `\`${k}\``);
+      this.report({
+        rule: 'protoinput-needs-hook',
+        message: `${names.length > 2 ? names.slice(0, 2).join(', ') + ' and more' : names.join(' and ')} only work${needers.length === 1 ? 's' : ''} inside Proto Input's message filter hook, which isn't on: add \`Game.ProtoInput.MessageFilterHook = true;\`, or ${needers.length === 1 ? 'it does' : 'they do'} nothing.`,
+        start: n.left.start,
+        end: n.left.end,
+        fixes: [{ title: 'Turn on the message filter hook', preferred: true, edits: [{ start: lineStart(this.text, n.start), end: lineStart(this.text, n.start), text: 'Game.ProtoInput.MessageFilterHook = true;\n' }] }],
+      });
+    }
+    const seen = new Set<number>();
+    for (const el of list) {
+      if (!el || el.type !== 'Literal' || typeof el.value !== 'number') continue;
+      const id = el.value;
+      if (seen.has(id)) {
+        this.report({ rule: 'blocked-message', severity: 'info', message: `\`${el.raw}\` (${wmName(id) ?? 'unlisted'}) is already in the list.`, start: el.start, end: el.end, fixes: [{ title: 'Remove the repeat', preferred: true, edits: [{ start: this.text.lastIndexOf(',', el.start) >= 0 && this.text.lastIndexOf(',', el.start) > list[0]!.start ? this.text.lastIndexOf(',', el.start) : el.start, end: el.end, text: '' }] }] });
+        continue;
+      }
+      seen.add(id);
+      const t = blockTarget(id);
+      if (t.kind === 'out') this.report({ rule: 'blocked-message', message: `\`${el.raw}\` is past the end of Proto Input's message list (up to ${hex(4278)}), so blocking it does nothing.`, start: el.start, end: el.end });
+      else if (t.kind === 'other') this.report({ rule: 'blocked-message', message: `\`${el.raw}\` isn't in Proto Input's message list: blocking it switches on the block for ${t.name} (${hex(t.sharedWith)}) instead, and every unlisted message that lands there with it.`, start: el.start, end: el.end });
+    }
+  }
+
+  // Options Nucleus only reads inside another option's `if` (GenericGameHandler, WindowFakeFocus), checked in its source.
+  private checkNeedsOption() {
+    const NEEDS: { child: string; any: string[]; why: string }[] = [
+      { child: 'FakeFocusInterval', any: ['FakeFocus'], why: 'the fake focus messages only run with `Game.FakeFocus = true`' },
+      { child: 'FakeFocusSendActivateIgnoreKB', any: ['FakeFocus'], why: 'the fake focus messages only run with `Game.FakeFocus = true`' },
+      { child: 'FakeFocusSendActivate', any: ['FakeFocus', 'SendFakeFocusMsg'], why: 'it is only read when fake focus messages are sent (`Game.FakeFocus` or `Game.SendFakeFocusMsg`)' },
+      { child: 'DrawFakeMouseCursorForControllers', any: ['DrawFakeMouseCursor'], why: 'the fake cursors are only drawn with `Game.DrawFakeMouseCursor = true`' },
+      { child: 'UpdateFakeMouseWithInternalInput', any: ['DrawFakeMouseCursor'], why: 'the fake cursors are only drawn with `Game.DrawFakeMouseCursor = true`' },
+      { child: 'ProtoInput.FocusLoopIntervalMilliseconds', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_ACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_ACTIVATEAPP', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_NCACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_MOUSEACTIVATE', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'ProtoInput.FocusLoop_WM_SETFOCUS', any: ['ProtoInput.EnableFocusMessageLoop'], why: 'Proto Input\'s focus loop only runs with `Game.ProtoInput.EnableFocusMessageLoop = true`' },
+      { child: 'SteamlessArgs', any: ['UseSteamless'], why: 'Steamless only runs with `Game.UseSteamless = true`' },
+      { child: 'SteamlessTiming', any: ['UseSteamless'], why: 'Steamless only runs with `Game.UseSteamless = true`' },
+    ];
+    const on = (k: string) => [...this.text.matchAll(new RegExp(`\\bGame\\.${k}\\s*=\\s*([^;\\n]+)`, 'g'))].some((m) => !/^(false|0|null|""|'')(?![\w.])/.test(m[1].trim()));
+    // A handler that starts Proto Input's focus loop itself passes its own interval and messages: the options are
+    // leftovers there, and turning the option loop on would run a second loop.
+    const ownLoop = /\bStartFocusMessageLoop\s*\(/.test(this.text);
+    for (const n of NEEDS) {
+      if (ownLoop && n.child.startsWith('ProtoInput.FocusLoop')) continue;
+      const nodes = this.topAssignments.get(`Game.${n.child}`);
+      const node = nodes?.[nodes.length - 1];
+      if (!node) continue;
+      const v = node.right;
+      if (v.type === 'Literal' && (v.value === false || v.value === null || v.value === '' || v.value === 0)) continue;
+      if (n.any.some(on)) continue;
+      const at = lineStart(this.text, node.start);
+      this.report({
+        rule: 'needs-option',
+        message: `\`Game.${n.child}\` does nothing here: ${n.why}.`,
+        start: node.left.start,
+        end: node.left.end,
+        fixes: [{ title: `Turn on Game.${n.any[0]}`, edits: [{ start: at, end: at, text: `Game.${n.any[0]} = true;\n` }] }],
+      });
+    }
   }
 
   private checkGuid() {
