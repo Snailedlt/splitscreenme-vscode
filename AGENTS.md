@@ -6,6 +6,8 @@ If you are writing or fixing a *game handler* rather than this tooling, use the 
 
 ## Who it's for: a tool for every level
 
+**Priorities, in order:** 1. a great tool for experienced developers and handler authors (correct checks, speed, keyboard, the core features); 2. easy to understand and use for newcomers, without getting in the way of 1.
+
 The tools serve experienced developers, handler authors, Nucleus Co-op experts and complete newcomers alike. Welcome beginners without making the work slower or more cluttered for anyone else. (The model is Warcraft 3's editor: clickable, choices from lists, one-button testing, and a way into real code.)
 
 - **One code underneath.** Every view (Code, Form, Blocks, pickers) edits the real handler code, so nobody is locked into a beginner mode and people move up a tier by looking at the code.
@@ -14,7 +16,7 @@ The tools serve experienced developers, handler authors, Nucleus Co-op experts a
 - **Keyboard first for experienced users.** Everything is reachable from the keyboard and the command palette; no wizard is ever required.
 - **The first-run choice only sets defaults.** "Guide me" turns on the visual editor, tips and guided help; "I write code" starts compact. Every part can be switched in Settings.
 - **The tool teaches.** Our community is small and won't write many guides, so the explanations live in the tool: plain-language docs on every option, "why" in every problem, examples from real Hub handlers, help that starts from the symptom ("my game pauses when it loses focus").
-- **Desktop first.** Most people write handlers on a desktop or laptop: design and test for that first (mouse, keyboard, a wide screen). Phones only need to work (nothing broken, cut off or untappable) for quick checks and testing on the go; don't build phone-only features or let phone layouts drive a design.
+- **Desktop first.** Over 90% of people write handlers on a desktop or laptop: design and test for that (mouse, keyboard, a wide screen). Phones are supported but not tailored: nothing broken, cut off or untappable, checked by the smoke test's phone checks. No phone-only features, no phone layouts driving a design, no manual phone testing or phone screenshots for every change.
 - **The check for every new feature:** does it add anything on screen for someone who didn't ask for it? If so, put it behind a hover, tap or key, or a setting.
 
 ## Commands
