@@ -55,7 +55,7 @@ Commands:
                               breakpoint (e.g. --break "14 if Context.PlayerID == 1"), and where an
                               error ends a phase, with the variables, the call stack and the
                               --watch values. --step prints every line it runs instead
-  hub search <words>          Search handlers on hub.splitscreen.me
+  hub search <words>          Search handlers on hub.splitscreen.me (--popular: the most downloaded)
   hub fetch <id> [--out dir]  Download a Hub handler package and extract it (default ./hub-handlers/<title>)
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
       [--features ${FEATURES.map((f) => f.id).join(',')}] [--out file.js] [--force]
@@ -111,7 +111,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -406,13 +406,13 @@ async function cmdHub(args: Args, json: boolean): Promise<number> {
   const list = await hubHandlers();
   if (sub === 'search') {
     const words = rest.join(' ').toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) throw new Usage('hub search: give some words, e.g. "hub search halo"');
+    if (!words.length && !has(args, '--popular')) throw new Usage('hub search: give some words, e.g. "hub search halo" (or --popular for the most downloaded)');
     // Rank by how many words match (title/game name count double), then popularity.
     const hits = list
       .map((h) => {
         const title = `${h.title} ${h.gameName}`.toLowerCase();
         const rest = `${h.ownerName} ${h.description ?? ''}`.toLowerCase();
-        const score = words.reduce((n, w) => n + (title.includes(w) ? 2 : rest.includes(w) ? 1 : 0), 0);
+        const score = words.length ? words.reduce((n, w) => n + (title.includes(w) ? 2 : rest.includes(w) ? 1 : 0), 0) : 1;
         return { h, score };
       })
       .filter((x) => x.score > 0)

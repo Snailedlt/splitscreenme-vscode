@@ -470,6 +470,18 @@ static void reader() {
   PostMessage(msgWnd, WM_LSP_DIED, 0, 0);
 }
 
+/** A section of NcDev.ini as name -> value (gameFolders, rules). */
+static Value iniSection(const wchar_t* section) {
+  Object m;
+  wchar_t buf[32768] = L"";
+  DWORD n = GetPrivateProfileSectionW(section, buf, 32768, iniFile().c_str());
+  for (wchar_t* p = buf; p < buf + n && *p; p += wcslen(p) + 1) {
+    std::wstring kv = p;
+    size_t eq = kv.find(L'=');
+    if (eq != std::wstring::npos) m[utf8(kv.substr(0, eq))] = Value(utf8(kv.substr(eq + 1)));
+  }
+  return Value(m);
+}
 static Value gameFolders() {
   Object m;
   wchar_t buf[32768] = L"";
@@ -481,7 +493,14 @@ static Value gameFolders() {
   }
   return Value(m);
 }
-static Value settings() { return Value(Object{{"nucleus", Value(Object{{"gameFolders", gameFolders()}, {"lint", Value(Object{{"workspace", false}})}})}}); }
+/** What the server is told: the linked game folders, rule severities and the format style (Settings…, NcDev.ini). */
+static Value settings() {
+  std::wstring quotes = iniGet(L"format", L"quotes"), semis = iniGet(L"format", L"semicolons");
+  Object format;
+  if (!quotes.empty()) format["quotes"] = Value(utf8(quotes));
+  if (!semis.empty()) format["semicolons"] = Value(utf8(semis));
+  return Value(Object{{"nucleus", Value(Object{{"gameFolders", gameFolders()}, {"lint", Value(Object{{"workspace", false}, {"rules", iniSection(L"rules")}})}, {"format", Value(format)}})}});
+}
 
 void openCurrent();
 
@@ -1474,6 +1493,18 @@ struct DlgBuilder {
     v.push_back(0);
     count++;
   }
+  /** A control of a registered window class by name (SysListView32, …). */
+  void itemClass(const wchar_t* cls, DWORD style, short x, short y, short cx, short cy, WORD id) {
+    if (v.size() % 2) v.push_back(0);
+    dw(style | WS_CHILD | WS_VISIBLE);
+    dw(0);
+    for (short n : {x, y, cx, cy}) v.push_back(n);
+    v.push_back(id);
+    str(cls);
+    str(L"");
+    v.push_back(0);
+    count++;
+  }
   DLGTEMPLATE* done() {
     v[4] = count;
     return (DLGTEMPLATE*)v.data();
@@ -1627,7 +1658,7 @@ static void cmdInstall() {
   Doc* d = currentDoc();
   if (!d) return needHandler();
   if (findTool().empty()) return lsp::start();
-  if (sci(curSci(), SCI_GETMODIFY)) SendMessage(npp._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+  SendMessage(npp._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);  // what is installed or packaged is what is on screen
   std::wstring nucleus = nucleusFolder(false);
   if (nucleus.empty()) return;
   bool force = false;
@@ -1705,6 +1736,295 @@ static void cmdRename() {
     });
   });
 }
+
+// Settings…: how strict each check is (the rule severities) and the format style, kept in NcDev.ini.
+struct RuleRow {
+  std::string id, def, desc;
+  std::string cur;  // "" = the default
+};
+struct SettingsState {
+  std::vector<RuleRow> rules;
+  int quotes = 0, semis = 0;  // 0 double/add, 1 single/keep, 2 keep (quotes)
+};
+enum { ID_RULES = 300, ID_SEV, ID_QUOTES, ID_SEMIS, ID_RESET, ID_DESC };
+static const char* SEVS[] = {"", "error", "warning", "info", "hint", "off"};
+static std::wstring sevLabel(const RuleRow& r) { return r.cur.empty() ? wide(r.def) + L" (default)" : wide(r.cur); }
+static INT_PTR CALLBACK settingsProc(HWND d, UINT m, WPARAM w, LPARAM l) {
+  auto* st = (SettingsState*)GetWindowLongPtrW(d, DWLP_USER);
+  HWND lv = GetDlgItem(d, ID_RULES), sev = GetDlgItem(d, ID_SEV);
+  auto selected = [&]() { return ListView_GetNextItem(lv, -1, LVNI_SELECTED); };
+  auto showSev = [&]() {
+    int i = selected();
+    EnableWindow(sev, i >= 0);
+    if (i < 0) return;
+    const RuleRow& r = st->rules[i];
+    SetDlgItemTextW(d, ID_DESC, wide(r.desc).c_str());
+    SendMessageW(sev, CB_DELETESTRING, 0, 0);
+    SendMessageW(sev, CB_INSERTSTRING, 0, (LPARAM)(L"Default (" + wide(r.def) + L")").c_str());
+    int k = 0;
+    for (int j = 1; j < 6; j++)
+      if (r.cur == SEVS[j]) k = j;
+    SendMessageW(sev, CB_SETCURSEL, k, 0);
+  };
+  switch (m) {
+    case WM_INITDIALOG: {
+      SetWindowLongPtrW(d, DWLP_USER, l);
+      st = (SettingsState*)l;
+      ListView_SetExtendedListViewStyle(lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+      const wchar_t* cols[] = {L"Check", L"Severity", L"What it finds"};
+      int widths[] = {150, 110, 420};
+      for (int i = 0; i < 3; i++) {
+        LVCOLUMNW c{};
+        c.mask = LVCF_TEXT | LVCF_WIDTH;
+        c.pszText = (LPWSTR)cols[i];
+        c.cx = widths[i];
+        ListView_InsertColumn(lv, i, &c);
+      }
+      for (size_t i = 0; i < st->rules.size(); i++) {
+        LVITEMW it{};
+        it.mask = LVIF_TEXT;
+        it.iItem = (int)i;
+        std::wstring id = wide(st->rules[i].id), sv = sevLabel(st->rules[i]), ds = wide(st->rules[i].desc);
+        it.pszText = &id[0];
+        ListView_InsertItem(lv, &it);
+        ListView_SetItemText(lv, (int)i, 1, &sv[0]);
+        ListView_SetItemText(lv, (int)i, 2, &ds[0]);
+      }
+      SendMessageW(sev, CB_ADDSTRING, 0, (LPARAM)L"Default");
+      for (const wchar_t* x : {L"Error: underlined red", L"Warning: underlined orange", L"Info: dotted underline", L"Hint: only in the Problems panel", L"Off: not checked"}) SendMessageW(sev, CB_ADDSTRING, 0, (LPARAM)x);
+      HWND q = GetDlgItem(d, ID_QUOTES), sm = GetDlgItem(d, ID_SEMIS);
+      for (const wchar_t* x : {L"\"Double\" (default; what the Hub install reads)", L"'Single'", L"Keep as written"}) SendMessageW(q, CB_ADDSTRING, 0, (LPARAM)x);
+      for (const wchar_t* x : {L"Add where a statement ends without one (default)", L"Keep as written"}) SendMessageW(sm, CB_ADDSTRING, 0, (LPARAM)x);
+      SendMessageW(q, CB_SETCURSEL, st->quotes, 0);
+      SendMessageW(sm, CB_SETCURSEL, st->semis, 0);
+      if (!st->rules.empty()) ListView_SetItemState(lv, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+      showSev();
+      return TRUE;
+    }
+    case WM_NOTIFY: {
+      auto* nm = (NMHDR*)l;
+      if (nm->idFrom == ID_RULES && nm->code == LVN_ITEMCHANGED && (((NMLISTVIEW*)l)->uNewState & LVIS_SELECTED)) showSev();
+      return FALSE;
+    }
+    case WM_COMMAND:
+      if (LOWORD(w) == ID_SEV && HIWORD(w) == CBN_SELCHANGE) {
+        int i = selected(), k = (int)SendMessageW(sev, CB_GETCURSEL, 0, 0);
+        if (i >= 0 && k >= 0) {
+          st->rules[i].cur = SEVS[k];
+          std::wstring sv = sevLabel(st->rules[i]);
+          ListView_SetItemText(lv, i, 1, &sv[0]);
+        }
+        return TRUE;
+      }
+      if (LOWORD(w) == ID_RESET) {
+        for (size_t i = 0; i < st->rules.size(); i++) {
+          st->rules[i].cur.clear();
+          std::wstring sv = sevLabel(st->rules[i]);
+          ListView_SetItemText(lv, (int)i, 1, &sv[0]);
+        }
+        showSev();
+        return TRUE;
+      }
+      if (LOWORD(w) == IDOK) {
+        st->quotes = (int)SendDlgItemMessageW(d, ID_QUOTES, CB_GETCURSEL, 0, 0);
+        st->semis = (int)SendDlgItemMessageW(d, ID_SEMIS, CB_GETCURSEL, 0, 0);
+        EndDialog(d, IDOK);
+        return TRUE;
+      }
+      if (LOWORD(w) == IDCANCEL) {
+        EndDialog(d, IDCANCEL);
+        return TRUE;
+      }
+  }
+  return FALSE;
+}
+static void cmdSettings() {
+  if (findTool().empty()) return lsp::start();
+  SettingsState st;
+  Value rules;
+  if (!json::parse(runTool(L"rules --json", nullptr, 30000), rules) || !rules.isObj()) {
+    MessageBoxW(npp._nppHandle, L"Couldn't read the list of checks from ncdev.", PLUGIN_NAME, MB_OK | MB_ICONWARNING);
+    return;
+  }
+  Value saved = lsp::iniSection(L"rules");
+  for (auto& [id, r] : *rules.o) st.rules.push_back(RuleRow{id, r["severity"].str(), r["description"].str(), saved[id].str()});
+  std::wstring q = iniGet(L"format", L"quotes"), sm = iniGet(L"format", L"semicolons");
+  st.quotes = q == L"single" ? 1 : q == L"keep" ? 2 : 0;
+  st.semis = sm == L"keep" ? 1 : 0;
+  DlgBuilder b(L"Nucleus Co-op handlers: settings", 400, 276);
+  b.item(0x82, SS_LEFT, 8, 6, 384, 9, (WORD)-1, L"Checks: pick one, then how it's shown (or Off).");
+  b.itemClass(L"SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 17, 384, 130, ID_RULES);
+  b.item(0x82, SS_LEFT | SS_NOPREFIX, 8, 151, 384, 26, ID_DESC, L"");
+  b.item(0x82, SS_LEFT, 8, 182, 90, 9, (WORD)-1, L"Selected &check:");
+  b.item(0x85, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 100, 180, 200, 120, ID_SEV, L"");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 308, 179, 84, 14, ID_RESET, L"Reset all checks");
+  b.item(0x82, SS_LEFT, 8, 202, 384, 9, (WORD)-1, L"Format handler:");
+  b.item(0x82, SS_LEFT, 8, 216, 90, 9, (WORD)-1, L"&Quotes:");
+  b.item(0x85, CBS_DROPDOWNLIST | WS_TABSTOP, 100, 214, 200, 80, ID_QUOTES, L"");
+  b.item(0x82, SS_LEFT, 8, 234, 90, 9, (WORD)-1, L"&Semicolons:");
+  b.item(0x85, CBS_DROPDOWNLIST | WS_TABSTOP, 100, 232, 200, 80, ID_SEMIS, L"");
+  b.item(0x80, BS_DEFPUSHBUTTON | WS_TABSTOP, 288, 256, 50, 14, IDOK, L"OK");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 342, 256, 50, 14, IDCANCEL, L"Cancel");
+  if (DialogBoxIndirectParamW(hModule, b.done(), npp._nppHandle, settingsProc, (LPARAM)&st) != IDOK) return;
+  for (auto& r : st.rules) iniSet(L"rules", wide(r.id), r.cur.empty() ? nullptr : wide(r.cur).c_str());
+  iniSet(L"format", L"quotes", st.quotes == 1 ? L"single" : st.quotes == 2 ? L"keep" : nullptr);
+  iniSet(L"format", L"semicolons", st.semis == 1 ? L"keep" : nullptr);
+  if (lsp::running) lsp::notify("workspace/didChangeConfiguration", Value(Object{{"settings", lsp::settings()}}));
+  status(L"Nucleus: settings saved");
+}
+
+// Browse the Hub…: search hub.splitscreen.me (most downloaded first), download a handler with its files and open it.
+struct HubState {
+  Value list;
+  std::string picked;  // id
+  std::wstring title;
+};
+enum { ID_HUBQ = 310, ID_HUBSEARCH, ID_HUBLIST, ID_HUBGET, ID_HUBWEB };
+static void hubFill(HWND d, HubState* st, const std::wstring& words) {
+  HWND lv = GetDlgItem(d, ID_HUBLIST);
+  SetCursor(LoadCursor(nullptr, IDC_WAIT));
+  Value r;
+  std::string out = runTool(words.empty() ? L"hub search --popular --json" : L"hub search " + quoteArg(words) + L" --json", nullptr, 60000);
+  st->list = json::parse(out, r) && r.isArr() ? r : Value(Array{});
+  ListView_DeleteAllItems(lv);
+  int i = 0;
+  for (auto& h : st->list.arr()) {
+    LVITEMW it{};
+    it.mask = LVIF_TEXT;
+    it.iItem = i;
+    std::wstring t = wide(h["title"].str()), g = wide(h["gameName"].str()), o = wide(h["owner"].str()), n = std::to_wstring((long long)h["downloads"].num()), v = h["verified"].boolean() ? L"Verified" : L"";
+    it.pszText = &t[0];
+    ListView_InsertItem(lv, &it);
+    ListView_SetItemText(lv, i, 1, &g[0]);
+    ListView_SetItemText(lv, i, 2, &o[0]);
+    ListView_SetItemText(lv, i, 3, &n[0]);
+    ListView_SetItemText(lv, i, 4, &v[0]);
+    i++;
+  }
+  if (i) {
+    ListView_SetItemState(lv, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+  } else if (out.empty() || !r.isArr()) status(L"Nucleus: couldn't reach the Hub");
+  EnableWindow(GetDlgItem(d, ID_HUBGET), i > 0);
+  EnableWindow(GetDlgItem(d, ID_HUBWEB), i > 0);
+  SetCursor(LoadCursor(nullptr, IDC_ARROW));
+}
+static INT_PTR CALLBACK hubProc(HWND d, UINT m, WPARAM w, LPARAM l) {
+  auto* st = (HubState*)GetWindowLongPtrW(d, DWLP_USER);
+  HWND lv = GetDlgItem(d, ID_HUBLIST);
+  auto pick = [&]() -> const Value* {
+    int i = ListView_GetNextItem(lv, -1, LVNI_SELECTED);
+    return i >= 0 && i < (int)st->list.size() ? &st->list[(size_t)i] : nullptr;
+  };
+  switch (m) {
+    case WM_INITDIALOG: {
+      SetWindowLongPtrW(d, DWLP_USER, l);
+      st = (HubState*)l;
+      ListView_SetExtendedListViewStyle(lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+      const wchar_t* cols[] = {L"Handler", L"Game", L"By", L"Downloads", L""};
+      int widths[] = {220, 180, 100, 80, 70};
+      for (int i = 0; i < 5; i++) {
+        LVCOLUMNW c{};
+        c.mask = LVCF_TEXT | LVCF_WIDTH | (i == 3 ? LVCF_FMT : 0);
+        c.fmt = LVCFMT_RIGHT;
+        c.pszText = (LPWSTR)cols[i];
+        c.cx = widths[i];
+        ListView_InsertColumn(lv, i, &c);
+      }
+      hubFill(d, st, L"");
+      SetFocus(GetDlgItem(d, ID_HUBQ));
+      return FALSE;
+    }
+    case WM_NOTIFY: {
+      auto* nm = (NMHDR*)l;
+      if (nm->idFrom == ID_HUBLIST && nm->code == NM_DBLCLK) SendMessageW(d, WM_COMMAND, ID_HUBGET, 0);
+      return FALSE;
+    }
+    case WM_COMMAND:
+      // Enter in the search box searches (it would otherwise press the default button).
+      if (LOWORD(w) == ID_HUBSEARCH || ((LOWORD(w) == IDOK || LOWORD(w) == ID_HUBGET) && HIWORD(w) == BN_CLICKED && GetFocus() == GetDlgItem(d, ID_HUBQ))) {
+        hubFill(d, st, itemText(d, ID_HUBQ));
+        return TRUE;
+      }
+      if (LOWORD(w) == ID_HUBWEB) {
+        if (const Value* h = pick()) ShellExecuteW(d, L"open", wide(h->operator[]("url").str() + "?ref=notepadpp").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return TRUE;
+      }
+      if (LOWORD(w) == ID_HUBGET || LOWORD(w) == IDOK) {
+        if (const Value* h = pick()) {
+          st->picked = (*h)["id"].str();
+          st->title = wide((*h)["title"].str());
+          EndDialog(d, IDOK);
+        }
+        return TRUE;
+      }
+      if (LOWORD(w) == IDCANCEL) {
+        EndDialog(d, IDCANCEL);
+        return TRUE;
+      }
+  }
+  return FALSE;
+}
+static void cmdHub() {
+  if (findTool().empty()) return lsp::start();
+  HubState st;
+  DlgBuilder b(L"Handlers on hub.splitscreen.me", 420, 236);
+  b.item(0x82, SS_LEFT, 8, 8, 120, 9, (WORD)-1, L"&Search by game or handler:");
+  b.item(0x81, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 130, 6, 226, 13, ID_HUBQ, L"");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 362, 5, 50, 14, ID_HUBSEARCH, L"Search");
+  b.itemClass(L"SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 24, 404, 184, ID_HUBLIST);
+  b.item(0x82, SS_LEFT, 8, 216, 180, 9, (WORD)-1, L"Most downloaded first.");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 194, 214, 70, 14, ID_HUBWEB, L"Open on the Hub");
+  b.item(0x80, BS_DEFPUSHBUTTON | WS_TABSTOP, 268, 214, 90, 14, ID_HUBGET, L"Download and open…");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 362, 214, 50, 14, IDCANCEL, L"Close");
+  if (DialogBoxIndirectParamW(hModule, b.done(), npp._nppHandle, hubProc, (LPARAM)&st) != IDOK || st.picked.empty()) return;
+  std::wstring folder = pickFolder(L"Where to put \"" + st.title + L"\" (a folder is made for it)");
+  if (folder.empty()) return;
+  std::wstring name;
+  for (wchar_t c : st.title)
+    if (!wcschr(L"\\/:*?\"<>|", c)) name += c;
+  std::wstring out = folder + L"\\" + (name.empty() ? L"handler" : name);
+  status(L"Nucleus: downloading " + st.title + L"…");
+  Value r;
+  std::string said = runTool(L"hub fetch " + wide(st.picked) + L" --out " + quoteArg(out) + L" --json", nullptr, 180000);
+  if (!json::parse(said, r) || !r.isObj()) {
+    MessageBoxW(npp._nppHandle, (L"Couldn't download it. Is this PC online, and can it reach hub.splitscreen.me?\n\n(" + wide(said.substr(0, 300)) + L")").c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
+    return;
+  }
+  // The handler is the .js at the top of its folder.
+  std::string dir = r["dir"].str();
+  for (auto& f : r["files"].arr()) {
+    std::string p = f.str();
+    std::string rest = p.size() > dir.size() ? p.substr(dir.size() + 1) : p;
+    if (rest.size() > 3 && rest.compare(rest.size() - 3, 3, ".js") == 0 && rest.find_first_of("\\/") == std::string::npos) {
+      SendMessage(npp._nppHandle, NPPM_DOOPEN, 0, (LPARAM)wide(p).c_str());
+      status(L"Nucleus: downloaded " + st.title + L" to " + out);
+      return;
+    }
+  }
+  ShellExecuteW(npp._nppHandle, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+// Package as .nc…: handler.js and its <Name>/ folder, ready to upload to the Hub (ncdev package).
+static void cmdPackage() {
+  Doc* d = currentDoc();
+  if (!d) return needHandler();
+  if (findTool().empty()) return lsp::start();
+  SendMessage(npp._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);  // what is installed or packaged is what is on screen
+  int errors = 0;
+  for (auto& x : diagnostics[d->uri].arr())
+    if (x["severity"].num(1) == 1) errors++;
+  if (errors) {
+    std::wstring q = baseName(d->path) + L" has " + std::to_wstring(errors) + (errors == 1 ? L" error" : L" errors") + L", so Nucleus may not load it (see the Problems panel). Package it anyway?";
+    if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return;
+  }
+  DWORD code = 1;
+  std::string said = runTool(L"package " + quoteArg(d->path) + (errors ? L" --force" : L""), &code, 60000);
+  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+  if (MessageBoxW(npp._nppHandle, (wide(said.empty() ? "Couldn't run ncdev package." : said) + (code == 0 ? L"\n\nOpen the folder?" : L"")).c_str(), PLUGIN_NAME, (code == 0 ? MB_YESNO | MB_ICONINFORMATION : MB_OK | MB_ICONWARNING)) == IDYES) {
+    std::wstring dir = d->path.substr(0, d->path.find_last_of(L"\\/"));
+    ShellExecuteW(npp._nppHandle, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  }
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -1780,17 +2100,20 @@ static FuncItem funcs[] = {
     {L"Open in the browser workbench", cmdWorkbench, 0, false, nullptr},
     {L"", nullptr, 0, false, nullptr},
     {L"New handler…", cmdNewHandler, 0, false, nullptr},
+    {L"Browse the Hub…", cmdHub, 0, false, nullptr},
     {L"Install to Nucleus Co-op", cmdInstall, 0, false, nullptr},
+    {L"Package as .nc (for the Hub)…", cmdPackage, 0, false, nullptr},
     {L"Set the Nucleus Co-op folder…", cmdSetNucleus, 0, false, nullptr},
     {L"", nullptr, 0, false, nullptr},
     {L"Link the game's folder…", cmdLinkFolder, 0, false, nullptr},
     {L"Unlink the game's folder", cmdUnlinkFolder, 0, false, nullptr},
     {L"", nullptr, 0, false, nullptr},
     {L"API reference", cmdReference, 0, false, nullptr},
+    {L"Settings…", cmdSettings, 0, false, nullptr},
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 21;
+static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 24;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)
