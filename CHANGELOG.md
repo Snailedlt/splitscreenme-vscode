@@ -19,6 +19,11 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **A Notepad++ plugin.** Problems are underlined as you type, hovering a name shows its docs, suggestions know where you are (the members that exist there, an option's values, the game's own files), and `(` shows the parameters. Alt+Enter offers the fixes for the line; *Plugins › Nucleus Co-op handlers* has Fix all, Format, Try it, a Problems panel and Link the game's folder. `ncdev setup notepad++` installs it.
 - **`ncdev`, one download, nothing else to install.** The command-line tools are now `ncdev` (Nucleus Co-op dev tools), and `ncdev.exe` on the release page runs on Windows without Node.js. `ncdev update` gets the newest version, checked against the release's checksums. `nucleus` still works.
 
+### 🛠️ Improved
+
+- **String methods in suggestions.** After a string, such as `Context.StartArguments.` or a variable set from one, suggestions, hover and parameter hints now cover JavaScript's own string methods (`replace`, `split`, `indexOf`…), the ones that work in Nucleus.
+- **A fix for an exe that isn't there.** With the game's folder linked, a wrong `Game.ExecutableName` now offers the one exe it most likely means (e.g. Unreal's `…-Shipping.exe`), not only for near spellings.
+
 ---
 
 ## 0.5.0 (beta) · 2026-11-08

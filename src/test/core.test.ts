@@ -6,6 +6,7 @@ import { membersOf, suggest } from '../core/api';
 import { renderHandler, toGuid, toHandlerFileName, FEATURES } from '../core/templates';
 import { writeZip, readZip, handlerPackageEntries, crc32 } from '../core/zip';
 import { lint } from '../core/lint';
+import { completionsAt, signatureHelpAt } from '../core/features';
 
 const at = (src: string) => ({ text: src.replace('|', ''), offset: src.indexOf('|') });
 
@@ -140,4 +141,13 @@ test('documentSymbols: settings by object, callbacks with what they set, own nam
   assert.deepEqual(s[3].children!.map((c) => c.name), ['Context.Width']);
   const broken = documentSymbols('Game.GameName = "Demo";\nGame.Play = function () {\n  Context.\n');
   assert.deepEqual(broken.map((x) => `${x.kind}:${x.name}`), ['property:Game.GameName', 'function:Game.Play']);
+});
+
+test('completion: JavaScript string methods after a string value (Jint ES5)', () => {
+  const labels = (t: string) => (completionsAt(t, t.length) ?? []).map((c) => c.label);
+  assert.ok(labels('Game.Play = function () {\n  var args = Context.StartArguments;\n  args.').includes('replace'), 'a variable set from a string field');
+  assert.ok(labels('var s = "-w " + Context.Width;\ns.').includes('split'), 'a variable set from a string');
+  assert.ok(labels('Context.StartArguments.').includes('indexOf'));
+  assert.ok(!labels('Context.StartArguments.').includes('includes'), 'ES5 only');
+  assert.match(signatureHelpAt('var s = "a";\ns.replace(', 25)?.signatures[0].label ?? '', /replace\(search: string \| RegExp, replacement: string\)/);
 });

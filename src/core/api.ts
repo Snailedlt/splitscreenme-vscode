@@ -1,5 +1,6 @@
 // Typed access to the generated Nucleus handler API model (data/nucleus-api.json).
 import raw from '../../data/nucleus-api.json';
+import { JS_STRING } from './jsbuiltins';
 import { DOTNET_OBJECTS } from './dotnet';
 
 export type SimpleType =
@@ -114,6 +115,13 @@ export function objectTypeOf(ts: string | undefined): string | undefined {
   return api.objects[ts] ? ts : undefined;
 }
 
+/** An API object by name; also `String` (JavaScript's string methods, core/jsbuiltins.ts), which isn't in the model. */
+export function objectOf(type: string): ApiObject | undefined {
+  return api.objects[type] ?? (type === 'String' ? JS_STRING : undefined);
+}
+/** A field or property that holds a string: its value has JavaScript's string methods. */
+export const isStringMember = (m: Member) => m.kind !== 'method' && m.kind !== 'object' && (m.type === 'string' || m.ts === 'string');
+
 export function resolveGlobal(name: string): Resolved | undefined {
   const g = api.globals[name];
   if (!g) return undefined;
@@ -145,7 +153,7 @@ export function jintMemberName(members: Record<string, unknown>, name: string): 
 export function resolveMember(base: Resolved, name: string): StepResult {
   switch (base.kind) {
     case 'object': {
-      const obj = api.objects[base.type];
+      const obj = objectOf(base.type)!;
       const key = jintMemberName(obj.members, name);
       if (!key && obj.open && !looksLikeTypo(name, Object.keys(obj.members))) return { resolved: { kind: 'opaque' } };
       if (!key) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
@@ -154,6 +162,7 @@ export function resolveMember(base: Resolved, name: string): StepResult {
     case 'member': {
       const ref = base.member.ref;
       if (base.member.kind === 'object' && ref && api.objects[ref]) return resolveMember({ kind: 'object', type: ref }, name);
+      if (isStringMember(base.member)) return resolveMember({ kind: 'object', type: 'String' }, name);
       return { resolved: { kind: 'opaque' } };
     }
     case 'list':
@@ -196,13 +205,14 @@ export function resolveIndex(base: Resolved): Resolved {
 export function membersOf(base: Resolved): { name: string; member?: Member; enumValue?: number; detail?: string }[] {
   switch (base.kind) {
     case 'object':
-      return Object.entries(api.objects[base.type].members)
+      return Object.entries(objectOf(base.type)!.members)
         .filter(([, m]) => !m.internal)
         .map(([name, member]) => ({ name, member }));
     case 'member':
       if (base.member.kind === 'object' && base.member.ref && api.objects[base.member.ref]) {
         return membersOf({ kind: 'object', type: base.member.ref });
       }
+      if (isStringMember(base.member)) return membersOf({ kind: 'object', type: 'String' });
       return [];
     case 'list':
       return [{ name: 'Count', detail: 'number' }];

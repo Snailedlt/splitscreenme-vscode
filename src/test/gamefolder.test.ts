@@ -46,6 +46,14 @@ test('wrong ExecutableName: warning with did-you-mean and a fix', () => {
   assert.deepEqual(gf.engineFacts(unreal).map((f) => f.id).sort(), ['steam', 'unreal', 'xinput']);
 });
 
+test('wrong ExecutableName, not a near spelling: the one exe with the same start is offered (Unreal -Shipping)', () => {
+  const h = 'Game.ExecutableName = "ShooterGame-Win64.exe";\n';
+  const p = gf.checkAgainstFolder(h, unreal).find((x) => x.title === 'The executable is not in the game folder');
+  assert.equal(p.fix?.text, 'ShooterGame-Win64-Shipping.exe');
+  const none = gf.checkAgainstFolder('Game.ExecutableName = "Other.exe";\n', unreal).find((x) => x.title === 'The executable is not in the game folder');
+  assert.ok(!none.fix || !/Other/.test(none.fix.text), 'no guess when nothing matches and there are several exes');
+});
+
 test('exe in a subfolder without BinariesFolder: info + fix; with it: root is the picked folder', () => {
   const h = 'Game.ExecutableName = "shootergame-win64-shipping.exe";\n';
   const ps = gf.checkAgainstFolder(h, unreal);

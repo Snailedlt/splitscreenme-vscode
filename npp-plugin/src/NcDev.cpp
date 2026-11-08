@@ -41,7 +41,9 @@ using json::Array;
 #define NPPM_GETMENUHANDLE (NPPMSG + 25)
 #define NPPM_DMMSHOW (NPPMSG + 30)
 #define NPPM_DMMHIDE (NPPMSG + 31)
+#define NPPM_DMMUPDATEDISPINFO (NPPMSG + 32)
 #define NPPM_DMMREGASDCKDLG (NPPMSG + 33)
+#define DWS_ADDINFO 0x00000004
 #define NPPM_SETMENUITEMCHECK (NPPMSG + 40)
 #define NPPM_GETPLUGINSCONFIGDIR (NPPMSG + 46)
 #define NPPM_MENUCOMMAND (NPPMSG + 48)
@@ -622,6 +624,8 @@ static HWND panel, list;
 static bool panelShown = false, panelRegistered = false;
 static int panelCmd = 0;
 static std::vector<Value> panelItems;
+static wchar_t panelInfo[128] = L"";
+static void cmdQuickFix();
 
 static void gotoProblem(int i) {
   if (i < 0 || i >= (int)panelItems.size()) return;
@@ -683,6 +687,20 @@ static void refreshPanel() {
     ListView_SetItemText(list, 0, 2, &text[0]);
   }
   SendMessage(list, WM_SETREDRAW, TRUE, 0);
+  // "2 errors, 1 warning" next to the panel's name.
+  int ne = 0, nw = 0, ni = 0;
+  for (auto& x : panelItems) (x["severity"].num(1) == 1 ? ne : x["severity"].num(1) == 2 ? nw : ni)++;
+  std::wstring info;
+  auto add = [&](int n, const wchar_t* one, const wchar_t* many) {
+    if (!n) return;
+    if (!info.empty()) info += L", ";
+    info += std::to_wstring(n) + L" " + (n == 1 ? one : many);
+  };
+  add(ne, L"error", L"errors");
+  add(nw, L"warning", L"warnings");
+  add(ni, L"note", L"notes");
+  wcsncpy(panelInfo, info.c_str(), 127);
+  SendMessage(npp._nppHandle, NPPM_DMMUPDATEDISPINFO, 0, (LPARAM)panel);
   (void)h;
 }
 static LRESULT CALLBACK panelProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
@@ -701,6 +719,11 @@ static LRESULT CALLBACK panelProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
         return 0;
       }
       if (nm->hwndFrom == list && nm->code == NM_DBLCLK) gotoProblem(((NMITEMACTIVATE*)l)->iItem);
+      // Right-click: jump there and offer its fixes.
+      if (nm->hwndFrom == list && nm->code == NM_RCLICK && ((NMITEMACTIVATE*)l)->iItem >= 0 && ((NMITEMACTIVATE*)l)->iItem < (int)panelItems.size()) {
+        gotoProblem(((NMITEMACTIVATE*)l)->iItem);
+        cmdQuickFix();
+      }
       if (nm->hwndFrom == list && nm->code == LVN_KEYDOWN && ((NMLVKEYDOWN*)l)->wVKey == VK_RETURN) gotoProblem(ListView_GetNextItem(list, -1, LVNI_SELECTED));
       return 0;
     }
@@ -730,7 +753,8 @@ static void createPanel() {
   data.hClient = panel;
   data.pszName = L"Nucleus problems";
   data.dlgID = panelCmd;
-  data.uMask = DWS_DF_CONT_BOTTOM;
+  data.uMask = DWS_DF_CONT_BOTTOM | DWS_ADDINFO;
+  data.pszAddInfo = panelInfo;
   data.pszModuleName = L"NcDev.dll";
   SendMessage(npp._nppHandle, NPPM_DMMREGASDCKDLG, 0, (LPARAM)&data);
   panelRegistered = true;

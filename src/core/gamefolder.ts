@@ -327,13 +327,19 @@ export function checkAgainstFolder(handlerText: string, folder: GameFolder): Fol
   if (exeTok?.value && !loc.exe) {
     const exes = folder.files.filter((f) => /\.exe$/i.test(f.path));
     const near = closest(exeTok.value, new Set(exes.map((f) => base(f.path))));
-    const biggest = [...exes].filter((f) => !/^(unins|crash|vc_?redist|dxsetup|ue4prereq|unitycrashhandler|setup|launcher)/i.test(base(f.path))).sort((a, b) => b.size - a.size).slice(0, 3).map((f) => f.path);
+    const real = [...exes].filter((f) => !/^(unins|crash|vc_?redist|dxsetup|ue4prereq|unitycrashhandler|setup|launcher)/i.test(base(f.path))).sort((a, b) => b.size - a.size);
+    const biggest = real.slice(0, 3).map((f) => f.path);
+    // No near spelling: still one obvious pick when a single exe starts with the same name (Unreal's
+    // Shooter-Win64-Shipping.exe for Shooter-Win64.exe) or there's only one real exe.
+    const stem = exeTok.value.replace(/\.exe$/i, '').toLowerCase();
+    const sameStart = real.filter((f) => base(f.path).toLowerCase().startsWith(stem));
+    const pick = near ?? (sameStart.length === 1 ? base(sameStart[0].path) : real.length === 1 ? base(real[0].path) : undefined);
     out.push({
       ...inner(exeTok), severity: 'warning',
       title: 'The executable is not in the game folder',
       why: `Nucleus adds the game by matching this file name, in any case, with the exe the player picks. ${fname} has no file named ${exeTok.value}${folder.truncated ? ' (not every file was listed: the folder is very large)' : ''}.`
-        + (near ? ` Did you mean ${near}?` : biggest.length ? ` Its largest executables: ${biggest.join(', ')}.` : ' It has no .exe at all: is it the install folder?'),
-      fix: near ? { title: `Use ${near}`, text: near, ...inner(exeTok) } : undefined,
+        + (pick ? ` Did you mean ${pick}?` : biggest.length ? ` Its largest executables: ${biggest.join(', ')}.` : ' It has no .exe at all: is it the install folder?'),
+      fix: pick ? { title: `Use ${pick}`, text: pick, ...inner(exeTok) } : undefined,
     });
   } else if (exeTok?.value && loc.exe && loc.exeDir && !loc.binaries?.value) {
     const stmtEnd = handlerText.indexOf('\n', exeTok.end);
