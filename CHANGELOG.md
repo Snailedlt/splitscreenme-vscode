@@ -20,6 +20,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **Hub handlers with all their files.** *Browse Handlers on the Hub › Open handler source* now lays the package out the way Nucleus installs it (`<GameName>.js` and `<GameName>/`), says how many other files it has, and offers **Open as Folder** and **Copy into Workspace**.
 - **An outline of your handler.** The Outline view, breadcrumbs and *Go to Symbol* (Ctrl+Shift+O) list the handler's settings grouped by object (Game, Game.ProtoInput, Game.Hook…) with their values, the callbacks with what they set inside, and your own functions and variables. In other editors through `nucleus lsp` too.
 - **Every Hub handler.** *Browse Handlers on the Hub* and `nucleus hub search` now see all of them (about 900), not only the 600 with the most stars.
+- **Check a handler against the game on your PC.** *Nucleus: Link the Game's Folder…* points a handler at the game's install folder; then `ExecutableName`, `BinariesFolder`, the symlink and copy lists and more are checked against the real files, with fixes ("did you mean ShooterGame-Win64-Shipping.exe?"), and those lists suggest the game's own files as you type. Only names and sizes are read. Suggested by messenils.
 
 ---
 

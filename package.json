@@ -48,7 +48,7 @@
       },
       {
         "command": "splitscreenme.newHandler",
-        "title": "New Handler\u2026",
+        "title": "New Handler…",
         "category": "Nucleus"
       },
       {
@@ -89,7 +89,7 @@
       },
       {
         "command": "splitscreenme.browseHub",
-        "title": "Browse Handlers on the Hub\u2026",
+        "title": "Browse Handlers on the Hub…",
         "category": "Nucleus"
       },
       {
@@ -109,7 +109,17 @@
       },
       {
         "command": "splitscreenme.openDocs",
-        "title": "Open Documentation\u2026",
+        "title": "Open Documentation…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.linkGameFolder",
+        "title": "Link the Game's Folder…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.unlinkGameFolder",
+        "title": "Unlink the Game's Folder",
         "category": "Nucleus"
       }
     ],
@@ -178,7 +188,7 @@
           ],
           "default": "auto",
           "enumDescriptions": [
-            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/\u2026, or live in a \"handlers\" folder.",
+            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/…, or live in a \"handlers\" folder.",
             "Treat every JavaScript file as a Nucleus handler.",
             "Disable all handler features."
           ],
@@ -192,7 +202,7 @@
         "splitscreenme.lint.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, \u2026)."
+          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, …)."
         },
         "splitscreenme.lint.compareWithHub": {
           "type": "boolean",
@@ -203,6 +213,15 @@
           "type": "boolean",
           "default": true,
           "description": "Check the files in a handler's folder (<Name>/ next to <Name>.js) as they'd go into the .nc: names Windows can't install, files that overwrite each other, broken INI/JSON, very large files, and files the handler uses (Game.Folder + \"\\\\x\") that aren't there."
+        },
+        "splitscreenme.gameFolders": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "The game's install folder for each handler (file name → folder), set with **Nucleus: Link the Game's Folder…**. The handler is then checked against the real files (`ExecutableName`, `BinariesFolder`, the symlink and copy lists…), and those lists suggest the game's files. Only names and sizes are read; nothing leaves your PC."
         },
         "splitscreenme.lint.rules": {
           "type": "object",

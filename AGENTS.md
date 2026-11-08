@@ -43,9 +43,11 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
   - `features.ts`: the editor features as plain data (hover, completion, signature help, quick fixes, Format Document edits, inlay hints, handler detection). `extension.ts` and `lsp.ts` only convert them.
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
+  - `pkgcheck.ts`: checks on a handler's package files (Windows names, overwrites, INI/JSON, a misspelled `Game.Folder` file). `gamefolder.ts`: checks against the game's install folder (ExecutableName, BinariesFolder, the symlink lists). Both shared with the workbench, which imports them.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
+- `src/pkgfiles.ts`: the files in `<Name>/` next to `<Name>.js` on disk, for the package checks (extension, CLI, LSP). `src/gamefolders.ts`: VS Code's *Link the Game's Folder…*, its problems, fixes and completion (`splitscreenme.gameFolders`).
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
 - `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
 - `src/lsp.ts`: `nucleus lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.

@@ -7,6 +7,7 @@ import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, Symbol
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 import { checkPackage, type PkgProblem } from './core/pkgcheck';
+import { gameFolderDiagnostics, registerGameFolders } from './gamefolders';
 import { forgetPackageFiles, packageFileForPath, packageFilesFor, packageFilePath } from './pkgfiles';
 
 const SOURCE = 'nucleus';
@@ -69,6 +70,8 @@ export function activate(context: vscode.ExtensionContext) {
         const files = doc.uri.scheme === 'file' && config().get('lint.packageChecks', true) ? packageFilesFor(doc.uri.fsPath) : undefined;
         const problems = files ? checkPackage(text, files) : [];
         diags.push(...problems.filter((p) => !p.file && p.start !== undefined).map((p) => pkgDiagnostic(p, new vscode.Range(doc.positionAt(p.start!), doc.positionAt(p.end ?? p.start!)))));
+        // The game folder linked to this handler (Nucleus: Link the Game's Folder…), if any.
+        diags.push(...gameFolderDiagnostics(doc, SOURCE, SEVERITY));
         collection.set(doc.uri, diags);
         for (const u of pkgUris.get(key) ?? []) pkgCollection.delete(u);
         const byFile = new Map<string, vscode.Diagnostic[]>();
@@ -164,6 +167,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   registerTryIt(context, isHandler);
+  registerGameFolders(context, isHandler, SELECTOR, (d) => refresh(d, 0));
 
   registerCommands(context, {
     lintFiles: (entries) => {
