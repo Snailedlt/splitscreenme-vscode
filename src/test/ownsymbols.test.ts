@@ -162,3 +162,14 @@ test('parameter docs: JavaScript\'s from TypeScript, own functions from @param; 
   const h = hoverAt(r, r.indexOf('name()') + 1)!;
   assert.match(h.markdown, /function name\(\): string/);
 });
+
+test('an empty file offers the whole New Handler template', async () => {
+  const { snippetToPlain } = await import('../lsp');
+  const { lint } = await import('../core/lint');
+  const c = completionsAt('hand', 4)!.find((x) => x.label === 'handler')!;
+  assert.ok(c);
+  const code = snippetToPlain(c.insertText!);
+  assert.match(code, /Game\.GameName = "My Game";/);
+  assert.deepEqual(lint(code).filter((d) => d.severity === 'error').map((d) => d.message), []);
+  assert.ok(!(completionsAt('Game.GUID = "A";\nhand', 21) ?? []).some((x) => x.label === 'handler'), 'not in a file that has code');
+});

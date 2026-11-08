@@ -3,6 +3,16 @@
 // the way Hub handlers do them, ES5 and lint-clean (a test lints every body). `$1`, `${1:text}`, `${1|a,b|}`, `$0`:
 // the snippet syntax VS Code and LSP share (a backslash is written `\\\\` there); editors without snippets get the plain text.
 
+import { renderHandler } from './templates';
+
+/** A whole new handler (the New Handler template), for an empty file: the game's name and exe to fill in. */
+export function newHandlerSnippet(): string {
+  const text = renderHandler({ gameName: 'QQNAMEQQ', executableName: 'QQEXEQQ.exe', features: [] });
+  const esc = text.replace(/[\\$}]/g, (c) => '\\' + c);
+  // Every place the name goes is the same placeholder: typed once, filled in everywhere.
+  return esc.replace(/QQNAMEQQ/g, '${1:My Game}').replace(/QQEXEQQ\.exe/g, '${2:Game.exe}');
+}
+
 export interface Snippet {
   prefix: string;
   label: string;

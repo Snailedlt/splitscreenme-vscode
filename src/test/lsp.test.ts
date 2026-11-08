@@ -339,3 +339,24 @@ test('lsp: range and on-type formatting, with the style settings', async () => {
   assert.deepEqual(r, []);
   notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'double', semicolons: 'add' } } } });
 });
+
+test('lsp: Package, Install and New handler, as commands and source actions', async () => {
+  const fsx = require('node:fs') as typeof import('node:fs');
+  const os = require('node:os') as typeof import('node:os');
+  const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-cmd-'));
+  const r = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'My Game', exe: 'game.exe', dir }] });
+  const file = path.join(dir, 'My Game.js');
+  assert.ok(fsx.existsSync(file), JSON.stringify(r));
+  const uri = require('node:url').pathToFileURL(file).href;
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: fsx.readFileSync(file, 'utf8') } });
+  const nucleus = path.join(dir, 'Nucleus');
+  fsx.mkdirSync(path.join(nucleus, 'handlers'), { recursive: true });
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: nucleus } } });
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, context: { diagnostics: [], only: ['source'] } })).result;
+  assert.deepEqual(actions.map((a: any) => a.kind), ['source.nucleus.package', 'source.nucleus.install']);
+  await request('workspace/executeCommand', actions[0].command);
+  assert.ok(fsx.existsSync(path.join(dir, 'My Game.nc')));
+  await request('workspace/executeCommand', actions[1].command);
+  assert.ok(fsx.existsSync(path.join(nucleus, 'handlers', 'My Game.js')));
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: '' } } });
+});

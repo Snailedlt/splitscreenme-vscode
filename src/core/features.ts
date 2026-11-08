@@ -12,7 +12,7 @@ import { formatHandler } from './format';
 import { parseLikeJint } from './jsparse';
 import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, ownReturnTypes, parseTolerant, visibleNames } from './ownsymbols';
 import { innerCallFrame } from './complete';
-import { SNIPPETS } from './snippets';
+import { newHandlerSnippet, SNIPPETS } from './snippets';
 import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
@@ -375,7 +375,12 @@ function snippetCompletions(text: string, offset: number, explicit: boolean): Co
   }
   let e = offset;
   while (e < text.length && /[\w$]/.test(text[e])) e++;
-  return SNIPPETS.filter((x) => (x.where === 'callback') === inFunction && (!word || x.prefix.startsWith(word) || x.label.toLowerCase().includes(word))).map((x) => ({
+  // An empty file: the whole New Handler template.
+  const whole: CompletionEntry[] =
+    !inFunction && !/\bGame\s*\./.test(text) && (!word || 'handler'.startsWith(word) || 'newhandler'.startsWith(word))
+      ? [{ label: 'handler', labelDetail: 'A new handler (the template)', kind: 'snippet', detail: 'A new handler (the template)', documentation: 'The New Handler template: the required options, the common ones with their usual values, and an empty `Game.Play`. Fill in the game\'s name and its .exe; then Check and Try it.', insertText: newHandlerSnippet(), snippet: true, filterText: 'handler new handler template', range: { start: s, end: e }, sortText: '4_handler' }]
+      : [];
+  return whole.concat(SNIPPETS.filter((x) => (x.where === 'callback') === inFunction && (!word || x.prefix.startsWith(word) || x.label.toLowerCase().includes(word))).map((x) => ({
     label: x.prefix,
     labelDetail: x.label,
     kind: 'snippet' as const,
@@ -386,7 +391,7 @@ function snippetCompletions(text: string, offset: number, explicit: boolean): Co
     filterText: `${x.prefix} ${x.label}`,
     range: { start: s, end: e },
     sortText: `4_${x.prefix}`,
-  }));
+  })));
 }
 
 function ownerOf(base: Resolved): string {

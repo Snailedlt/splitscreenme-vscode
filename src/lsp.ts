@@ -22,6 +22,9 @@ import path from 'node:path';
 import { publishedNow } from './published';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { formatSimulation } from './simformat';
+import { buildPackage } from './core/pkg';
+import { installHandler } from './install';
+import { FEATURES, Feature, renderHandler, toHandlerFileName } from './core/templates';
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : '0.0.0';
@@ -39,10 +42,12 @@ export interface LspSettings {
   gameFolders: Record<string, string>;
   /** Formatting style (core/format.ts): quotes "double" (default) | "single" | "keep", semicolons "add" (default) | "keep". */
   format: { quotes: 'double' | 'single' | 'keep'; semicolons: 'add' | 'keep' };
+  /** The Nucleus Co-op folder (with NucleusCoop.exe and `handlers`), for Install. */
+  nucleusPath?: string;
 }
 const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {}, format: { quotes: 'double', semicolons: 'add' } };
 
-export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink' } as const;
+export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
 
 // LSP enums (numbers in the protocol)
@@ -152,6 +157,7 @@ export class Server {
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
     if (['double', 'single', 'keep'].includes(s.format?.quotes)) d.format.quotes = s.format.quotes;
     if (['add', 'keep'].includes(s.format?.semicolons)) d.format.semicolons = s.format.semicolons;
+    if (typeof s.nucleusPath === 'string') d.nucleusPath = s.nucleusPath || undefined;
     if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
   }
 
@@ -570,9 +576,16 @@ export class Server {
       ...(a.preferred !== undefined ? { isPreferred: a.preferred } : {}),
       edit: { changes: { [doc.uri]: a.edits.map((e) => ({ range: l.range(e), newText: e.text })) } },
     });
+    // Source actions (an editor's "Source Action…" menu, or every action when it asks for no kind): the handler's
+    // .nc package for the Hub, and installing it into Nucleus Co-op.
+    const source: unknown[] = [];
+    if (pathOf(doc.uri) && (!only || only.some((k) => k === 'source' || k.startsWith('source.nucleus')))) {
+      source.push({ title: 'Nucleus: Package as .nc (for the Hub)', kind: 'source.nucleus.package', command: { title: 'Package', command: COMMANDS.package, arguments: [{ uri: doc.uri }] } });
+      if (this.settings.nucleusPath) source.push({ title: 'Nucleus: Install to Nucleus Co-op', kind: 'source.nucleus.install', command: { title: 'Install', command: COMMANDS.install, arguments: [{ uri: doc.uri }] } });
+    }
     if (wantsFixAll && !only!.includes('quickfix')) {
       const a = fixAllCodeAction(doc.text, this.settings.lint.rules);
-      return a ? [toAction(a)] : [];
+      return [...(a ? [toAction(a)] : []), ...source].filter((x: any) => only!.some((k) => x.kind === k || x.kind.startsWith(`${k}.`)));
     }
     // The client sends back the diagnostics it shows; match them to a fresh lint of the current text.
     const current = this.lintDoc(doc);
@@ -584,7 +597,8 @@ export class Server {
       const match = current.find((x) => x.rule === cd.code && x.message === cd.message && x.start === start && Math.max(x.end, x.start) === end) ?? current.find((x) => x.rule === cd.code && x.start === start);
       if (match && !pairs.some(([m]) => m === match)) pairs.push([match, cd]);
     }
-    const actions = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    const actions: any[] = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    actions.push(...source);
     // Game-folder problems carry their fix (the exe's real name, BinariesFolder…) in `data`.
     for (const cd of p.context?.diagnostics ?? []) {
       const f = cd?.code === 'game-folder' ? cd.data?.fix : undefined;
@@ -616,6 +630,43 @@ export class Server {
         // The browser workbench with this handler open (a share link); `ref` says which editor asked.
         const ref = typeof (args[0] as any)?.ref === 'string' && /^[\w.-]{1,40}$/.test((args[0] as any).ref) ? (args[0] as any).ref : 'lsp';
         return workbenchLinkFor(doc?.text, ref);
+      }
+      case COMMANDS.package: {
+        // The .nc package for the Hub: handler.js + the <Name>/ folder (core/pkg.ts), next to the handler.
+        const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
+        if (!file) throw new Error('nucleus.package: give { uri } of a handler file.');
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        if (errors && !(args[0] as any)?.force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        const out = typeof (args[0] as any)?.out === 'string' ? (args[0] as any).out : file.replace(/\.js$/i, '.nc');
+        const { zip, assetCount } = buildPackage(file);
+        fs.writeFileSync(out, zip);
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: wrote ${path.basename(out)} (handler.js + ${assetCount} file(s) from its folder). Upload it at https://hub.splitscreen.me/` });
+        return { file: out, assetCount };
+      }
+      case COMMANDS.install: {
+        const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
+        const nucleus = typeof (args[0] as any)?.nucleusPath === 'string' ? (args[0] as any).nucleusPath : this.settings.nucleusPath;
+        if (!file) throw new Error('nucleus.install: give { uri } of a handler file.');
+        if (!nucleus) throw new Error('Set nucleus.nucleusPath (the Nucleus Co-op folder, with NucleusCoop.exe) first.');
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        const force = !!(args[0] as any)?.force;
+        if (errors && !force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        const r = installHandler(file, nucleus, { overwrite: force || (args[0] as any)?.overwrite !== false });
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: installed ${path.basename(r.dest)}${r.assets ? ` and ${r.assets} file(s)` : ''}. Restart Nucleus Co-op (or re-add the game) to pick it up.` });
+        return { file: r.dest, assetCount: r.assets };
+      }
+      case COMMANDS.newHandler: {
+        // { name, exe, dir, steamId?, maxPlayers?, features? }: writes <dir>/<name>.js from the template and opens it.
+        const o = (args[0] ?? {}) as { name?: string; exe?: string; dir?: string; steamId?: string; maxPlayers?: number; features?: string[] };
+        if (!o.name || !o.exe || !o.dir) throw new Error('nucleus.newHandler: give { name, exe, dir } (and optionally steamId, maxPlayers, features).');
+        const dir = /^file:/i.test(o.dir) ? fileURLToPath(o.dir) : o.dir;
+        const out = path.join(dir, `${toHandlerFileName(o.name)}.js`);
+        if (fs.existsSync(out)) throw new Error(`${path.basename(out)} already exists there.`);
+        const features = (o.features ?? []).filter((f) => FEATURES.some((x) => x.id === f)) as Feature[];
+        fs.writeFileSync(out, renderHandler({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers, features }));
+        const uri = pathToFileURL(out).href;
+        this.request('window/showDocument', { uri, takeFocus: true });
+        return { uri };
       }
       case COMMANDS.fixAll: {
         if (!doc) throw new Error('nucleus.fixAll: give the uri of an open document.');
