@@ -23,3 +23,22 @@ jobs:
         with:
           name: vsix
           path: splitscreenme-vscode.vsix
+
+  standalone:
+    # ncdev (#18) with the Notepad++ plugin inside (#19): the plugin compiles, and the Linux build passes the smoke test.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix >/dev/null
+      - run: npm run build && sh npp-plugin/build.sh
+      - uses: actions/cache@v4
+        with:
+          path: .sea-cache
+          key: sea-${{ hashFiles('scripts/sea.mjs') }}
+      - run: node scripts/sea.mjs --require-plugin --targets linux-x64
+      - run: node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64

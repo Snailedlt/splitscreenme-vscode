@@ -1,6 +1,7 @@
 name: Release
 run-name: Release ${{ inputs.version || github.ref_name || 'next beta' }}
-# Builds the .vsix, nucleus.js and the offline workbench, and publishes them as a GitHub release with
+# Builds the .vsix, nucleus.js, ncdev.exe (the standalone tool with the Notepad++ plugin inside, #18/#19) and
+# the offline workbench, and publishes them as a GitHub release with
 # that version's CHANGELOG.md section as the notes. Run it by hand (leave the version empty for the
 # next beta), or push a tag like v0.2.0-beta.1. The run's summary has the links and the Discord post.
 on:
@@ -42,6 +43,16 @@ jobs:
           cp dist/workbench-standalone.html "$GITHUB_WORKSPACE/workbench.html"
       - name: Package
         run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${{ steps.version.outputs.tag }}.vsix"
+      - name: Build ncdev.exe (standalone, with the Notepad++ plugin) and test the Linux build of it
+        run: |
+          sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix osslsigncode >/dev/null
+          sh npp-plugin/build.sh
+          node scripts/sea.mjs --require-plugin --targets win-x64,linux-x64
+          node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64
+          grep ' ncdev.exe$' dist-sea/SHA256SUMS.txt > SHA256SUMS.txt
+          cp dist-sea/ncdev.exe ncdev.exe
+          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll)
+          echo "NcDev.zip $(sha256sum NcDev.zip | cut -d' ' -f1)" > plugin-sha256.txt
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,7 +60,7 @@ jobs:
         run: |
           pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
-          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
+          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" ncdev.exe SHA256SUMS.txt NcDev.zip nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
       - name: Announce on Discord (when DISCORD_WEBHOOKS is set)
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -75,7 +86,9 @@ jobs:
             echo
             if [ -n "${{ secrets.DISCORD_WEBHOOKS != '' && 'yes' || '' }}" ]; then echo "Posted to Discord automatically (DISCORD_WEBHOOKS)."; else echo "To post it automatically next time, add a DISCORD_WEBHOOKS secret (one Discord webhook URL per line)."; fi
             echo
-            echo "The intro page's download link and the extension's update note pick up the new version by themselves."
+            echo "The intro page's download link and the extension's update note pick up the new version by themselves; ncdev update and the Notepad++ plugin see the new ncdev.exe."
+            echo
+            echo "Notepad++ plugin for Plugins Admin (nppPluginList, when it changed): \`$(cat plugin-sha256.txt)\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: What went wrong
         if: failure()

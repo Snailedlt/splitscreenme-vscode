@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working on **this repository**: the SplitScreen.Me VS Code extension, the `nucleus` CLI and the agent skill for Nucleus Co-op handlers.
+Guidance for AI coding agents working on **this repository**: the SplitScreen.Me VS Code extension, the `ncdev` CLI (old name `nucleus`; also a standalone .exe), the Notepad++ plugin and the agent skill for Nucleus Co-op handlers.
 
 If you are writing or fixing a *game handler* rather than this tooling, use the skill in `plugin/skills/nucleus-handler/` (start with its `SKILL.md`).
 
@@ -27,6 +27,7 @@ npm run build       # esbuild: dist/extension.js, dist/cli.js, AND the skill's s
 npm test            # build + node:test (dist-test/*.test.js)
 npm run typecheck   # tsc --noEmit
 npm run package     # .vsix
+npm run standalone  # dist-sea/: NcDev.dll (Notepad++ plugin, needs MinGW) + ncdev.exe / ncdev-linux-x64 (Node SEA); then node scripts/smoke-standalone.mjs
 npm run generate    # regenerate data/nucleus-api.json + types/nucleus.d.ts (needs ../splitscreenme-nucleus and ../splitscreenme-www clones; the Sync workflow does this daily by PR)
 claude plugin validate .   # validate .claude-plugin/marketplace.json and the plugin
 ```
@@ -38,22 +39,25 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/core/`: pure logic, no `vscode` import, shared by the extension, the CLI and the skill.
   - `api.ts`: typed access to the generated API model, member resolution.
   - `lint.ts`: the linter (acorn AST). `RULES` is the rule registry.
-  - `format.ts`: Format Document / `nucleus format`: indentation and spacing only. Line breaks never move and the result is re-tokenized and compared with the original; any difference and it refuses. Keep that guarantee.
+  - `format.ts`: Format Document / `ncdev format`: indentation and spacing only. Line breaks never move and the result is re-tokenized and compared with the original; any difference and it refuses. Keep that guarantee.
   - `complete.ts`: text-based resolution for completion/hover/signature help (works on incomplete code).
   - `features.ts`: the editor features as plain data (hover, completion, signature help, quick fixes, Format Document edits, inlay hints, handler detection). `extension.ts` and `lsp.ts` only convert them.
-  - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
+  - `lookup.ts`: `ncdev api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
   - `pkgcheck.ts`: checks on a handler's package files (Windows names, overwrites, INI/JSON, a misspelled `Game.Folder` file). `gamefolder.ts`: checks against the game's install folder (ExecutableName, BinariesFolder, the symlink lists). Both shared with the workbench, which imports them.
-  - `notepadpp.ts`: the Notepad++ auto-completion file (API names, `System.IO` members, call tips), merged into Notepad++'s own on the user's PC by `nucleus setup notepad++` (`src/setup-npp.ts`). Never ship Notepad++'s own file.
+  - `notepadpp.ts`: the Notepad++ auto-completion file (API names, `System.IO` members, call tips), merged into Notepad++'s own on the user's PC by `ncdev setup notepad++` (`src/setup-npp.ts`) when there's no plugin. Never ship Notepad++'s own file.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
-- `src/pkgfiles.ts`: the files in `<Name>/` next to `<Name>.js` on disk, for the package checks (extension, CLI, LSP). `src/gamefolder-node.ts`: reads a game's install folder from disk (extension and `nucleus lsp`). `src/gamefolders.ts`: VS Code's *Link the Game's Folder…*, its problems, fixes and completion (`splitscreenme.gameFolders`).
-- `src/dap.ts`: the Debug Adapter (DAP) over `core/debug.ts` (no `vscode` import; `nucleus dap` serves it on stdio for other editors); `src/debugvscode.ts` registers it inline for VS Code's Run and Debug (`"type": "nucleus"`).
-- `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
+- `src/pkgfiles.ts`: the files in `<Name>/` next to `<Name>.js` on disk, for the package checks (extension, CLI, LSP). `src/gamefolder-node.ts`: reads a game's install folder from disk (extension and `ncdev lsp`). `src/gamefolders.ts`: VS Code's *Link the Game's Folder…*, its problems, fixes and completion (`splitscreenme.gameFolders`).
+- `src/dap.ts`: the Debug Adapter (DAP) over `core/debug.ts` (no `vscode` import; `ncdev dap` serves it on stdio for other editors); `src/debugvscode.ts` registers it inline for VS Code's Run and Debug (`"type": "nucleus"`).
+- `src/cli.ts`: the `ncdev` CLI (`nucleus` is its old name, `nucleus-lint` an alias of `ncdev lint`).
+- `src/standalone.ts`: the standalone ncdev (Node single executable, built by `scripts/sea.mjs` with the pinned `NODE_VERSION`; the skill and the Notepad++ plugin are built-in assets) and `ncdev update` (newest release, SHA-256 checked, the running exe moved aside). `scripts/smoke-standalone.mjs` tests a build; the Release workflow and CI run it.
+- `src/setup-npp.ts`: `ncdev setup notepad++`: installs the plugin (`plugins\NcDev\NcDev.dll`, `NcDev.ini` with ncdev's path) and copies ncdev to `%LOCALAPPDATA%\ncdev`; without a built-in plugin, merges the names into Notepad++'s list (`core/notepadpp.ts`).
+- `npp-plugin/`: the Notepad++ plugin, a thin client of `ncdev lsp` (C++17, MinGW, `build.sh`; Scintilla headers vendored under their own licence, Notepad++'s plugin API declared in `NcDev.cpp`). Keep logic out of it: features go into `core/features.ts` / `lsp.ts` first. Test it in Notepad++ (Wine works: `wine explorer /desktop=…` so popups paint; `NCDEV_PLUGIN_LOG` logs the LSP traffic).
 - `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
-- `src/lsp.ts`: `nucleus lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.
-- `src/mcp.ts`: `nucleus mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
+- `src/lsp.ts`: `ncdev lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.
+- `src/mcp.ts`: `ncdev mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
 - `scripts/issue-bots.mjs`: the issue bots (`doc-review.yml`, `report-details.yml` call it). `src/test/bots.test.ts` checks them on real issue bodies and against the forms in `.github/ISSUE_TEMPLATE/`; rename a form field and that test fails. The details checksum must match the workbench's (`playground/src/checksum.ts` there; both test the same block).
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
@@ -103,6 +107,6 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 - When you need network allowlist entries (hosts) or environment variables from the maintainer, always list them in a code block, one per line, ready to copy.
 
 - TypeScript strict; keep `src/core` free of `vscode` imports.
-- New editor features go in `src/core/features.ts` first (plain data, offsets), then into every adapter: `src/extension.ts` and `src/lsp.ts` (PORTING.md).
+- New editor features go in `src/core/features.ts` first (plain data, offsets), then into every adapter: `src/extension.ts` and `src/lsp.ts` (PORTING.md), and the Notepad++ plugin if it needs to show something new.
 - Handler code you generate (templates, snippets, skill docs) must be ES5 and lint-clean. Tests lint the templates and every `js` block in the skill docs.
 - The skill docs must only name real API members. A test resolves every `Game.*`/`Context.*` path mentioned in them.

@@ -12,6 +12,15 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### ✨ New
+
+- **A Notepad++ plugin.** Problems are underlined as you type, hovering a name shows its docs, suggestions know where you are (the members that exist there, an option's values, the game's own files), and `(` shows the parameters. Alt+Enter offers the fixes for the line; *Plugins › Nucleus Co-op handlers* has Fix all, Format, Try it, a Problems panel and Link the game's folder. `ncdev setup notepad++` installs it.
+- **`ncdev`, one download, nothing else to install.** The command-line tools are now `ncdev` (Nucleus Co-op dev tools), and `ncdev.exe` on the release page runs on Windows without Node.js. `ncdev update` gets the newest version, checked against the release's checksums. `nucleus` still works.
+
+---
+
 ## 0.5.0 (beta) · 2026-11-08
 
 ### ✨ New
