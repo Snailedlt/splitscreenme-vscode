@@ -17,6 +17,7 @@ import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './c
 import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
 import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
 import { serveDap } from './dap';
+import { setupNotepadPP } from './setup-npp';
 import type { Stop, ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
@@ -65,6 +66,9 @@ Commands:
                               templates, Hub search and verified Hub handlers
   lsp [--stdio]               Run as a Language Server (stdio) for other editors: Neovim, Helix,
                               Zed, Sublime Text, Emacs, JetBrains (LSP4IJ), Kate, ... (PORTING.md)
+  setup notepad++ [--path <folder>] [--check] [--remove]
+                              Add Nucleus names and call tips to Notepad++, and a Run menu entry
+                              that checks the open handler (keeps a backup; --remove restores it)
   dap                         Run as a Debug Adapter (stdio) for editors with DAP support: nvim-dap,
                               Helix, Zed, JetBrains, Emacs (dape) (PORTING.md, "Debugging")
 
@@ -90,7 +94,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -109,7 +113,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'workbench', 'debug'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -149,6 +153,15 @@ async function main(argv: string[]): Promise<number> {
     case 'lsp':
       // Exit when the client says so, even with a Hub lookup or a lint timer still pending.
       return serveLsp().then((code) => process.exit(code));
+    case 'setup': {
+      const what = (args.positional[0] ?? '').toLowerCase().replace(/\s+/g, '');
+      if (!['notepad++', 'notepadpp', 'npp'].includes(what)) throw new Usage('setup: only "notepad++" for now, e.g. nucleus setup notepad++');
+      // The Run menu entry runs this same CLI with the Node that runs it now.
+      const runCommand = `cmd /k ""${process.execPath}" "${path.resolve(process.argv[1])}" lint "$(FULL_CURRENT_PATH)""`;
+      const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand });
+      print(json, r, () => r.lines.join('\n'));
+      return r.ok ? 0 : 1;
+    }
     case 'dap':
       // A Debug Adapter on stdio, for editors with DAP support (nvim-dap, Helix, Zed, JetBrains, Emacs dape).
       return serveDap().then((code) => process.exit(code));

@@ -44,6 +44,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
   - `pkgcheck.ts`: checks on a handler's package files (Windows names, overwrites, INI/JSON, a misspelled `Game.Folder` file). `gamefolder.ts`: checks against the game's install folder (ExecutableName, BinariesFolder, the symlink lists). Both shared with the workbench, which imports them.
+  - `notepadpp.ts`: the Notepad++ auto-completion file (API names, `System.IO` members, call tips), merged into Notepad++'s own on the user's PC by `nucleus setup notepad++` (`src/setup-npp.ts`). Never ship Notepad++'s own file.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.

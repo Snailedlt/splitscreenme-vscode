@@ -238,6 +238,16 @@ node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is inst
 
 `nucleus lsp` is a Language Server with the same features (problems and quick fixes, hover, completion, signature help, Format Document, window-message hints, Try it), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client. It needs only Node.js 18+ and the one-file CLI. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
 
+### Notepad++
+
+Notepad++ has no reliable Language Server support, so it gets the names and call tips in its own way:
+
+```
+nucleus setup notepad++
+```
+
+This adds every handler API name (and the `System.IO` members handlers use) to Notepad++'s JavaScript suggestions, with parameters as call tips, and a **Run › Nucleus: check this handler** entry that runs `nucleus lint` on the open file. Notepad++'s own JavaScript words stay; a backup of its file is kept. Close Notepad++ first and restart it after. In `Program Files` it needs a terminal opened as administrator; a portable Notepad++ takes `--path "C:\path\to\Notepad++"`. `--check` says whether it's up to date (run `setup` again after updating the tools), `--remove` puts everything back.
+
 ## Development
 
 ```bash

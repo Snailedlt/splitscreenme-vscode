@@ -203,6 +203,10 @@ Settings > Languages & Frameworks > Language Servers > **+**:
 
 Kate allows one server per language; this replaces its JavaScript server for `.js` files.
 
+### Notepad++
+
+No LSP (the NppLspClient plugin is experimental and not in Plugins Admin). Instead `nucleus setup notepad++` merges the API names and call tips into Notepad++'s own `autoCompletion/javascript.xml` (`core/notepadpp.ts`, `src/setup-npp.ts`) and adds a Run-menu entry that runs `nucleus lint`. Tried in Notepad++ 8.9.9.
+
 ### Anything else
 
 Any LSP client: run `node /path/to/nucleus.js lsp` over stdio for JavaScript files. The server advertises what it supports in `initialize`.
