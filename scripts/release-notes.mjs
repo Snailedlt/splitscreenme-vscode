@@ -52,7 +52,7 @@ if (args.includes('--discord')) {
       ...shown.map((s) => `• ${s}`),
       ...(items.length > shown.length ? [`…and ${items.length - shown.length} more in the release notes`] : []),
       '',
-      `[Release notes](${url}) · [Download the .vsix](${repo}/releases/download/${tag}/splitscreenme-vscode-${tag}.vsix) · [Install guide](https://snailedlt.github.io/nucleuscoop-handler-testbench/start/)`,
+      `[Release notes](${url}) · [Download the .vsix](${repo}/releases/download/${tag}/splitscreenme-vscode-${tag}.vsix) · [Install guide](https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=discord)`,
     ].join('\n');
     console.log(
       JSON.stringify({
@@ -83,7 +83,7 @@ if (args.includes('--discord')) {
 
 ---
 
-📦 **Install:** download \`splitscreenme-vscode-${tag}.vsix\` below, then in VS Code run **Extensions: Install from VSIX…** (Ctrl+Shift+P). New to the tools? Start with the [intro and install guide](https://snailedlt.github.io/nucleuscoop-handler-testbench/start/) and [TESTING.md](${repo}/blob/main/TESTING.md).
+📦 **Install:** download \`splitscreenme-vscode-${tag}.vsix\` below, then in VS Code run **Extensions: Install from VSIX…** (Ctrl+Shift+P). New to the tools? Start with the [intro and install guide](https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=github-release) and [TESTING.md](${repo}/blob/main/TESTING.md).
 🤖 **AI agents:** \`nucleus.js\` (below) is the command-line tool and MCP server: \`node nucleus.js mcp\`. See the [README](${repo}#ai-agents).
 🌐 **Offline workbench:** \`workbench.html\` (below) is the whole browser workbench in one file; open it locally or host it yourself.
 💬 **Feedback:** [tester feedback form](${repo}/issues/new?template=tester-feedback.yml).`);
