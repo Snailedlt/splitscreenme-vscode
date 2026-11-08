@@ -10,7 +10,8 @@ import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, Complet
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
-import { packageFilePath, packageFilesFor } from './pkgfiles';
+import { forgetPackageFiles, packageFilePath, packageFilesFor } from './pkgfiles';
+import fs from 'node:fs';
 import { checkAgainstFolder, folderLists, pickerOptions } from './core/gamefolder';
 import { folderAt } from './gamefolder-node';
 import { pathToFileURL } from 'node:url';
@@ -29,12 +30,12 @@ export interface LspSettings {
   detection: 'auto' | 'always' | 'off';
   /** Extra paths that always count as handlers, e.g. ["**\/my-handlers/*.js"]. */
   handlerGlobs: string[];
-  lint: { enable: boolean; rules: Partial<Record<RuleId, Severity | 'off'>>; compareWithHub: boolean };
+  lint: { enable: boolean; rules: Partial<Record<RuleId, Severity | 'off'>>; compareWithHub: boolean; /** Check every handler in the workspace folders, opened or not (default true). */ workspace: boolean };
   completion: { enable: boolean };
   /** The game's install folder per handler file name, e.g. { "MyGame.js": "C:\\Games\\MyGame" }: checks against the real files. */
   gameFolders: Record<string, string>;
 }
-const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true }, completion: { enable: true }, gameFolders: {} };
+const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {} };
 
 export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
@@ -118,6 +119,8 @@ export class Server {
   private snippets = true;
   private shutdown = false;
   private nextId = 1;
+  private roots: string[] = [];
+  private canWatch = false;
   /** Package files that have problems published, per handler, so they can be cleared. */
   private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
@@ -139,6 +142,7 @@ export class Server {
     if (typeof l.enable === 'boolean') d.lint.enable = l.enable;
     if (l.rules && typeof l.rules === 'object') d.lint.rules = l.rules;
     if (typeof l.compareWithHub === 'boolean') d.lint.compareWithHub = l.compareWithHub;
+    if (typeof l.workspace === 'boolean') d.lint.workspace = l.workspace;
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
     if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
   }
@@ -158,15 +162,15 @@ export class Server {
     return lint(d.text, { rules: this.settings.lint.rules, plugins: file ? lintPluginsFor(file) : undefined, published });
   }
 
-  private publish(uri: string) {
-    const d = this.docs.get(uri);
+  private publish(uri: string, closed?: Doc) {
+    const d = closed ?? this.docs.get(uri);
     if (!d) return;
     if (!this.settings.lint.enable || !this.isHandler(d)) {
       this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       return;
     }
     const lines = linesOf(d);
-    const diagnostics = this.lintDoc(d, () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
+    const diagnostics = this.lintDoc(d, closed ? undefined : () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
     // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
     const file = pathOf(uri);
     const files = file ? packageFilesFor(file) : undefined;
@@ -188,7 +192,7 @@ export class Server {
     for (const p of folder ? checkAgainstFolder(d.text, folder) : []) {
       (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: Math.max(p.end, p.start) }), severity: SEVERITY[p.severity], code: 'game-folder', source: 'nucleus', message: `${p.title}. ${p.why}`, ...(p.fix ? { data: { fix: p.fix } } : {}) });
     }
-    this.notify('textDocument/publishDiagnostics', { uri, version: d.version, diagnostics });
+    this.notify('textDocument/publishDiagnostics', { uri, ...(closed ? {} : { version: d.version }), diagnostics });
     // Package problems on the files in <Name>/: publish them, and clear the ones that went away.
     const sent = new Set<string>();
     for (const [name, list] of byFile) {
@@ -240,6 +244,8 @@ export class Server {
       case 'initialize': {
         this.applySettings(p.initializationOptions);
         this.snippets = p.capabilities?.textDocument?.completion?.completionItem?.snippetSupport !== false;
+        this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
+        this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
         return {
           capabilities: {
             positionEncoding: 'utf-16',
@@ -257,6 +263,13 @@ export class Server {
         };
       }
       case 'initialized':
+        // Every handler in the workspace, opened or not (like VS Code's Lint All Handlers), and on-disk changes.
+        if (this.canWatch) this.request('client/registerCapability', { registrations: [{ id: 'nucleus-files', method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers: [{ globPattern: '**/*' }] } }] });
+        setTimeout(() => this.scanWorkspace(), 0);
+        return undefined;
+      case 'workspace/didChangeWatchedFiles':
+        for (const c of p.changes ?? []) this.fileChanged(String(c.uri), c.type);
+        return undefined;
       case '$/cancelRequest':
       case '$/setTrace':
         return undefined;
@@ -293,7 +306,8 @@ export class Server {
       case 'textDocument/didClose':
         this.docs.delete(p.textDocument.uri);
         clearTimeout(this.timers.get(p.textDocument.uri));
-        this.notify('textDocument/publishDiagnostics', { uri: p.textDocument.uri, diagnostics: [] });
+        // In the workspace: back to the saved file's problems; elsewhere, none.
+        if (!this.fromDisk(p.textDocument.uri)) this.notify('textDocument/publishDiagnostics', { uri: p.textDocument.uri, diagnostics: [] });
         return undefined;
       case 'textDocument/didSave':
         return undefined;
@@ -374,6 +388,79 @@ export class Server {
         return this.executeCommand(p.command, p.arguments ?? []);
     }
     return NOT_FOUND;
+  }
+
+/** Handlers in the workspace folders (skipping node_modules and dot folders), problems published for the closed ones. */
+  private scanWorkspace() {
+    if (!this.settings.lint.enable || !this.settings.lint.workspace) return;
+    let count = 0;
+    let dirs = 0;
+    const walk = (dir: string, depth: number) => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (count >= 2000 || dirs > 3000 || this.shutdown) return; // a whole drive opened: stop early
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          dirs++;
+          if (depth < 8) walk(abs, depth + 1);
+        } else if (e.isFile() && /\.js$/i.test(e.name)) {
+          count++;
+          queue.push(pathToFileURL(abs).href);
+        }
+      }
+    };
+    const queue: string[] = [];
+    for (const r of this.roots) walk(r, 0);
+    // A few files at a time, so requests (hover, completion) are answered in between.
+    const next = () => {
+      for (let i = 0; i < 10 && queue.length && !this.shutdown; i++) this.fromDisk(queue.shift()!);
+      if (queue.length && !this.shutdown) setImmediate(next);
+    };
+    next();
+  }
+  /** Lint a closed file from disk (if it's in the workspace and a handler); true when it published. */
+  private fromDisk(uri: string): boolean {
+    const file = pathOf(uri);
+    if (!file || this.docs.has(uri) || !this.settings.lint.enable || !this.settings.lint.workspace) return false;
+    if (!this.roots.some((r) => file.startsWith(r + path.sep) || file === r)) return false;
+    let text: string;
+    try {
+      if (fs.statSync(file).size > 2 * 1024 * 1024) return false;
+      text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    } catch {
+      return false;
+    }
+    const d: Doc = { uri, text, version: 0, languageId: 'javascript' };
+    if (!this.isHandler(d)) return false;
+    this.publish(uri, d);
+    return true;
+  }
+  /** A file changed on disk: re-check it if it's a closed handler, or the handler whose folder it is in. */
+  private fileChanged(uri: string, type: number) {
+    const file = pathOf(uri);
+    if (!file) return;
+    if (/\.js$/i.test(file) && !this.docs.has(uri)) {
+      if (type === 3) this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
+      else this.fromDisk(uri);
+    }
+    // A file in <Name>/ next to <Name>.js: that handler's package checks.
+    for (let dir = path.dirname(file); dir.length > 1 && dir !== path.dirname(dir); dir = path.dirname(dir)) {
+      const handler = `${dir}.js`;
+      if (handler === file) continue;
+      const hUri = pathToFileURL(handler).href;
+      if (fs.existsSync(handler)) {
+        forgetPackageFiles(handler);
+        if (this.docs.has(hUri)) this.schedule(hUri, 200);
+        else this.fromDisk(hUri);
+        break;
+      }
+    }
   }
 
   private gameFolderOf(uri: string) {

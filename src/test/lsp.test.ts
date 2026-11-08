@@ -237,3 +237,61 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
   const list = (await request('textDocument/completion', { textDocument: { uri }, position: { line: 3, character: 32 } })).result;
   assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
 });
+
+test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const { spawn } = await import('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-ws-'));
+  fs.mkdirSync(path.join(root, 'handlers'));
+  const a = path.join(root, 'handlers', 'A.js');
+  fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = "M";\n');
+  fs.writeFileSync(path.join(root, 'notes.js'), 'console.log("not a handler");\n'); // outside handlers/: only checked if it looks like one
+  // A second server, started in that folder.
+  const p2 = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'lsp'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  after(() => p2.kill());
+  const got: any[] = [];
+  let buf = Buffer.alloc(0);
+  p2.stdout!.on('data', (c: Buffer) => {
+    buf = Buffer.concat([buf, c]);
+    for (;;) {
+      const sep = buf.indexOf('\r\n\r\n');
+      if (sep < 0) return;
+      const len = Number(/Content-Length: (\d+)/i.exec(buf.subarray(0, sep).toString())![1]);
+      if (buf.length < sep + 4 + len) return;
+      got.push(JSON.parse(buf.subarray(sep + 4, sep + 4 + len).toString()));
+      buf = buf.subarray(sep + 4 + len);
+    }
+  });
+  const send = (m: unknown) => {
+    const b = Buffer.from(JSON.stringify(m));
+    p2.stdin!.write(`Content-Length: ${b.length}\r\n\r\n`);
+    p2.stdin!.write(b);
+  };
+  const waitFor = async (f: (m: any) => boolean) => {
+    const until = Date.now() + 10000;
+    while (Date.now() < until) {
+      const m = got.find(f);
+      if (m) return m;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    throw new Error(`timed out; got ${JSON.stringify(got.map((m) => m.method ?? m.id))}`);
+  };
+  const aUri = pathToFileURL(a).href;
+  send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { rootUri: pathToFileURL(root).href, capabilities: { workspace: { didChangeWatchedFiles: { dynamicRegistration: true } } } } });
+  await waitFor((m) => m.id === 1);
+  send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+  const reg = await waitFor((m) => m.method === 'client/registerCapability');
+  assert.equal(reg.params.registrations[0].method, 'workspace/didChangeWatchedFiles');
+  const first = await waitFor((m) => m.method === 'textDocument/publishDiagnostics' && m.params.uri === aUri);
+  assert.ok(first.params.diagnostics.some((d: any) => d.code === 'type-mismatch'), 'the closed handler is checked');
+  assert.ok(!got.some((m) => m.method === 'textDocument/publishDiagnostics' && /notes\.js$/.test(m.params.uri)), 'not other .js files');
+  got.length = 0;
+  fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = ["M"];\n');
+  send({ jsonrpc: '2.0', method: 'workspace/didChangeWatchedFiles', params: { changes: [{ uri: aUri, type: 2 }] } });
+  const again = await waitFor((m) => m.method === 'textDocument/publishDiagnostics' && m.params.uri === aUri);
+  assert.ok(!again.params.diagnostics.some((d: any) => d.code === 'type-mismatch'), 'fixed on disk, re-checked');
+  send({ jsonrpc: '2.0', id: 2, method: 'shutdown' });
+  send({ jsonrpc: '2.0', method: 'exit' });
+});
