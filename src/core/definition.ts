@@ -10,7 +10,7 @@ export interface Span {
   end: number;
 }
 
-type Node = acorn.Node & Record<string, any>;
+export type Node = acorn.Node & Record<string, any>;
 
 const ID_CHAR = /[\w$]/;
 function wordAt(text: string, offset: number): Span | undefined {
@@ -21,7 +21,7 @@ function wordAt(text: string, offset: number): Span | undefined {
   return e > s && !/\d/.test(text[s]) ? { start: s, end: e } : undefined;
 }
 
-function parse(text: string): Node | undefined {
+export function parse(text: string): Node | undefined {
   try {
     return parseLikeJint(text, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowHashBang: true }).program as Node;
   } catch {
@@ -29,9 +29,9 @@ function parse(text: string): Node | undefined {
   }
 }
 
-const isFunction = (n: Node) => n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression';
+export const isFunction = (n: Node) => n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression';
 
-function children(n: Node): Node[] {
+export function children(n: Node): Node[] {
   const out: Node[] = [];
   for (const k of Object.keys(n)) {
     if (k === 'type' || k === 'start' || k === 'end' || k === 'loc' || k === 'range') continue;
@@ -42,13 +42,13 @@ function children(n: Node): Node[] {
   return out;
 }
 
-interface Scope {
+export interface Scope {
   names: Map<string, Span>;
   parent?: Scope;
 }
 
 /** The names a function (or the program) declares: params, `var`/`let`/`const` anywhere in it (not in nested functions), function declarations. */
-function declare(body: Node, scope: Scope, params: Node[] = []) {
+export function declare(body: Node, scope: Scope, params: Node[] = []) {
   const add = (id: Node | undefined) => {
     if (id?.type === 'Identifier' && !scope.names.has(id.name)) scope.names.set(id.name, { start: id.start, end: id.end });
   };
@@ -177,4 +177,22 @@ export function referencesAt(text: string, offset: number): Span[] {
   });
   if (!out.some((s) => s.start === target!.start)) out.unshift(target);
   return out.sort((a, b) => a.start - b.start);
+}
+
+const RESERVED = new Set('break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with let static yield undefined NaN Infinity'.split(' '));
+
+/** The handler's own variable or function at `offset`, which Rename can change (its name's span). */
+export function renameTargetAt(text: string, offset: number): Span | undefined {
+  if (!referencesAt(text, offset).length) return undefined;
+  return wordAt(text, offset);
+}
+
+/** Rename the handler's own variable or function at `offset`: every use, or why not. */
+export function renameEdits(text: string, offset: number, newName: string): { edits: { start: number; end: number; text: string }[] } | { error: string } {
+  if (!/^[A-Za-z_$][\w$]*$/.test(newName)) return { error: `"${newName}" isn't a valid JavaScript name (letters, digits, _ and $, not starting with a digit).` };
+  if (RESERVED.has(newName)) return { error: `"${newName}" is a reserved word in JavaScript.` };
+  if (['Game', 'Context', 'Nucleus', 'ProtoInput', 'System', 'Hub', 'Player', 'Math', 'JSON'].includes(newName)) return { error: `"${newName}" is a name Nucleus or JavaScript gives handlers: using it would hide theirs.` };
+  const refs = referencesAt(text, offset);
+  if (!refs.length) return { error: 'Only the handler’s own variables and functions can be renamed here.' };
+  return { edits: refs.map((r) => ({ start: r.start, end: r.end, text: newName })) };
 }

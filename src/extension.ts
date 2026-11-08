@@ -305,6 +305,8 @@ const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
   field: vscode.CompletionItemKind.Field,
   property: vscode.CompletionItemKind.Property,
   method: vscode.CompletionItemKind.Method,
+  function: vscode.CompletionItemKind.Function,
+  keyword: vscode.CompletionItemKind.Keyword,
   module: vscode.CompletionItemKind.Module,
   variable: vscode.CompletionItemKind.Variable,
   class: vscode.CompletionItemKind.Class,
@@ -318,7 +320,7 @@ const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
 const toRange = (doc: vscode.TextDocument, s: Span) => new vscode.Range(doc.positionAt(s.start), doc.positionAt(s.end));
 
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
-  const entries = completionsAt(doc.getText(), doc.offsetAt(pos));
+  const entries = completionsAt(doc.getText(), doc.offsetAt(pos), { own: false });
   return entries?.map((e) => {
     const item = new vscode.CompletionItem(e.labelDetail ? { label: e.label, description: e.labelDetail } : e.label, KIND[e.kind]);
     if (e.range) item.range = toRange(doc, e.range);
@@ -341,12 +343,12 @@ function markdown(s: string) {
 }
 
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
-  const h = hoverAt(doc.getText(), doc.offsetAt(pos));
+  const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false });
   return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
 }
 
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {
-  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos));
+  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos), { own: false });
   if (!s) return undefined;
   const help = new vscode.SignatureHelp();
   for (const sig of s.signatures) {

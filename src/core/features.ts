@@ -10,6 +10,39 @@ import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severit
 import { fixAll } from './fix';
 import { formatHandler } from './format';
 import { parseLikeJint } from './jsparse';
+import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, visibleNames } from './ownsymbols';
+import { innerCallFrame } from './complete';
+import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
+
+/** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
+ *  variables: `own: false` leaves those out, so they don't show twice. */
+export interface FeatureOptions {
+  own?: boolean;
+  /** Asked for (Ctrl+Space), not opened by a typed character: names are offered before any letter is typed. */
+  explicit?: boolean;
+}
+
+/** `Context.Options["…` with the cursor in (or right after `[` before) the key. */
+function optionKeyContextAt(text: string, offset: number): { quote: string; partial: string; start: number; end: number } | undefined {
+  const before = text.slice(Math.max(0, offset - 200), offset);
+  const m = /Context\s*\.\s*Options\s*\[\s*(["']?)([^"'\]\n]*)$/.exec(before);
+  if (!m) return undefined;
+  const rest = /^[^"'\]\n]*/.exec(text.slice(offset))![0];
+  return { quote: m[1], partial: m[2], start: offset - m[2].length, end: offset + (m[1] ? rest.length : 0) };
+}
+/** `Context.Options["key"] == "…`: the key and the value typed so far. */
+function optionValueContextAt(text: string, offset: number): { key: string; quote: string; partial: string } | undefined {
+  const before = text.slice(Math.max(0, offset - 300), offset);
+  const m = /Context\s*\.\s*Options\s*\[\s*["']([^"'\n]*)["']\s*\]\s*(?:===?|!==?)\s*(["'])([^"'\n]*)$/.exec(before);
+  return m ? { key: m[1], quote: m[2], partial: m[3] } : undefined;
+}
+/** The key under the cursor in `Context.Options["key"]`. */
+function optionKeyAt(text: string, offset: number): { key: string; start: number; end: number } | undefined {
+  const c = optionKeyContextAt(text, offset);
+  if (!c || !c.quote) return undefined;
+  const key = text.slice(c.start, c.end);
+  return { key, start: c.start, end: c.end };
+}
 
 /** Where the lint rules are documented (the README table). */
 export const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
@@ -30,12 +63,18 @@ export interface HoverInfo {
 const notTopLevel = '\n\n_Only available inside callbacks such as `Game.Play`._';
 
 /** The hover at `offset`: an API member's docs, an enum, a global, or a window message in BlockedMessages. */
-export function hoverAt(text: string, offset: number): HoverInfo | undefined {
+export function hoverAt(text: string, offset: number, opts: FeatureOptions = {}): HoverInfo | undefined {
   // A number in Game.ProtoInput.BlockedMessages: the window message's name and what it does.
   const msg = blockedItemAt(text, offset);
   if (msg) return { markdown: messageMarkdown(msg.id), range: { start: msg.start, end: msg.end } };
+  // The key in Context.Options["key"]: the option Game.AddOption added.
+  const k = optionKeyAt(text, offset);
+  if (k) {
+    const o = addedOptions(text).find((x) => x.key === k.key);
+    if (o) return { markdown: optionMarkdown(o, text), range: { start: k.start, end: k.end } };
+  }
   const r = resolveAt(text, offset);
-  if (!r) return undefined;
+  if (!r) return opts.own === false ? undefined : ownHover(text, offset);
   const range = { start: r.start, end: r.end };
   const word = text.slice(r.start, r.end);
   const res = r.resolved;
@@ -56,17 +95,33 @@ export function hoverAt(text: string, offset: number): HoverInfo | undefined {
     case 'list':
     case 'nucleus': {
       const g = api.globals[word];
-      if (!g) return undefined;
+      if (!g) break;
       return { markdown: '```ts\n' + `${word}: ${g.type}` + '\n```\n\n' + g.doc + (g.topLevel ? '' : notTopLevel) + `\n\n[Handler API docs](${DOCS_URL})`, range };
     }
   }
-  return undefined;
+  return opts.own === false ? undefined : ownHover(text, offset);
+}
+
+/** The handler's own function or variable under the cursor: how it's declared and the comment above it. */
+function ownHover(text: string, offset: number): HoverInfo | undefined {
+  let s = offset;
+  let e = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  if (e === s || /\d/.test(text[s]) || codeStateAt(text, s) !== 'code') return undefined;
+  let d = s;
+  while (d > 0 && /[ \t]/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.') return undefined; // a property, not a variable
+  const n = ownNameAt(text, offset, text.slice(s, e));
+  if (!n) return undefined;
+  const line = text.slice(0, n.start).split('\n').length;
+  return { markdown: '```js\n' + n.signature + '\n```' + (n.doc ? '\n\n' + n.doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
 }
 
 // ---------------------------------------------------------------------------
 // Completion
 
-export type CompletionKind = 'field' | 'property' | 'method' | 'module' | 'variable' | 'class' | 'enum' | 'enumMember' | 'constant' | 'value' | 'snippet';
+export type CompletionKind = 'field' | 'property' | 'method' | 'function' | 'module' | 'variable' | 'class' | 'enum' | 'enumMember' | 'constant' | 'value' | 'snippet' | 'keyword';
 
 export interface CompletionEntry {
   label: string;
@@ -117,7 +172,32 @@ const lineBounds = (text: string, offset: number) => {
 };
 
 /** Completion items at `offset`, or undefined when there's nothing to offer (let the editor do its own). */
-export function completionsAt(text: string, offset: number): CompletionEntry[] | undefined {
+export function completionsAt(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
+  // `Context.Options["|"]`: the keys the handler adds with Game.AddOption.
+  const key = optionKeyContextAt(text, offset);
+  if (key) {
+    const options = addedOptions(text, offset);
+    if (!options.length) return undefined;
+    const closeAfter = /^["']?\s*\]/.test(text.slice(key.end));
+    return options.map((o, i) => ({
+      label: o.key,
+      kind: 'property' as const,
+      detail: o.name ?? 'Game.AddOption',
+      documentation: optionMarkdown(o, text),
+      insertText: key.quote ? o.key : `"${o.key}"${closeAfter ? '' : ']'}`,
+      range: { start: key.start, end: key.end },
+      sortText: String(i).padStart(3, '0'),
+    }));
+  }
+  // `Context.Options["mode"] == "|"`: that option's choices.
+  const cmp = optionValueContextAt(text, offset);
+  if (cmp) {
+    const o = addedOptions(text, offset).find((x) => x.key === cmp.key);
+    if (!o?.values) return undefined;
+    let end = offset;
+    while (end < text.length && !/["'\n]/.test(text[end])) end++;
+    return o.values.map((v, i) => ({ label: v, kind: 'value' as const, detail: o.name ?? o.key, range: { start: offset - cmp.partial.length, end }, sortText: String(i).padStart(3, '0'), preselect: v === o.default }));
+  }
   // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
   const list = blockedListAt(text, offset);
   if (list && !blockedItemAt(text, offset)) {
@@ -159,7 +239,7 @@ export function completionsAt(text: string, offset: number): CompletionEntry[] |
     });
   }
   const ctx = memberContextAt(text, offset);
-  if (!ctx) return globalCompletions(text, offset);
+  if (!ctx) return opts.own === false ? globalCompletions(text, offset) : identifierCompletions(text, offset, !!opts.explicit);
 
   const line = lineBounds(text, offset);
   const before = text.slice(line.start, offset - ctx.partial.length);
@@ -219,6 +299,45 @@ function globalCompletions(text: string, offset: number): CompletionEntry[] | un
     .map(([name, g]) => ({ label: name, kind: 'variable' as const, detail: `${name}: ${g.type}`, documentation: g.doc + (g.topLevel ? '' : notTopLevel), sortText: `0_${name}` }));
 }
 
+/** Where a name starts (not after a dot): the handler's own functions and variables in scope, Nucleus' globals,
+ *  JavaScript's own (Math, parseInt…) and the keywords. For editors without their own JavaScript suggestions. */
+function identifierCompletions(text: string, offset: number, explicit: boolean): CompletionEntry[] | undefined {
+  let s = offset;
+  let e = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  if (/\d/.test(text[s] ?? '')) return undefined;
+  let d = s;
+  while (d > 0 && /[ \t]/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.') return undefined;
+  const lineBefore = text.slice(text.lastIndexOf('\n', s - 1) + 1, s);
+  if (/\b(var|let|const|function|catch\s*\()\s*$|\bfunction\s*[\w$]*\s*\([^)]*$/.test(lineBefore)) return undefined; // naming something new
+  if (codeStateAt(text, s) !== 'code') return undefined;
+  const range = { start: s, end: e };
+  const word = text.slice(s, offset);
+  if (!word && !explicit) return undefined;
+  const out: CompletionEntry[] = [];
+  const seen = new Set<string>();
+  for (const n of visibleNames(text, offset)) {
+    if (n.name === word && n.start === s) continue; // the name being declared right here
+    seen.add(n.name);
+    out.push({ label: n.name, kind: n.kind === 'function' ? 'function' : 'variable', detail: n.signature, documentation: n.doc, range, sortText: `0_${n.name}`, ...(n.kind === 'function' ? { insertText: `${n.name}($1)`, snippet: true, signatureHelp: true } : {}) });
+  }
+  for (const [name, g] of Object.entries(api.globals)) {
+    if (g.hidden || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ label: name, kind: 'variable', detail: `${name}: ${g.type}`, documentation: g.doc + (g.topLevel ? '' : notTopLevel), range, sortText: `1_${name}` });
+  }
+  for (const name of JS_GLOBAL_OBJECTS) if (!seen.has(name)) (seen.add(name), out.push({ label: name, kind: 'module', detail: `JavaScript's ${name}`, range, sortText: `2_${name}` }));
+  for (const [name, m] of Object.entries(JS_FUNCTIONS)) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({ label: name, kind: 'function', detail: memberSignature('', name, m)[0], documentation: m.doc, range, sortText: `2_${name}`, insertText: `${name}($1)`, snippet: true, signatureHelp: true });
+  }
+  for (const k of KEYWORDS) if (!seen.has(k)) out.push({ label: k, kind: 'keyword', range, sortText: `3_${k}` });
+  return out;
+}
+
 function ownerOf(base: Resolved): string {
   if (base.kind === 'object') return base.type;
   if (base.kind === 'member' && base.member.ref) return base.member.ref;
@@ -243,9 +362,9 @@ export interface SignatureHelpInfo {
 }
 
 /** The overloads of the method (or Nucleus class constructor) whose call the cursor is in. */
-export function signatureHelpAt(text: string, offset: number): SignatureHelpInfo | undefined {
+export function signatureHelpAt(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
   const c = callContextAt(text, offset);
-  if (!c) return undefined;
+  if (!c) return opts.own === false ? undefined : ownSignatureHelp(text, offset);
   const signatures: SignatureEntry[] = [];
   let activeSignature = 0;
   if (c.callee.kind === 'member' && c.callee.member.kind === 'method') {
@@ -263,6 +382,21 @@ export function signatureHelpAt(text: string, offset: number): SignatureHelpInfo
     signatures.push({ label: `new Nucleus.${c.callee.name}(${params.join(', ')})`, documentation: cls.doc, parameters: params });
   } else return undefined;
   return { signatures, activeSignature, activeParameter: c.activeParameter };
+}
+
+/** A call of the handler's own function: its parameters and the comment above it. */
+function ownSignatureHelp(text: string, offset: number): SignatureHelpInfo | undefined {
+  const frame = innerCallFrame(text, offset);
+  if (!frame) return undefined;
+  const m = /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, frame.pos - 100), frame.pos));
+  if (!m) return undefined;
+  const at = frame.pos - m[0].length;
+  let d = at;
+  while (d > 0 && /\s/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.' || /\bfunction\s*$/.test(text.slice(Math.max(0, d - 20), d))) return undefined;
+  const n = ownNameAt(text, offset, m[1]);
+  if (!n || n.kind !== 'function' || !n.params) return undefined;
+  return { signatures: [{ label: `${n.name}(${n.params.join(', ')})`, documentation: n.doc, parameters: n.params }], activeSignature: 0, activeParameter: frame.commas };
 }
 
 // ---------------------------------------------------------------------------

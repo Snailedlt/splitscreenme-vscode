@@ -48,7 +48,7 @@ export class CodeAction {
   edit?: WorkspaceEdit;
   constructor(public title: string, public kind: CodeActionKind) {}
 }
-export enum CompletionItemKind { Method = 1, Field = 4, Variable = 5, Class = 6, Module = 8, Property = 9, Enum = 12, EnumMember = 19 }
+export enum CompletionItemKind { Method = 1, Function = 2, Keyword = 13, Field = 4, Variable = 5, Class = 6, Module = 8, Property = 9, Enum = 12, EnumMember = 19 }
 export enum CompletionItemTag { Deprecated = 1 }
 export class SnippetString {
   constructor(public value: string) {}

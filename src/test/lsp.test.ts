@@ -304,3 +304,20 @@ test('lsp: every handler in the workspace is checked, opened or not, and files c
   send({ jsonrpc: '2.0', id: 2, method: 'shutdown' });
   send({ jsonrpc: '2.0', method: 'exit' });
 });
+
+test('lsp: rename the handler\'s own names; suggestions for them only when typing or asked', async () => {
+  const text = HEADER + 'var savePath = "x";\nGame.Play = function () {\n  var p = savePath;\n  sa\n};\n';
+  const uri = URI.replace('Test', 'Rename');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const doc = { uri };
+  const prep = (await request('textDocument/prepareRename', { textDocument: doc, position: { line: 5, character: 12 } })).result;
+  assert.equal(prep.placeholder, 'savePath');
+  const r = (await request('textDocument/rename', { textDocument: doc, position: { line: 5, character: 12 }, newName: 'saveDir' })).result;
+  assert.equal(r.changes[uri].length, 2);
+  const bad = await request('textDocument/rename', { textDocument: doc, position: { line: 5, character: 12 }, newName: 'var' });
+  assert.match(bad.error.message, /reserved/);
+  const typed = (await request('textDocument/completion', { textDocument: doc, position: { line: 6, character: 4 }, context: { triggerKind: 1 } })).result;
+  assert.ok(typed.items.some((i: any) => i.label === 'savePath' && i.kind === 6));
+  const space = (await request('textDocument/completion', { textDocument: doc, position: { line: 5, character: 9 }, context: { triggerKind: 2, triggerCharacter: ' ' } })).result;
+  assert.equal(space, null);
+});

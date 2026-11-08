@@ -1082,7 +1082,7 @@ static void complete(HWND h, bool explicitly) {
   Doc* d = active();
   if (!d) return;
   sptr_t pos = sci(h, SCI_GETCURRENTPOS);
-  int id = lsp::request("textDocument/completion", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, pos)}}), [=](const Value& r) {
+  int id = lsp::request("textDocument/completion", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, pos)}, {"context", Value(Object{{"triggerKind", explicitly ? 1 : 2}})}}), [=](const Value& r) {
     if (completionId != lsp::nextId - 1 && false) return;
     const Value& arr = r.isArr() ? r : r["items"];
     sptr_t caret = sci(h, SCI_GETCURRENTPOS);
@@ -1143,6 +1143,7 @@ static void complete(HWND h, bool explicitly) {
   completionId = id;
 }
 
+static void signatureHelp(HWND h);
 static void onSelected(HWND h, const char* label) {
   auto it = std::find_if(items.begin(), items.end(), [&](const Item& i) { return i.label == label; });
   if (!ourList || it == items.end()) return;
@@ -1155,7 +1156,10 @@ static void onSelected(HWND h, const char* label) {
   while (end < sci(h, SCI_GETLENGTH) && isWord((unsigned char)sci(h, SCI_GETCHARAT, end)) && !item.hasEdit) end++;
   sci(h, SCI_SETTARGETRANGE, start, end);
   sci(h, SCI_REPLACETARGET, item.text.size(), (sptr_t)item.text.c_str());
-  sci(h, SCI_GOTOPOS, start + item.text.size());
+  // A function: the cursor between its parentheses, with its parameters shown.
+  bool call = item.text.size() > 2 && item.text.compare(item.text.size() - 2, 2, "()") == 0;
+  sci(h, SCI_GOTOPOS, start + item.text.size() - (call ? 1 : 0));
+  if (call) signatureHelp(h);
 }
 /** The highlighted suggestion's type and first line of docs, in the status bar (a call tip would close the list). */
 static void onItemHighlighted(HWND, const char* label) {
@@ -1615,6 +1619,57 @@ static void cmdInstall() {
   while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
   MessageBoxW(npp._nppHandle, wide(said.empty() ? "Couldn't run ncdev install." : said).c_str(), PLUGIN_NAME, MB_OK | (code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
 }
+
+// Rename: the handler's own variable or function, every use (textDocument/prepareRename, then rename).
+struct RenameState {
+  std::wstring name;
+};
+static INT_PTR CALLBACK renameProc(HWND d, UINT m, WPARAM w, LPARAM l) {
+  auto* st = (RenameState*)GetWindowLongPtrW(d, DWLP_USER);
+  switch (m) {
+    case WM_INITDIALOG:
+      SetWindowLongPtrW(d, DWLP_USER, l);
+      SetDlgItemTextW(d, ID_NAME, ((RenameState*)l)->name.c_str());
+      SetFocus(GetDlgItem(d, ID_NAME));
+      SendDlgItemMessageW(d, ID_NAME, EM_SETSEL, 0, -1);
+      return FALSE;
+    case WM_COMMAND:
+      if (LOWORD(w) == IDOK) {
+        st->name = itemText(d, ID_NAME);
+        EndDialog(d, IDOK);
+        return TRUE;
+      }
+      if (LOWORD(w) == IDCANCEL) {
+        EndDialog(d, IDCANCEL);
+        return TRUE;
+      }
+  }
+  return FALSE;
+}
+static void cmdRename() {
+  HWND h = curSci();
+  Doc* d = active();
+  if (!d) return needHandler();
+  Value pos = lspPos(h, sci(h, SCI_GETCURRENTPOS));
+  lsp::request("textDocument/prepareRename", Value(Object{{"textDocument", docId(d)}, {"position", pos}}), [=](const Value& r) {
+    if (!r.isObj()) {
+      status(L"Nucleus: put the cursor on one of the handler's own variables or functions to rename it");
+      return;
+    }
+    RenameState st{wide(r["placeholder"].str())};
+    std::wstring old = st.name;
+    DlgBuilder b(L"Rename " + old, 220, 52);
+    b.item(0x82, SS_LEFT, 8, 8, 204, 9, (WORD)-1, L"New name (every use in this handler changes):");
+    b.item(0x81, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 8, 18, 204, 13, ID_NAME, L"");
+    b.item(0x80, BS_DEFPUSHBUTTON | WS_TABSTOP, 108, 36, 50, 14, IDOK, L"Rename");
+    b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 162, 36, 50, 14, IDCANCEL, L"Cancel");
+    if (DialogBoxIndirectParamW(hModule, b.done(), npp._nppHandle, renameProc, (LPARAM)&st) != IDOK || st.name.empty() || st.name == old) return;
+    flushChange();
+    lsp::request("textDocument/rename", Value(Object{{"textDocument", docId(d)}, {"position", pos}, {"newName", utf8(st.name)}}), [=](const Value& e) {
+      if (e.isObj() && applyWorkspaceEdit(e)) status(L"Nucleus: renamed " + old + L" to " + st.name);
+    });
+  });
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -1679,6 +1734,7 @@ static FuncItem funcs[] = {
     {L"Quick fix on this line", cmdQuickFix, 0, false, &altEnter},
     {L"Go to definition", cmdDefinition, 0, false, &altF12},
     {L"Find references", cmdReferences, 0, false, nullptr},
+    {L"Rename…", cmdRename, 0, false, nullptr},
     {L"Fix all", cmdFixAll, 0, false, nullptr},
     {L"Show docs here", cmdDocs, 0, false, nullptr},
     {L"Suggest here", cmdSuggest, 0, false, nullptr},
@@ -1699,7 +1755,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 8, OUTLINE_INDEX = 9, UPDATE_INDEX = 20;
+static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 21;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)

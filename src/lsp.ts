@@ -6,7 +6,7 @@
 // (src/sandbox.ts). Logs go to stderr; stdout carries only protocol messages.
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
-import { definitionAt, referencesAt } from './core/definition';
+import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/definition';
 import { workbenchLinkFor } from './workbenchlink';
 import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
@@ -45,7 +45,7 @@ const FIX_ALL_KIND = 'source.fixAll.nucleus';
 // LSP enums (numbers in the protocol)
 const SEVERITY: Record<Severity, number> = { error: 1, warning: 2, info: 3, hint: 4 };
 const TAG = { unnecessary: 1, deprecated: 2 } as const;
-const KIND: Record<CompletionKind, number> = { method: 2, field: 5, variable: 6, class: 7, module: 9, property: 10, value: 12, enum: 13, snippet: 15, enumMember: 20, constant: 21 };
+const KIND: Record<CompletionKind, number> = { method: 2, function: 3, keyword: 14, field: 5, variable: 6, class: 7, module: 9, property: 10, value: 12, enum: 13, snippet: 15, enumMember: 20, constant: 21 };
 
 interface Position {
   line: number;
@@ -256,6 +256,7 @@ export class Server {
             documentSymbolProvider: true,
             definitionProvider: true,
             referencesProvider: true,
+            renameProvider: { prepareProvider: true },
             completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
@@ -330,6 +331,19 @@ export class Server {
         const decl = definitionAt(doc.text, at);
         return refs.filter((r) => p.context?.includeDeclaration !== false || !decl || r.start !== decl.start).map((r) => ({ uri: doc.uri, range: l.range(r) }));
       }
+      case 'textDocument/prepareRename': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const span = renameTargetAt(doc.text, l.offset(p.position));
+        return span ? { range: l.range(span), placeholder: doc.text.slice(span.start, span.end) } : null;
+      }
+      case 'textDocument/rename': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const r = renameEdits(doc.text, l.offset(p.position), String(p.newName ?? ''));
+        if ('error' in r) throw new Error(r.error);
+        return { changes: { [doc.uri]: r.edits.map((e) => ({ range: l.range(e), newText: e.text })) } };
+      }
       case 'textDocument/documentSymbol': {
         if (!this.featuresOn(doc)) return [];
         const l = linesOf(doc);
@@ -366,7 +380,7 @@ export class Server {
               })),
           };
         }
-        const items = completionsAt(doc.text, at);
+        const items = completionsAt(doc.text, at, { explicit: p.context?.triggerKind !== 2 });
         return items ? { isIncomplete: false, items: items.map((e) => this.toCompletionItem(l, e)) } : null;
       }
       case 'textDocument/signatureHelp': {

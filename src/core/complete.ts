@@ -162,8 +162,8 @@ export interface CallContext {
   isNew: boolean;
 }
 
-/** For signature help: find the innermost unclosed call around `offset`. */
-export function callContextAt(text: string, offset: number): CallContext | undefined {
+/** The innermost unclosed `(` around `offset` (strings and comments skipped), and how many commas it has so far. */
+export function innerCallFrame(text: string, offset: number): { pos: number; commas: number } | undefined {
   const start = Math.max(0, offset - 4000);
   const stack: { pos: number; commas: number; ch: string }[] = [];
   for (let i = start; i < offset; i++) {
@@ -182,21 +182,22 @@ export function callContextAt(text: string, offset: number): CallContext | undef
     else if (c === ')' || c === ']' || c === '}') stack.pop();
     else if (c === ',' && stack.length) stack[stack.length - 1].commas++;
   }
-  for (let k = stack.length - 1; k >= 0; k--) {
-    const frame = stack[k];
-    if (frame.ch !== '(') {
-      // inside an array/object literal that is itself an argument: keep looking outward
-      continue;
-    }
-    const chain = chainEndingAt(text, frame.pos);
-    if (!chain) return undefined;
-    const isNew = /\bnew\s+[\w$.\s]+$/.test(text.slice(Math.max(0, frame.pos - 200), frame.pos));
-    const callee = resolveChain(chain, findAliases(text));
-    if (!callee) return undefined;
-    // active parameter counts commas in the call frame only (nested literals are separate frames)
-    return { callee, activeParameter: frame.commas, isNew };
-  }
+  // Inside an array/object literal that is itself an argument: the call around it.
+  for (let k = stack.length - 1; k >= 0; k--) if (stack[k].ch === '(') return { pos: stack[k].pos, commas: stack[k].commas };
   return undefined;
+}
+
+/** For signature help: find the innermost unclosed call around `offset`. */
+export function callContextAt(text: string, offset: number): CallContext | undefined {
+  const frame = innerCallFrame(text, offset);
+  if (!frame) return undefined;
+  const chain = chainEndingAt(text, frame.pos);
+  if (!chain) return undefined;
+  const isNew = /\bnew\s+[\w$.\s]+$/.test(text.slice(Math.max(0, frame.pos - 200), frame.pos));
+  const callee = resolveChain(chain, findAliases(text));
+  if (!callee) return undefined;
+  // active parameter counts commas in the call frame only (nested literals are separate frames)
+  return { callee, activeParameter: frame.commas, isNew };
 }
 
 export interface ValueContext {
