@@ -523,10 +523,45 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
 
 /** Format Document (core/format.ts: indentation and spacing only). `edits` is empty when already
  *  formatted; `error` says why it refused (the editor should show it, not change anything). */
-export function formatEdits(text: string, opts: { insertSpaces: boolean; tabSize: number }): { edits: TextEdit[] } | { error: string } {
-  const r = formatHandler(text, { indent: opts.insertSpaces ? ' '.repeat(opts.tabSize) : '\t' });
+/** The editor's indentation, and the style settings (core/format.ts: quotes, semicolons). */
+export interface FormatSettings {
+  insertSpaces: boolean;
+  tabSize: number;
+  quotes?: 'double' | 'single' | 'keep';
+  semicolons?: 'add' | 'keep';
+}
+const formatOptions = (o: FormatSettings) => ({ indent: o.insertSpaces ? ' '.repeat(o.tabSize) : '\t', quotes: o.quotes, semicolons: o.semicolons });
+
+export function formatEdits(text: string, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
+  const r = formatHandler(text, formatOptions(opts));
   if (!r.ok) return { error: r.reason };
   return { edits: r.changed ? [{ start: 0, end: text.length, text: r.code }] : [] };
+}
+
+/** Format only the lines from `start` to `end` (offsets): a selection, or the line just typed. Blank lines are kept
+ *  so the rest of the file doesn't move. */
+export function rangeFormatEdits(text: string, start: number, end: number, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
+  const r = formatHandler(text, { ...formatOptions(opts), keepBlankLines: true });
+  if (!r.ok) return { error: r.reason };
+  const crlf = r.code.includes('\r\n');
+  const was = text.split('\n');
+  const now = r.code.split('\n');
+  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
+  const l0 = text.slice(0, start).split('\n').length - 1;
+  const l1 = text.slice(0, Math.max(start, end)).split('\n').length - 1;
+  const edits: TextEdit[] = [];
+  let at = 0;
+  for (let i = 0; i < was.length; i++) {
+    const lineEnd = at + was[i].length;
+    if (i >= l0 && i <= l1) {
+      const strip = (s: string) => (crlf ? s.replace(/\r$/, '') : s);
+      const a = strip(was[i]);
+      const b = strip(now[i]);
+      if (a !== b) edits.push({ start: at, end: at + a.length, text: b });
+    }
+    at = lineEnd + 1;
+  }
+  return { edits };
 }
 
 // ---------------------------------------------------------------------------

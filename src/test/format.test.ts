@@ -14,7 +14,7 @@ test('format: indentation, spacing, and nothing else', () => {
   const src = 'Game.GUID="Demo";\nGame.Play=function(){\nif(a)\nb();\nelse{\nvar x=a?1:2;\n}\nswitch(x){\ncase 1:\nfoo([\n1,2\n]);\nbreak;\n}\nvar o={a:1,b:[1,2]};\nvar s=-x+ +y-(-1);\ni++;\nif(!a&&b||c){return}\n};\n';
   assert.equal(
     fmt(src),
-    'Game.GUID = "Demo";\nGame.Play = function () {\n  if (a)\n    b();\n  else {\n    var x = a ? 1 : 2;\n  }\n  switch (x) {\n    case 1:\n      foo([\n        1, 2\n      ]);\n      break;\n  }\n  var o = { a: 1, b: [1, 2] };\n  var s = -x + +y - (-1);\n  i++;\n  if (!a && b || c) { return }\n};\n',
+    'Game.GUID = "Demo";\nGame.Play = function () {\n  if (a)\n    b();\n  else {\n    var x = a ? 1 : 2;\n  }\n  switch (x) {\n    case 1:\n      foo([\n        1, 2\n      ]);\n      break;\n  }\n  var o = { a: 1, b: [1, 2] };\n  var s = -x + +y - (-1);\n  i++;\n  if (!a && b || c) { return; }\n};\n',
   );
 });
 
@@ -57,4 +57,24 @@ test('format: never glues operators into new ones, and refuses code that is not 
 
 test('format: operators newer than ES5 (=>, **, ??) stay in one piece', () => {
   assert.equal(fmt('var f = () => 1;\nvar p = a ** 2;\nvar q = a ?? b;\nf=x=>x;\n'), 'var f = () => 1;\nvar p = a ** 2;\nvar q = a ?? b;\nf = x => x;\n');
+});
+
+test('opinionated style: double quotes and semicolons by default, configurable, never changing the program', async () => {
+  const { rangeFormatEdits } = await import('../core/features');
+  const src = "Game.GameName = 'My Game'\nvar s = 'it\\'s'\nvar t = 'say \"hi\"'\nGame.Play = function () {\n  for (var i = 0; i < 2; i++) {\n    Context.StartArguments = '-w ' + Context.Width\n  }\n  return\n}\n";
+  const r = formatHandler(src);
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.code, 'Game.GameName = "My Game";\nvar s = "it\'s";\nvar t = \'say "hi"\';\nGame.Play = function () {\n  for (var i = 0; i < 2; i++) {\n    Context.StartArguments = "-w " + Context.Width;\n  }\n  return;\n};\n');
+  const keep = formatHandler(src, { quotes: 'keep', semicolons: 'keep' });
+  assert.ok(keep.ok && !keep.code.includes('"My Game"') && !/Width;/.test(keep.code));
+  const single = formatHandler('var a = "x";\n', { quotes: 'single' });
+  assert.ok(single.ok && single.code === "var a = 'x';\n");
+  // A line that ASI reads differently (`a\n(b)` is a call) gets no semicolon: the program must stay the same.
+  const asi = formatHandler('var a = b\n(c)\n');
+  assert.ok(asi.ok && asi.code === 'var a = b\n(c);\n');
+  // Range formatting: only the lines asked for, blank lines kept.
+  const text = "var a = 'x'\n\n\nvar b = 'y'\n";
+  const e = rangeFormatEdits(text, text.indexOf('var b'), text.indexOf('var b'), { insertSpaces: true, tabSize: 2 });
+  assert.ok('edits' in e);
+  if ('edits' in e) assert.deepEqual(e.edits.map((x) => x.text), ['var b = "y";']);
 });

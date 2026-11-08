@@ -205,6 +205,20 @@
           "default": true,
           "description": "After an update, show a short note with what's new (the full list is in Nucleus: What's New)."
         },
+        "splitscreenme.format.quotes": {
+          "type": "string",
+          "enum": ["double", "single", "keep"],
+          "enumDescriptions": ["\"Double\" quotes (also what the Hub install reads Game.GameName and Game.ExecutableName between)", "'Single' quotes", "Leave quotes as written"],
+          "default": "double",
+          "markdownDescription": "Quotes around strings when formatting a handler. A string that contains the chosen quote keeps its own, so no escapes are added."
+        },
+        "splitscreenme.format.semicolons": {
+          "type": "string",
+          "enum": ["add", "keep"],
+          "enumDescriptions": ["A semicolon at the end of every statement that ends without one", "Leave statement ends as written"],
+          "default": "add",
+          "markdownDescription": "Semicolons when formatting a handler. Either way the program stays exactly the same: the formatter checks that it parses to the same code before changing anything."
+        },
         "splitscreenme.lint.enable": {
           "type": "boolean",
           "default": true,

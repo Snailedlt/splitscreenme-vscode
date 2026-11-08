@@ -34,10 +34,11 @@ Usage: ncdev <command> [options]
 
 Commands:
   lint <file|dir>...          Check handlers for problems (default command)
-  format <file|dir>... [--write | --check]
-                              Indentation and spacing only (no line moves, tokens unchanged).
-                              Prints the result for one file; --write saves, --check lists the
-                              files that aren't formatted and exits 1
+  format <file|dir>... [--write | --check] [--quotes double|single|keep] [--semicolons add|keep]
+                              Indentation, spacing, double quotes and semicolons (no line moves;
+                              the program parses the same, or nothing changes). Prints the result
+                              for one file; --write saves, --check lists the files that aren't
+                              formatted and exits 1
   api <name>                  Show the type and docs of an API member, e.g. "Game.KillMutex",
                               "Context.ModifySaveFile", "KillMutex", "Nucleus.Folder"
   api --search <words>        Search API names and docs, e.g. "api --search mutex"
@@ -280,7 +281,11 @@ function cmdFormat(args: Args, json: boolean): number {
   const results: { file: string; ok: boolean; changed?: boolean; reason?: string }[] = [];
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
-    const r = formatHandler(text);
+    const quotes = flag(args, '--quotes');
+    const semicolons = flag(args, '--semicolons');
+    if (quotes && !['double', 'single', 'keep'].includes(quotes)) throw new Usage('--quotes: double, single or keep');
+    if (semicolons && !['add', 'keep'].includes(semicolons)) throw new Usage('--semicolons: add or keep');
+    const r = formatHandler(text, { quotes: quotes as 'double' | 'single' | 'keep' | undefined, semicolons: semicolons as 'add' | 'keep' | undefined });
     if (!r.ok) {
       results.push({ file, ok: false, reason: r.reason });
       continue;

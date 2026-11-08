@@ -323,3 +323,19 @@ test('lsp: rename the handler\'s own names; suggestions for them only when typin
   const hl = (await request('textDocument/documentHighlight', { textDocument: doc, position: { line: 5, character: 12 } })).result;
   assert.deepEqual(hl.map((h: any) => [h.range.start.line, h.kind]), [[3, 3], [5, 2]]);
 });
+
+test('lsp: range and on-type formatting, with the style settings', async () => {
+  const text = "var a = 'x'\nvar b = 'y'\n";
+  const uri = URI.replace('Test', 'Style');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const doc = { uri };
+  const opts = { insertSpaces: true, tabSize: 2 };
+  let r = (await request('textDocument/rangeFormatting', { textDocument: doc, range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } }, options: opts })).result;
+  assert.deepEqual(r.map((e: any) => [e.range.start.line, e.newText]), [[1, 'var b = "y";']]);
+  r = (await request('textDocument/onTypeFormatting', { textDocument: doc, position: { line: 1, character: 0 }, ch: '\n', options: opts })).result;
+  assert.deepEqual(r.map((e: any) => e.newText), ['var a = "x";']);
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'keep', semicolons: 'keep' } } } });
+  r = (await request('textDocument/formatting', { textDocument: doc, options: opts })).result;
+  assert.deepEqual(r, []);
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'double', semicolons: 'add' } } } });
+});

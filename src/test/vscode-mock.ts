@@ -127,6 +127,8 @@ export const languages = {
   registerDefinitionProvider: (_s: any, p: any) => (__registered.definition.push(p), disposable),
   registerSignatureHelpProvider: (_s: any, p: any) => (__registered.signature.push(p), disposable),
   registerDocumentFormattingEditProvider: (_s: any, p: any) => (__registered.formatting.push(p), disposable),
+  registerDocumentRangeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).rangeFormatting ??= []).push(p), disposable),
+  registerOnTypeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).onType ??= []).push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
   registerInlayHintsProvider: (_s: any, p: any) => ((__registered as any).inlay = [...((__registered as any).inlay ?? []), p], disposable),
 };

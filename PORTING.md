@@ -10,7 +10,7 @@ How to bring the SplitScreen.Me / Nucleus Co-op handler features (checks with qu
 src/core/          editor-agnostic logic, plain data, no vscode and no Node APIs
   lint.ts          the checks (RULES) -> Diagnostic { rule, severity, message, start, end, fixes, tags }
   fix.ts           "Fix all": every safe (preferred) fix, repeated until stable
-  format.ts        Format Document: indentation and spacing only, refuses when unsure
+  format.ts        Format Document: indentation, spacing, quotes, semicolons; refuses when unsure
   complete.ts      text-based resolution at a cursor (works on unfinished code)
   features.ts      the editor features, built on the above (hover, completion, ... see the table)
   api.ts, wm.ts    the API model, the window-message table
@@ -38,6 +38,7 @@ Positions in core are offsets into the text, counted in UTF-16 code units (what 
 | Value suggestions after `=` (enum values, `true`/`false`, `function () {}`) | `completionsAt()` (via `valueContextAt()`) | same | same |
 | Signature help (overloads, active parameter) | `signatureHelpAt()` | SignatureHelpProvider | `textDocument/signatureHelp` |
 | Format Document | `formatEdits()` (`core/format.ts`) | DocumentFormattingEditProvider | `textDocument/formatting`; a refusal is a `window/showMessage` warning and no edits |
+| Format Selection, format on type | `rangeFormatEdits()` | DocumentRangeFormattingEditProvider, OnTypeFormattingEditProvider (`}` `;` Enter) | `textDocument/rangeFormatting`, `textDocument/onTypeFormatting`; style from settings `nucleus.format.quotes` (`double`/`single`/`keep`) and `nucleus.format.semicolons` (`add`/`keep`) |
 | Outline, breadcrumbs, Go to Symbol (settings by object, callbacks with what they set, the handler's own names) | `documentSymbols()` | DocumentSymbolProvider | `textDocument/documentSymbol` (hierarchical) |
 | Package checks (the files in `<Name>/`) | `checkPackage()` (`core/pkgcheck.ts`) + `packageFilesFor()` (`src/pkgfiles.ts`) | Problems on the handler and on those files | `publishDiagnostics` for the handler and for each of those files |
 | Checks against the game's install folder | `checkAgainstFolder()` (`core/gamefolder.ts`) + `folderAt()` (`src/gamefolder-node.ts`) | **Link the Game's Folder…**, problems, quick fixes, file suggestions in the lists | the `gameFolders` setting; problems with the fix in `data`, `quickfix` code actions, completion inside the lists |

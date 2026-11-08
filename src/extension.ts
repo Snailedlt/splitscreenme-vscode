@@ -4,6 +4,7 @@ import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lin
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
 import { definitionAt } from './core/definition';
+import { rangeFormatEdits } from './core/features';
 import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -174,6 +175,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
       provideDocumentFormattingEdits: (doc, opts) => (isHandler(doc) ? formatEdits(doc, opts) : []),
     }),
+    vscode.languages.registerDocumentRangeFormattingEditProvider(SELECTOR, {
+      provideDocumentRangeFormattingEdits: (doc, range, opts) => (isHandler(doc) ? rangeFormat(doc, doc.offsetAt(range.start), doc.offsetAt(range.end), opts) : []),
+    }),
+    // Format on type (VS Code's editor.formatOnType): the line just finished, after `}`, `;` or Enter.
+    vscode.languages.registerOnTypeFormattingEditProvider(SELECTOR, {
+      provideOnTypeFormattingEdits: (doc, pos, ch, opts) => {
+        if (!isHandler(doc)) return [];
+        const line = ch === '\n' ? Math.max(0, pos.line - 1) : pos.line;
+        const at = doc.offsetAt(new vscode.Position(line, 0));
+        return rangeFormat(doc, at, at, opts, true);
+      },
+    }, '}', ';', '\n'),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
   );
 
@@ -252,8 +265,22 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
 }
 
 /** The edit that formats a handler (core/format.ts), or none. */
+function formatStyle(opts: { insertSpaces: boolean; tabSize: number }) {
+  const cfg = vscode.workspace.getConfiguration('splitscreenme.format');
+  return { insertSpaces: opts.insertSpaces, tabSize: opts.tabSize, quotes: cfg.get<'double' | 'single' | 'keep'>('quotes', 'double'), semicolons: cfg.get<'add' | 'keep'>('semicolons', 'add') };
+}
+/** Only the lines from `start` to `end` (a selection, or the line just typed). */
+function rangeFormat(doc: vscode.TextDocument, start: number, end: number, opts: { insertSpaces: boolean; tabSize: number }, quiet = false): vscode.TextEdit[] {
+  const r = rangeFormatEdits(doc.getText(), start, end, formatStyle(opts));
+  if ('error' in r) {
+    if (!quiet) void vscode.window.showWarningMessage(`Nucleus: ${r.error}`);
+    return [];
+  }
+  return r.edits.map((e) => vscode.TextEdit.replace(toRange(doc, e), e.text));
+}
+
 function formatEdits(doc: vscode.TextDocument, opts: { insertSpaces: boolean; tabSize: number }): vscode.TextEdit[] {
-  const r = coreFormatEdits(doc.getText(), opts);
+  const r = coreFormatEdits(doc.getText(), formatStyle(opts));
   if ('error' in r) {
     void vscode.window.showWarningMessage(`Nucleus: ${r.error}`);
     return [];

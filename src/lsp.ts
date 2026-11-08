@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/definition';
 import { workbenchLinkFor } from './workbenchlink';
+import { rangeFormatEdits } from './core/features';
 import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -36,8 +37,10 @@ export interface LspSettings {
   completion: { enable: boolean };
   /** The game's install folder per handler file name, e.g. { "MyGame.js": "C:\\Games\\MyGame" }: checks against the real files. */
   gameFolders: Record<string, string>;
+  /** Formatting style (core/format.ts): quotes "double" (default) | "single" | "keep", semicolons "add" (default) | "keep". */
+  format: { quotes: 'double' | 'single' | 'keep'; semicolons: 'add' | 'keep' };
 }
-const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {} };
+const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {}, format: { quotes: 'double', semicolons: 'add' } };
 
 export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
@@ -147,7 +150,13 @@ export class Server {
     if (typeof l.compareWithHub === 'boolean') d.lint.compareWithHub = l.compareWithHub;
     if (typeof l.workspace === 'boolean') d.lint.workspace = l.workspace;
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
+    if (['double', 'single', 'keep'].includes(s.format?.quotes)) d.format.quotes = s.format.quotes;
+    if (['add', 'keep'].includes(s.format?.semicolons)) d.format.semicolons = s.format.semicolons;
     if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
+  }
+
+  private formatStyle(o: any) {
+    return { insertSpaces: o?.insertSpaces !== false, tabSize: typeof o?.tabSize === 'number' ? o.tabSize : 4, ...this.settings.format };
   }
 
   private isHandler(d: Doc): boolean {
@@ -263,6 +272,8 @@ export class Server {
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
             documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
+            documentOnTypeFormattingProvider: { firstTriggerCharacter: "}", moreTriggerCharacter: [";", "\n"] },
             inlayHintProvider: true,
             executeCommandProvider: { commands: Object.values(COMMANDS) },
           },
@@ -412,9 +423,27 @@ export class Server {
           .filter((h) => h.offset >= from && h.offset <= to)
           .map((h) => ({ position: l.position(h.offset), label: h.label, paddingLeft: true, tooltip: { kind: 'markdown', value: h.tooltip } }));
       }
+      case 'textDocument/rangeFormatting':
+      case 'textDocument/onTypeFormatting': {
+        if (!doc || !this.isHandler(doc)) return null;
+        const l = linesOf(doc);
+        let from: number, to: number;
+        if (method === 'textDocument/rangeFormatting') (from = l.offset(p.range.start)), (to = l.offset(p.range.end));
+        else {
+          // The line just finished: after Enter, the one above.
+          const line = p.ch === '\n' ? Math.max(0, p.position.line - 1) : p.position.line;
+          from = to = l.offset({ line, character: 0 });
+        }
+        const r = rangeFormatEdits(doc.text, from, to, this.formatStyle(p.options));
+        if ('error' in r) {
+          if (method === 'textDocument/rangeFormatting') this.notify('window/showMessage', { type: 2, message: `Nucleus: ${r.error}` });
+          return [];
+        }
+        return r.edits.map((e) => ({ range: l.range(e), newText: e.text }));
+      }
       case 'textDocument/formatting': {
         if (!doc || !this.isHandler(doc)) return null;
-        const r = formatEdits(doc.text, { insertSpaces: p.options?.insertSpaces !== false, tabSize: typeof p.options?.tabSize === 'number' ? p.options.tabSize : 4 });
+        const r = formatEdits(doc.text, this.formatStyle(p.options));
         if ('error' in r) {
           // Refuses rather than risk changing what the code does: say why, change nothing.
           this.notify('window/showMessage', { type: 2, message: `Nucleus: ${r.error}` });
