@@ -27,6 +27,7 @@
   ],
   "main": "./dist/extension.js",
   "bin": {
+    "ncdev": "./dist/cli.js",
     "nucleus": "./dist/cli.js",
     "nucleus-lint": "./dist/cli.js"
   },
@@ -585,6 +586,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "node scripts/build.mjs --tests && node --test dist-test/*.test.js",
     "package": "vsce package --no-dependencies",
+    "standalone": "node scripts/build.mjs && sh npp-plugin/build.sh && node scripts/sea.mjs --require-plugin",
     "vscode:prepublish": "node scripts/build.mjs --production"
   },
   "devDependencies": {
@@ -594,6 +596,7 @@
     "acorn": "^8.19.0",
     "acorn-walk": "^8.3.5",
     "esbuild": "^0.28.2",
+    "postject": "1.0.0-alpha.6",
     "typescript": "^5.9.3"
   },
   "icon": "media/icon.png",
