@@ -237,3 +237,81 @@ export function valueContextAt(text: string, offset: number): ValueContext | und
   if (!values.length) return undefined;
   return { owner, name, member, partial: m[2], partialStart: offset - m[2].length, values };
 }
+
+/** A value in the code that can be picked from a list: `Game.SymlinkGame = |false|;` (testbench#22). */
+export interface ValuePick {
+  owner: string;
+  name: string;
+  member: Member;
+  /** The value's span in the text, and its text. */
+  start: number;
+  end: number;
+  current: string;
+  kind: 'boolean' | 'enum' | 'number';
+  /** The choices, in order; `current` marks the one that's there now, `isDefault` Nucleus' default. */
+  options: { value: string; label: string; detail?: string; current?: boolean; isDefault?: boolean }[];
+  /** Set when the value has the wrong type, in plain words ("text, not true or false"). */
+  wrong?: string;
+}
+
+const BOOL_WRONG: Record<string, string> = { string: 'text in quotes, not true or false', number: 'a number, not true or false' };
+const literalKind = (v: string): 'string' | 'number' | 'boolean' | 'enum' | undefined =>
+  /^(["'])(?:[^\\]|\\.)*\1$/.test(v) ? 'string'
+  : /^-?(\d+(\.\d+)?|0x[0-9a-f]+)$/i.test(v) ? 'number'
+  : v === 'true' || v === 'false' ? 'boolean'
+  : /^Nucleus\.\w+\.\w+$/.test(v) ? 'enum'
+  : undefined;
+
+/** Every pickable value in the text: assignments whose target is an option with true/false, enum or number values,
+ *  and whose value is a plain literal (anything computed is left alone). */
+export function valuePicks(text: string): ValuePick[] {
+  const out: ValuePick[] = [];
+  const re = /([\w$.\]\[]+)[ \t]*=[ \t]*([^;\n=]+?)[ \t]*(?=;|\n|$|\/\/)/g;
+  for (let m; (m = re.exec(text)); ) {
+    const before = text[m.index - 1];
+    if (before && /[\w$.=!<>]/.test(before)) continue;
+    const pick = pickFor(text, m.index + m[1].length, m.index + m[0].length - m[2].length, m[2]);
+    if (pick) out.push(pick);
+  }
+  return out;
+}
+
+/** The pickable value at (or touching) an offset, if any. */
+export function valuePickAt(text: string, offset: number): ValuePick | undefined {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const lineEnd = text.indexOf('\n', offset) < 0 ? text.length : text.indexOf('\n', offset);
+  return valuePicks(text.slice(0, lineEnd)).find((p) => p.start >= lineStart && offset >= p.start && offset <= p.end);
+}
+
+function pickFor(text: string, targetEnd: number, start: number, value: string): ValuePick | undefined {
+  const lit = literalKind(value);
+  if (!lit) return undefined;
+  const r = resolveAt(text, targetEnd);
+  if (!r || r.resolved.kind !== 'member') return undefined;
+  const { owner, name, member } = r.resolved;
+  if (member.kind === 'method' || member.readonly) return undefined;
+  const t = member.type ?? '';
+  const end = start + value.length;
+  const base = { owner, name, member, start, end, current: value };
+  const def = member.default?.replace(/^(\w+)\.(\w+)$/, 'Nucleus.$1.$2');
+  if (t === 'boolean') {
+    const options = ['true', 'false'].map((v) => ({ value: v, label: v, current: v === value, isDefault: def === v }));
+    return { ...base, kind: 'boolean', options, wrong: lit === 'boolean' ? undefined : BOOL_WRONG[lit] ?? 'not true or false' };
+  }
+  if (t.startsWith('enum:')) {
+    const e = t.slice(5);
+    const values = Object.entries(api.enums[e]?.values ?? {});
+    if (!values.length) return undefined;
+    const options = values.map(([v, n]) => {
+      const full = `Nucleus.${e}.${v}`;
+      return { value: full, label: v, detail: `= ${n}`, current: full === value, isDefault: def === full || member.default === v };
+    });
+    const known = options.some((o) => o.current);
+    return { ...base, kind: 'enum', options, wrong: known ? undefined : lit === 'enum' ? 'not one of this option\'s values' : `${lit === 'string' ? 'text in quotes' : lit === 'number' ? 'a number' : lit}, not one of this option's values` };
+  }
+  if (t === 'number') {
+    if (lit !== 'number') return lit === 'string' ? { ...base, kind: 'number', options: [], wrong: 'text in quotes, not a number' } : undefined;
+    return { ...base, kind: 'number', options: [] };
+  }
+  return undefined;
+}

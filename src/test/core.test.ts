@@ -109,3 +109,22 @@ test('valueContextAt: values for enum and boolean options, callbacks and Blocked
   assert.equal(at('Game.ProtoInput.BlockedMessages = |')?.values[0].value, '[0x0008, 0x02a1, 0x02a3];');
   assert.equal(at('Game.MaxPlayers = |'), undefined);
 });
+
+test('valuePicks: true/false, enum and number values, wrong types, computed values left alone', async () => {
+  const { valuePicks, valuePickAt } = await import('../core/complete');
+  const src = 'Game.SymlinkGame = false;\nGame.DPIHandling = Nucleus.DPIHandling.True;\nGame.MaxPlayers = 4;\nGame.KeepSymLinkOnExit = "true";\nGame.HandlerInterval = Context.Width;\nvar x = 3;\nif (a == true) {}\n';
+  const picks = valuePicks(src);
+  const by = (n: string) => picks.find((p) => p.name === n);
+  assert.equal(by('SymlinkGame')?.kind, 'boolean');
+  assert.deepEqual(by('SymlinkGame')?.options.map((o) => [o.value, !!o.current]), [['true', false], ['false', true]]);
+  assert.equal(by('DPIHandling')?.kind, 'enum');
+  assert.ok(by('DPIHandling')?.options.some((o) => o.current && o.value === 'Nucleus.DPIHandling.True'));
+  assert.equal(by('MaxPlayers')?.kind, 'number');
+  assert.equal(by('KeepSymLinkOnExit')?.wrong, 'text in quotes, not true or false');
+  assert.equal(by('HandlerInterval'), undefined, 'computed values are left alone');
+  assert.equal(picks.length, 4, 'no picks for plain variables or comparisons');
+  const at = valuePickAt(src, src.indexOf('false') + 2);
+  assert.equal(at?.name, 'SymlinkGame');
+  assert.equal(src.slice(at!.start, at!.end), 'false');
+  assert.equal(valuePickAt(src, 3), undefined, 'not on the option name');
+});
