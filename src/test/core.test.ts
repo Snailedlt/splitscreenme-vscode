@@ -128,3 +128,16 @@ test('valuePicks: true/false, enum and number values, wrong types, computed valu
   assert.equal(src.slice(at!.start, at!.end), 'false');
   assert.equal(valuePickAt(src, 3), undefined, 'not on the option name');
 });
+
+test('documentSymbols: settings by object, callbacks with what they set, own names; code that does not parse', async () => {
+  const { documentSymbols } = await import('../core/features');
+  const src = 'Game.GameName = "Demo";\nGame.SymlinkGame = true;\nGame.ProtoInput.InjectStartup = true;\nvar width = 960;\nfunction helper(x) { Context.Width = x; }\nGame.Play = function () {\n  Context.StartArguments = "-w " + width;\n  var args = 1;\n};\n';
+  const s = documentSymbols(src);
+  assert.deepEqual(s.map((x) => `${x.kind}:${x.name}`), ['namespace:Game', 'namespace:Game.ProtoInput', 'variable:width', 'function:helper', 'function:Game.Play']);
+  assert.deepEqual(s[0].children!.map((c) => `${c.name} ${c.detail}`), ['GameName = "Demo"', 'SymlinkGame = true']);
+  assert.equal(src.slice(s[0].children![0].selection.start, s[0].children![0].selection.end), 'Game.GameName');
+  assert.deepEqual(s[4].children!.map((c) => c.name), ['Context.StartArguments']);
+  assert.deepEqual(s[3].children!.map((c) => c.name), ['Context.Width']);
+  const broken = documentSymbols('Game.GameName = "Demo";\nGame.Play = function () {\n  Context.\n');
+  assert.deepEqual(broken.map((x) => `${x.kind}:${x.name}`), ['property:Game.GameName', 'function:Game.Play']);
+});

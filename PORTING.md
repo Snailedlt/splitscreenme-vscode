@@ -37,6 +37,8 @@ Positions in core are offsets into the text, counted in UTF-16 code units (what 
 | Value suggestions after `=` (enum values, `true`/`false`, `function () {}`) | `completionsAt()` (via `valueContextAt()`) | same | same |
 | Signature help (overloads, active parameter) | `signatureHelpAt()` | SignatureHelpProvider | `textDocument/signatureHelp` |
 | Format Document | `formatEdits()` (`core/format.ts`) | DocumentFormattingEditProvider | `textDocument/formatting`; a refusal is a `window/showMessage` warning and no edits |
+| Outline, breadcrumbs, Go to Symbol (settings by object, callbacks with what they set, the handler's own names) | `documentSymbols()` | DocumentSymbolProvider | `textDocument/documentSymbol` (hierarchical) |
+| Package checks (the files in `<Name>/`) | `checkPackage()` (`core/pkgcheck.ts`) + `packageFilesFor()` (`src/pkgfiles.ts`) | Problems on the handler and on those files | the handler's own problems in `publishDiagnostics` |
 | Window-message names after `0x0008` | `inlayHints()` | InlayHintsProvider | `textDocument/inlayHint` |
 | Try it (what each player gets) | `simulateIsolated()` (`src/sandbox.ts`) + `formatSimulation()` (`src/simformat.ts`) | **Nucleus: Try It** panel | `workspace/executeCommand` `nucleus.tryIt`, returns the text |
 | Is this file a handler? | `isHandlerFile()` | `isHandler()` | same, plus the `handlerGlobs` setting |

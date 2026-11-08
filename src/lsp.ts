@@ -6,7 +6,7 @@
 // (src/sandbox.ts). Logs go to stderr; stdout carries only protocol messages.
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
-import { CodeActionEntry, CompletionEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
@@ -213,6 +213,7 @@ export class Server {
             positionEncoding: 'utf-16',
             textDocumentSync: { openClose: true, change: 1 /* full */ },
             hoverProvider: true,
+            documentSymbolProvider: true,
             completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ','], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
@@ -265,6 +266,13 @@ export class Server {
       case 'textDocument/didSave':
         return undefined;
 
+      case 'textDocument/documentSymbol': {
+        if (!this.featuresOn(doc)) return [];
+        const l = linesOf(doc);
+        const KIND = { namespace: 3, property: 7, function: 12, variable: 13 } as const; // LSP SymbolKind
+        const conv = (s: SymbolEntry): unknown => ({ name: s.name, detail: s.detail, kind: KIND[s.kind], range: l.range(s.range), selectionRange: l.range(s.selection), children: (s.children ?? []).map(conv) });
+        return documentSymbols(doc.text).map(conv);
+      }
       case 'textDocument/hover': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);

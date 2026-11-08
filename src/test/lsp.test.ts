@@ -140,6 +140,12 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   assert.deepEqual(hints.map((h: any) => h.label), ['WM_KILLFOCUS']);
   assert.deepEqual(hints[0].position, { line: 6, character: 41 });
 
+  const symbols = (await request('textDocument/documentSymbol', { textDocument: doc })).result;
+  // (This handler is half-typed, so it gets the line-by-line outline.)
+  assert.ok(symbols.some((s: any) => s.name === 'Game.Hook.ForceFocus' && s.kind === 7 && s.detail === '= true'), 'the settings');
+  assert.ok(symbols.some((s: any) => s.name === 'Game.Play' && s.kind === 12), 'the callbacks');
+  assert.ok(symbols.every((s: any) => s.range && s.selectionRange));
+
   // A request on a file that isn't open, or garbage params, doesn't crash the server.
   assert.equal((await request('textDocument/hover', { textDocument: { uri: 'file:///nope.js' }, position: { line: 0, character: 0 } })).result, null);
   assert.ok((await request('textDocument/hover', {})).result === null);

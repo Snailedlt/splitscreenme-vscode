@@ -3,7 +3,7 @@ import { registerWhatsNew } from './whatsnew';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
-import { CodeActionEntry, CompletionKind, completionsAt, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 import { checkPackage, type PkgProblem } from './core/pkgcheck';
@@ -142,6 +142,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ','),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
+    // Outline, breadcrumbs and Go to Symbol (Ctrl+Shift+O): the settings by object, the callbacks, the handler's own names.
+    vscode.languages.registerDocumentSymbolProvider(SELECTOR, { provideDocumentSymbols: (d) => (featuresOn(d) ? documentSymbols(d.getText()).map((s) => toVsSymbol(d, s)) : []) }, { label: 'Nucleus handler' }),
     // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
     vscode.languages.registerInlayHintsProvider(SELECTOR, {
       provideInlayHints: (d) =>
@@ -202,6 +204,13 @@ function offsetToPosition(text: string) {
     }
     return new vscode.Position(lo, offset - starts[lo]);
   };
+}
+
+const SYMBOL_KIND: Record<SymbolEntry['kind'], vscode.SymbolKind> = { namespace: vscode.SymbolKind.Namespace, property: vscode.SymbolKind.Property, function: vscode.SymbolKind.Function, variable: vscode.SymbolKind.Variable };
+function toVsSymbol(doc: vscode.TextDocument, s: SymbolEntry): vscode.DocumentSymbol {
+  const sym = new vscode.DocumentSymbol(s.name, s.detail ?? '', SYMBOL_KIND[s.kind], new vscode.Range(doc.positionAt(s.range.start), doc.positionAt(s.range.end)), new vscode.Range(doc.positionAt(s.selection.start), doc.positionAt(s.selection.end)));
+  sym.children = (s.children ?? []).map((c) => toVsSymbol(doc, c));
+  return sym;
 }
 
 /** A package check's problem as a VS Code diagnostic (no quick fixes: moving files is up to the author). */
