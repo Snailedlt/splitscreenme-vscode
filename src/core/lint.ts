@@ -1,5 +1,6 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
+import { toGuid } from './templates';
 import { blockTarget, hex, wmName } from './wm';
 import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
@@ -1313,14 +1314,33 @@ class Analyzer {
     }
     const firstGame = [...this.topAssignments.values()][0]?.[0];
     const at = firstGame ? lineStart(this.text, firstGame.start) : 0;
-    const lines = missing.map((k) => `Game.${k} = "${k === 'ExecutableName' ? 'Game.exe' : 'My Game'}";`).join('\n') + '\n';
+    // The values: from what the handler already says where it can (GUID from GameName, GameName from GUID), else
+    // placeholders to fill in.
+    const literal = (k: string) => {
+      const v = this.topAssignments.get(`Game.${k}`)?.[0]?.right;
+      return v?.type === 'Literal' && typeof v.value === 'string' && v.value.trim() ? (v.value as string) : undefined;
+    };
+    const known: Record<string, string | undefined> = {
+      GUID: literal('GameName') !== undefined ? toGuid(literal('GameName')!) : undefined,
+      GameName: literal('GUID'),
+    };
+    const value = (k: string) => known[k] ?? (k === 'ExecutableName' ? 'Game.exe' : 'My Game');
+    const placeholders = missing.filter((k) => known[k] === undefined);
+    const lines = missing.map((k) => `Game.${k} = ${JSON.stringify(value(k))};`).join('\n') + '\n';
+    const why: Record<string, string> = { GUID: 'the folder name Nucleus keeps the game\'s files under', GameName: 'the name players see in Nucleus', ExecutableName: 'the .exe Nucleus starts and finds the game by' };
     this.report({
       rule: 'missing-required',
-      message: `Missing required option${missing.length > 1 ? 's' : ''}: ${missing.map((k) => `Game.${k}`).join(', ')}. Nucleus cannot load the handler without ${missing.length > 1 ? 'them' : 'it'}.`,
+      message: `Missing required option${missing.length > 1 ? 's' : ''}: ${missing.map((k) => `\`Game.${k}\` (${why[k]})`).join(', ')}. Nucleus cannot load the handler without ${missing.length > 1 ? 'them' : 'it'}.`,
       start: at,
       end: lineEnd(this.text, at),
-      // Not part of "Fix all": it inserts placeholder values only the author can fill in.
-      fixes: [{ title: `Add ${missing.map((k) => `Game.${k}`).join(', ')}`, edits: [{ start: at, end: at, text: lines }] }],
+      fixes: [
+        {
+          title: `Add ${missing.map((k) => `Game.${k} = ${JSON.stringify(value(k))}`).join(', ')}${placeholders.length ? ' (then fill in the real value)' : ''}`,
+          edits: [{ start: at, end: at, text: lines }],
+          // In "Fix all" only when every value comes from the handler itself; placeholders need the author.
+          preferred: !placeholders.length,
+        },
+      ],
     });
   }
 
@@ -1408,7 +1428,8 @@ class Analyzer {
         end: le,
       });
       reported.add(crashed);
-    } else if (!crashed && this.gameAssignedAnywhere.size && !scan.ExecutableName) {
+    } else if (!crashed && this.gameAssignedAnywhere.size && !scan.ExecutableName && (scan.matched.length === 2 || this.gameAssignedAnywhere.has('Game.ExecutableName'))) {
+      // (Not set at all: missing-required says so, with its fix; this would be the same problem twice.)
       this.report({
         rule: 'hub-install-parse',
         severity: 'error',

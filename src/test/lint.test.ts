@@ -702,3 +702,21 @@ test('Context.Options["key"]: a key no Game.AddOption adds (a typo), with a fix;
   const none = `${HEADER}Game.Play = function () {\n  var a = Context.Options["fps"];\n};\n`;
   assert.match(only(none, 'unknown-member')[0].message, /Add the option with/);
 });
+
+test('missing required options: explained, the fix uses what the handler already says, one problem for one cause', () => {
+  const both = lint('Game.GameName = "Halo: Reach";\nGame.ExecutableName = "reach.exe";\n');
+  const m = both.filter((d) => d.rule === 'missing-required');
+  assert.equal(m.length, 1);
+  assert.match(m[0].message, /`Game\.GUID` \(the folder name/);
+  assert.equal(m[0].fixes?.[0].edits[0].text, 'Game.GUID = "Halo Reach";\n');
+  assert.equal(m[0].fixes?.[0].preferred, true, 'derived from GameName: safe for Fix all');
+  const none = lint('Game.MaxPlayers = 4;\n');
+  const all = none.find((d) => d.rule === 'missing-required')!;
+  assert.match(all.fixes![0].title, /then fill in the real value/);
+  assert.notEqual(all.fixes![0].preferred, true, 'placeholders: not in Fix all');
+  assert.ok(!none.some((d) => d.rule === 'hub-install-parse'), 'a missing ExecutableName is reported once');
+  const nested = lint('Game.GUID = "A";\nGame.GameName = "A";\nGame.Play = function () {\n  Game.ExecutableName = "a.exe";\n};\n');
+  assert.deepEqual(nested.filter((d) => d.severity === 'error').map((d) => d.rule), ['missing-required'], 'set only inside Game.Play (too late): reported once');
+  const indented = lint('Game.GUID = "A";\nGame.GameName = "A";\n  Game.ExecutableName = "a.exe";\n');
+  assert.ok(indented.some((d) => d.rule === 'hub-install-parse'), 'set, but indented: the Hub install still fails');
+});
