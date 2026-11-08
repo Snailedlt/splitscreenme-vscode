@@ -5,7 +5,7 @@ Thanks for helping. These tools are for people who write Nucleus Co-op handlers,
 ## Install
 
 - **VS Code extension**: download the `.vsix` from the [latest release](https://github.com/Snailedlt/splitscreenme-vscode/releases), then in VS Code run **Extensions: Install from VSIX…**. Open your handlers folder; any handler `.js` gets checking, completion and hover docs.
-- **Workbench** (nothing to install): https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=testing-md
+- **Workbench** (nothing to install): https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-testing-md
 - **Claude Code skill** (optional): `/plugin marketplace add Snailedlt/splitscreenme-vscode`, then `/plugin install nucleus-coop@splitscreenme`.
 
 ## What to try
@@ -22,7 +22,7 @@ Thanks for helping. These tools are for people who write Nucleus Co-op handlers,
 - Try it saying something Nucleus doesn't do.
 - Anything confusing, slow or missing.
 
-Short intro to share: https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=testing-md
+Short intro to share: https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=vscode-testing-md
 
 Report it with the [tester feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml). A workbench share link (**Copy link**) is the easiest way to include the handler.
 
