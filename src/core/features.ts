@@ -10,8 +10,9 @@ import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severit
 import { fixAll } from './fix';
 import { formatHandler } from './format';
 import { parseLikeJint } from './jsparse';
-import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, visibleNames } from './ownsymbols';
+import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, ownReturnTypes, parseTolerant, visibleNames } from './ownsymbols';
 import { innerCallFrame } from './complete';
+import { SNIPPETS } from './snippets';
 import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
@@ -80,6 +81,7 @@ export function hoverAt(text: string, offset: number, opts: FeatureOptions = {})
   const res = r.resolved;
   switch (res.kind) {
     case 'member': {
+      if (res.member.own) break; // the handler's own function: below
       let md = memberMarkdown(res.owner, res.name, res.member);
       // Context.Options: the keys this handler adds.
       if (res.owner === 'Context' && res.name === 'Options') {
@@ -122,7 +124,10 @@ function ownHover(text: string, offset: number): HoverInfo | undefined {
   const n = ownNameAt(text, offset, text.slice(s, e));
   if (!n) return undefined;
   const line = text.slice(0, n.start).split('\n').length;
-  return { markdown: '```js\n' + n.signature + '\n```' + (n.doc ? '\n\n' + n.doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
+  const returns = n.kind === 'function' ? ownReturnTypes(text).get(n.name) : undefined;
+  const { text: doc, params } = splitJsDoc(n.doc);
+  const ps = Object.entries(params).map(([k, v]) => `- \`${k}\`: ${v}`).join('\n');
+  return { markdown: '```js\n' + n.signature + (returns ? `: ${returns}` : '') + '\n```' + (doc ? '\n\n' + doc.replace(/^\s*@returns?\s+(\{[^}]*\}\s*)?/m, 'Returns ') : '') + (ps ? '\n\n' + ps : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +251,11 @@ export function completionsAt(text: string, offset: number, opts: FeatureOptions
     });
   }
   const ctx = memberContextAt(text, offset);
-  if (!ctx) return opts.own === false ? globalCompletions(text, offset) : identifierCompletions(text, offset, !!opts.explicit);
+  if (!ctx) {
+    const names = opts.own === false ? globalCompletions(text, offset) : identifierCompletions(text, offset, !!opts.explicit);
+    const snips = snippetCompletions(text, offset, !!opts.explicit);
+    return names || snips.length ? [...(names ?? []), ...snips] : undefined;
+  }
 
   const line = lineBounds(text, offset);
   const before = text.slice(line.start, offset - ctx.partial.length);
@@ -345,6 +354,41 @@ function identifierCompletions(text: string, offset: number, explicit: boolean):
   return out;
 }
 
+/** Handler snippets (core/snippets.ts), where a statement starts and part of a name is typed (or on request). */
+function snippetCompletions(text: string, offset: number, explicit: boolean): CompletionEntry[] {
+  let s = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  const word = text.slice(s, offset).toLowerCase();
+  if ((!word && !explicit) || !/^[ \t]*$/.test(text.slice(text.lastIndexOf('\n', s - 1) + 1, s)) || codeStateAt(text, s) !== 'code') return [];
+  const program = parseTolerant(text, offset);
+  let inFunction = false;
+  if (program) {
+    const walk = (n: any) => {
+      if ((n.type === 'FunctionExpression' || n.type === 'FunctionDeclaration') && n.body.start < offset && offset < n.body.end) inFunction = true;
+      for (const k of Object.keys(n)) {
+        const v = n[k];
+        if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === 'string' && c.start <= offset && offset <= c.end && walk(c));
+        else if (v && typeof v.type === 'string' && v.start <= offset && offset <= v.end) walk(v);
+      }
+    };
+    walk(program);
+  }
+  let e = offset;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  return SNIPPETS.filter((x) => (x.where === 'callback') === inFunction && (!word || x.prefix.startsWith(word) || x.label.toLowerCase().includes(word))).map((x) => ({
+    label: x.prefix,
+    labelDetail: x.label,
+    kind: 'snippet' as const,
+    detail: x.label,
+    documentation: x.doc + '\n\n```js\n' + x.body.replace(/\$\{\d+\|([^,|]*)[^}]*\}/g, '$1').replace(/\$\{\d+:([^}]*)\}/g, '$1').replace(/\$\d/g, '').replace(/\\([\\$}])/g, '$1') + '\n```',
+    insertText: x.body,
+    snippet: true,
+    filterText: `${x.prefix} ${x.label}`,
+    range: { start: s, end: e },
+    sortText: `4_${x.prefix}`,
+  }));
+}
+
 function ownerOf(base: Resolved): string {
   if (base.kind === 'object') return base.type;
   if (base.kind === 'member' && base.member.ref) return base.member.ref;
@@ -361,6 +405,8 @@ export interface SignatureEntry {
   documentation?: string;
   /** Each parameter's label, a substring of `label`. */
   parameters: string[];
+  /** Each parameter's docs (Markdown), where there are any. */
+  parameterDocs?: (string | undefined)[];
 }
 export interface SignatureHelpInfo {
   signatures: SignatureEntry[];
@@ -371,14 +417,15 @@ export interface SignatureHelpInfo {
 /** The overloads of the method (or Nucleus class constructor) whose call the cursor is in. */
 export function signatureHelpAt(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
   const c = callContextAt(text, offset);
-  if (!c) return opts.own === false ? undefined : ownSignatureHelp(text, offset);
+  if (!c || (c.callee.kind === 'member' && c.callee.member.own)) return opts.own === false ? undefined : ownSignatureHelp(text, offset);
   const signatures: SignatureEntry[] = [];
   let activeSignature = 0;
   if (c.callee.kind === 'member' && c.callee.member.kind === 'method') {
     const { owner, name, member } = c.callee;
     for (const o of member.overloads ?? []) {
       const params = o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`);
-      signatures.push({ label: `${ownerLabel(owner) ? `${ownerLabel(owner)}.` : ''}${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params });
+      const docs = o.params.map((p) => (p.doc ? p.doc + (p.docBy === 'claude' ? ' _(AI-written)_' : '') : undefined));
+      signatures.push({ label: `${ownerLabel(owner) ? `${ownerLabel(owner)}.` : ''}${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params, ...(docs.some(Boolean) ? { parameterDocs: docs } : {}) });
     }
     // Prefer the first overload that has enough parameters for the cursor position.
     const idx = (member.overloads ?? []).findIndex((o) => o.params.length > c.activeParameter || o.params.some((p) => p.rest));
@@ -403,7 +450,25 @@ function ownSignatureHelp(text: string, offset: number): SignatureHelpInfo | und
   if (text[d - 1] === '.' || /\bfunction\s*$/.test(text.slice(Math.max(0, d - 20), d))) return undefined;
   const n = ownNameAt(text, offset, m[1]);
   if (!n || n.kind !== 'function' || !n.params) return undefined;
-  return { signatures: [{ label: `${n.name}(${n.params.join(', ')})`, documentation: n.doc, parameters: n.params }], activeSignature: 0, activeParameter: frame.commas };
+  const { text: doc, params } = splitJsDoc(n.doc);
+  const docs = n.params.map((p) => params[p]);
+  return { signatures: [{ label: `${n.name}(${n.params.join(', ')})`, documentation: doc, parameters: n.params, ...(docs.some(Boolean) ? { parameterDocs: docs } : {}) }], activeSignature: 0, activeParameter: frame.commas };
+}
+
+/** `@param name what it is` lines (also `@param {type} name - …`) out of a comment, and the rest. */
+export function splitJsDoc(doc: string | undefined): { text?: string; params: Record<string, string> } {
+  const params: Record<string, string> = {};
+  if (!doc) return { text: doc, params };
+  const rest = doc
+    .split('\n')
+    .filter((l) => {
+      const m = /^\s*@param\s+(?:\{[^}]*\}\s*)?\[?([\w$]+)[^\s\]]*\]?\s*(?:-\s*)?(.*)$/.exec(l);
+      if (m) params[m[1]] = m[2].trim();
+      return !m;
+    })
+    .join('\n')
+    .trim();
+  return { text: rest || undefined, params };
 }
 
 // ---------------------------------------------------------------------------

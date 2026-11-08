@@ -459,27 +459,37 @@
         {
          "name": "name",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Title of the option shown to the player in Nucleus' options list.",
+         "docBy": "claude"
         },
         {
          "name": "desc",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Description shown under the title.",
+         "docBy": "claude"
         },
         {
          "name": "key",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Name the handler reads the chosen value with: Context.Options[key].",
+         "docBy": "claude"
         },
         {
          "name": "value",
          "type": "any",
-         "csType": "object"
+         "csType": "object",
+         "doc": "Default value or choices: an array of choices shows a drop-down (first item preselected); an empty array shows a text box.",
+         "docBy": "claude"
         },
         {
          "name": "defaultValue",
          "type": "any",
-         "csType": "object"
+         "csType": "object",
+         "doc": "Stored on the option, but no Nucleus code reads it; a drop-down starts on the first item of value.",
+         "docBy": "claude"
         }
        ]
       },
@@ -489,22 +499,30 @@
         {
          "name": "name",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Title of the option shown to the player in Nucleus' options list.",
+         "docBy": "claude"
         },
         {
          "name": "desc",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Description shown under the title.",
+         "docBy": "claude"
         },
         {
          "name": "key",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Name the handler reads the chosen value with: Context.Options[key].",
+         "docBy": "claude"
         },
         {
          "name": "value",
          "type": "any",
-         "csType": "object"
+         "csType": "object",
+         "doc": "Default value or choices: an array of choices shows a drop-down (first item preselected); an empty array shows a text box.",
+         "docBy": "claude"
         }
        ]
       }
@@ -5025,7 +5043,9 @@
         {
          "name": "folder",
          "type": "Nucleus.Folder | number | boolean",
-         "csType": "Folder"
+         "csType": "Folder",
+         "doc": "Nucleus.Folder.InstancedGameFolder (this instance's root folder once it is set up), MainGameFolder (the folder holding the game's exe) or Documents (the user's Documents folder).",
+         "docBy": "claude"
         }
        ]
       }
@@ -5431,12 +5451,16 @@
         {
          "name": "source",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the folder to copy, with all its subfolders.",
+         "docBy": "claude"
         },
         {
          "name": "destination",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the target folder, created if missing; files already there are not overwritten (copy errors are ignored).",
+         "docBy": "claude"
         }
        ]
       }
@@ -5526,12 +5550,16 @@
         {
          "name": "filePaths",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of full file paths; each existing file is copied to <name>_NUCLEUS_BACKUP<ext> in the same folder, missing ones are logged.",
+         "docBy": "claude"
         },
         {
          "name": "overwrite",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true replaces an existing _NUCLEUS_BACKUP copy; false and the copy already exists throws.",
+         "docBy": "claude"
         }
        ]
       },
@@ -5541,12 +5569,16 @@
         {
          "name": "filePath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of one file to copy to <name>_NUCLEUS_BACKUP<ext> beside it; this overload only acts for the first player.",
+         "docBy": "claude"
         },
         {
          "name": "overwrite",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true replaces an existing _NUCLEUS_BACKUP copy; false and the copy already exists throws.",
+         "docBy": "claude"
         }
        ]
       }
@@ -5564,7 +5596,9 @@
         {
          "name": "DestinationPath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path to copy the handler's own folder (handlers\\<handler file name>\\) into, with subfolders; created if missing, existing files overwritten.",
+         "docBy": "claude"
         }
        ]
       }
@@ -5743,17 +5777,23 @@
         {
          "name": "filePaths",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of full file paths. Plain paths run for the first player only; prefix \"N|\" (player number from 1) or \"all|\" for every player.",
+         "docBy": "claude"
         },
         {
          "name": "changeWorkingDir",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file in the AdditionalFiles folder of Nucleus' content folder; false in the file's own folder.",
+         "docBy": "claude"
         },
         {
          "name": "secondsToPauseInbetween",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Seconds to wait between files (not after the last); in the overloads with promptBetween, only when promptBetween is true.",
+         "docBy": "claude"
         }
        ]
       },
@@ -5763,27 +5803,37 @@
         {
          "name": "filePaths",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of full file paths. Plain paths run for the first player only; prefix \"N|\" (player number from 1) or \"all|\" for every player.",
+         "docBy": "claude"
         },
         {
          "name": "changeWorkingDir",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file in the AdditionalFiles folder of Nucleus' content folder; false in the file's own folder.",
+         "docBy": "claude"
         },
         {
          "name": "secondsToPauseInbetween",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Seconds to wait between files (not after the last); in the overloads with promptBetween, only when promptBetween is true.",
+         "docBy": "claude"
         },
         {
          "name": "runAsAdmin",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file as administrator (Windows asks for elevation).",
+         "docBy": "claude"
         },
         {
          "name": "promptBetween",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true shows a prompt after each file that waits for OK before going on.",
+         "docBy": "claude"
         }
        ]
       },
@@ -5793,42 +5843,58 @@
         {
          "name": "filePaths",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of full file paths. Plain paths run for the first player only; prefix \"N|\" (player number from 1) or \"all|\" for every player.",
+         "docBy": "claude"
         },
         {
          "name": "changeWorkingDir",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file in the AdditionalFiles folder of Nucleus' content folder; false in the file's own folder.",
+         "docBy": "claude"
         },
         {
          "name": "customText",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Text shown in the prompts.",
+         "docBy": "claude"
         },
         {
          "name": "secondsToPauseInbetween",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Seconds to wait between files (not after the last); in the overloads with promptBetween, only when promptBetween is true.",
+         "docBy": "claude"
         },
         {
          "name": "showFilePath",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true adds the file's path to the prompt text.",
+         "docBy": "claude"
         },
         {
          "name": "runAsAdmin",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file as administrator (Windows asks for elevation).",
+         "docBy": "claude"
         },
         {
          "name": "promptBetween",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true shows a prompt after each file that waits for OK before going on.",
+         "docBy": "claude"
         },
         {
          "name": "confirm",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true starts each file only after its prompt is confirmed; files then only run when promptBetween is also true.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6068,13 +6134,17 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the file to write; an existing file is deleted first, so its old content is lost.",
+         "docBy": "claude"
         },
         {
          "name": "lines",
          "type": "string | number | boolean",
          "csType": "string[]",
-         "rest": true
+         "rest": true,
+         "doc": "The text: one or more lines, as separate arguments or an array; each becomes a line, with no line break after the last.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6091,17 +6161,23 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the text file to search; it must exist (it is read without a check). Returns the first matching line number, counting from 1, or -1.",
+         "docBy": "claude"
         },
         {
          "name": "searchValue",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Text to look for, case-sensitive.",
+         "docBy": "claude"
         },
         {
          "name": "type",
          "type": "Nucleus.SearchType | number | boolean",
-         "csType": "SearchType"
+         "csType": "SearchType",
+         "doc": "How a line must match: Nucleus.SearchType.Contains, Nucleus.SearchType.Full (the whole line equals searchValue) or Nucleus.SearchType.StartsWith.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6205,12 +6281,16 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+         "docBy": "claude"
         },
         {
          "name": "newLines",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of \"N|new text\" strings: N is the line number, counting from 1; out-of-range lines are skipped and text after a second | is dropped.",
+         "docBy": "claude"
         }
        ]
       },
@@ -6220,17 +6300,23 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+         "docBy": "claude"
         },
         {
          "name": "newLines",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of \"N|new text\" strings: N is the line number, counting from 1; out-of-range lines are skipped and text after a second | is dropped.",
+         "docBy": "claude"
         },
         {
          "name": "encoder",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Encoding name for .NET Encoding.GetEncoding, e.g. \"utf-8\" or \"utf-16\", used to read and write; without it .NET's default (UTF-8) is used.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6247,12 +6333,16 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+         "docBy": "claude"
         },
         {
          "name": "newLines",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of \"N|regex|replacement\" strings: N is the line number from 1, every regex match on that line is replaced (.NET Regex.Replace); none may contain |.",
+         "docBy": "claude"
         }
        ]
       },
@@ -6262,17 +6352,23 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+         "docBy": "claude"
         },
         {
          "name": "newLines",
          "type": "string[]",
-         "csType": "string[]"
+         "csType": "string[]",
+         "doc": "Array of \"N|regex|replacement\" strings: N is the line number from 1, every regex match on that line is replaced (.NET Regex.Replace); none may contain |.",
+         "docBy": "claude"
         },
         {
          "name": "encoder",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Encoding name for .NET Encoding.GetEncoding, e.g. \"utf-8\" or \"utf-16\", used to read and write; without it .NET's default (UTF-8) is used.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6348,23 +6444,31 @@
         {
          "name": "installSavePath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the source file to read. For INI it is copied to saveFullPath first when the two paths differ (the copy fails if saveFullPath already exists).",
+         "docBy": "claude"
         },
         {
          "name": "saveFullPath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path where the edited file is written; may be the same as installSavePath to edit in place.",
+         "docBy": "claude"
         },
         {
          "name": "type",
          "type": "Nucleus.SaveType | number | boolean",
-         "csType": "SaveType"
+         "csType": "SaveType",
+         "doc": "File format: Nucleus.SaveType.INI or Nucleus.SaveType.CFG (Source-engine style cfg); any other value throws.",
+         "docBy": "claude"
         },
         {
          "name": "info",
          "type": "Nucleus.SaveInfo",
          "csType": "SaveInfo[]",
-         "rest": true
+         "rest": true,
+         "doc": "One or more entries to set, new Nucleus.IniSaveInfo(section, key, value) for INI or new Nucleus.CfgSaveInfo(section, key, value) for CFG; other kinds are ignored.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6443,27 +6547,37 @@
         {
          "name": "originalFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the file to read.",
+         "docBy": "claude"
         },
         {
          "name": "patchedFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path the patched bytes are written to; may be the same as originalFile.",
+         "docBy": "claude"
         },
         {
          "name": "origPattern",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Bytes to find as a hex string, spaces allowed, e.g. \"8B 45 FC 89\"; no wildcards.",
+         "docBy": "claude"
         },
         {
          "name": "patchPattern",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Replacement bytes as a hex string, at least as long as origPattern, written over each match byte by byte.",
+         "docBy": "claude"
         },
         {
          "name": "patchall",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "With patchPattern: true patches every match fully, false only the first byte of each match. With insert: false stops after the first match.",
+         "docBy": "claude"
         }
        ]
       },
@@ -6473,32 +6587,44 @@
         {
          "name": "originalFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the file to read.",
+         "docBy": "claude"
         },
         {
          "name": "patchedFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path the patched bytes are written to; may be the same as originalFile.",
+         "docBy": "claude"
         },
         {
          "name": "origPattern",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Bytes to find as a hex string, spaces allowed, e.g. \"8B 45 FC 89\"; no wildcards.",
+         "docBy": "claude"
         },
         {
          "name": "insert",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Number whose low two bytes (little-endian) are written into a copy of origPattern at offset, which then replaces the match.",
+         "docBy": "claude"
         },
         {
          "name": "offset",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Position in origPattern, counting bytes from 1, where the two insert bytes go.",
+         "docBy": "claude"
         },
         {
          "name": "patchall",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "With patchPattern: true patches every match fully, false only the first byte of each match. With insert: false stops after the first match.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6516,22 +6642,30 @@
         {
          "name": "originalFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the file to read.",
+         "docBy": "claude"
         },
         {
          "name": "patchedFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path the patched bytes are written to; may be the same as originalFile. It is written even if nothing matched.",
+         "docBy": "claude"
         },
         {
          "name": "patchFind",
          "type": "number[]",
-         "csType": "byte[]"
+         "csType": "byte[]",
+         "doc": "Bytes to find, as an array of numbers 0-255; only the first match is patched (more matches are logged as not unique).",
+         "docBy": "claude"
         },
         {
          "name": "patchReplace",
          "type": "number[]",
-         "csType": "byte[]"
+         "csType": "byte[]",
+         "doc": "Bytes written over the match, starting at its first byte.",
+         "docBy": "claude"
         }
        ]
       },
@@ -6541,22 +6675,30 @@
         {
          "name": "originalFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the file to read.",
+         "docBy": "claude"
         },
         {
          "name": "patchedFile",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path the patched bytes are written to; may be the same as originalFile. It is written even if nothing matched.",
+         "docBy": "claude"
         },
         {
          "name": "spatchFind",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Text to find, converted to ASCII bytes; only the first match is patched.",
+         "docBy": "claude"
         },
         {
          "name": "spatchReplace",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Text written over the match as ASCII bytes, starting at its first byte.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6574,22 +6716,30 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the XML file; %VARIABLES% are expanded. The file is saved in place.",
+         "docBy": "claude"
         },
         {
          "name": "xpath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "XPath selecting the element(s) whose attribute to change, e.g. \"//Graphics\"; every match is changed.",
+         "docBy": "claude"
         },
         {
          "name": "attributeName",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Name of an existing attribute on every matched element; a match without it throws.",
+         "docBy": "claude"
         },
         {
          "name": "attributeValue",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "New value for the attribute.",
+         "docBy": "claude"
         }
        ]
       }
@@ -6631,17 +6781,23 @@
         {
          "name": "path",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Full path of the XML file; %VARIABLES% are expanded. The file is saved in place.",
+         "docBy": "claude"
         },
         {
          "name": "xpath",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "XPath selecting the element(s) to change, e.g. \"//Settings/Width\"; every match is changed.",
+         "docBy": "claude"
         },
         {
          "name": "innerTextValue",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "New text content for each matched element (replaces everything inside it).",
+         "docBy": "claude"
         }
        ]
       }
@@ -6765,27 +6921,37 @@
         {
          "name": "baseKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Registry root as text: \"HKEY_CURRENT_USER\", \"HKEY_LOCAL_MACHINE\" or \"HKEY_USERS\"; anything else and the call does nothing.",
+         "docBy": "claude"
         },
         {
          "name": "sKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Key path under the root, e.g. \"Software\\\\Company\\\\Game\"; created if missing. Before the first edit Nucleus exports it to utils\\backup\\<last part>.reg.",
+         "docBy": "claude"
         },
         {
          "name": "subKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Name of the value to set inside that key.",
+         "docBy": "claude"
         },
         {
          "name": "value",
          "type": "any",
-         "csType": "object"
+         "csType": "object",
+         "doc": "The data to write; null does nothing. For RegType.Binary the value's text is stored as UTF-8 bytes.",
+         "docBy": "claude"
         },
         {
          "name": "regType",
          "type": "Nucleus.RegType | number | boolean",
-         "csType": "RegType"
+         "csType": "RegType",
+         "doc": "Value type: Nucleus.RegType.String, DWord, QWord, Binary, ExpandString or MultiString (the names of .NET's RegistryValueKind).",
+         "docBy": "claude"
         }
        ]
       }
@@ -6802,27 +6968,37 @@
         {
          "name": "baseKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Registry root as text: \"HKEY_CURRENT_USER\", \"HKEY_LOCAL_MACHINE\" or \"HKEY_USERS\"; anything else and the call does nothing.",
+         "docBy": "claude"
         },
         {
          "name": "sKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Key path under the root, e.g. \"Software\\\\Company\\\\Game\"; created if missing. No .reg backup is made.",
+         "docBy": "claude"
         },
         {
          "name": "subKey",
          "type": "string | number | boolean",
-         "csType": "string"
+         "csType": "string",
+         "doc": "Name of the value to set inside that key.",
+         "docBy": "claude"
         },
         {
          "name": "value",
          "type": "any",
-         "csType": "object"
+         "csType": "object",
+         "doc": "The data to write; null does nothing. For RegType.Binary the value's text is stored as UTF-8 bytes.",
+         "docBy": "claude"
         },
         {
          "name": "regType",
          "type": "Nucleus.RegType | number | boolean",
-         "csType": "RegType"
+         "csType": "RegType",
+         "doc": "Value type: Nucleus.RegType.String, DWord, QWord, Binary, ExpandString or MultiString (the names of .NET's RegistryValueKind).",
+         "docBy": "claude"
         }
        ]
       }
@@ -7771,12 +7947,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle); Nucleus sets it when it injects Proto Input, otherwise it is 0.",
+         "docBy": "claude"
         },
         {
          "name": "hookID",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "Which hook to install: a ProtoInput.Values.*HookID value, e.g. ProtoInput.Values.GetCursorPosHookID or ProtoInput.Values.FocusHooksHookID.",
+         "docBy": "claude"
         }
        ]
       }
@@ -7794,12 +7974,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "hookID",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "Which hook to remove: a ProtoInput.Values.*HookID value, the same one passed to InstallHook.",
+         "docBy": "claude"
         }
        ]
       }
@@ -7817,12 +8001,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "filterID",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "Which filter to turn on: a ProtoInput.Values.*FilterID value, e.g. ProtoInput.Values.RawInputFilterID or ProtoInput.Values.WindowActivateFilterID.",
+         "docBy": "claude"
         }
        ]
       }
@@ -7840,12 +8028,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "filterID",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "Which filter to turn off: a ProtoInput.Values.*FilterID value, the same one passed to EnableMessageFilter.",
+         "docBy": "claude"
         }
        ]
       }
@@ -8016,37 +8208,51 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "milliseconds",
          "type": "number",
-         "csType": "int"
+         "csType": "int",
+         "doc": "Pause between rounds of fake focus messages, in milliseconds.",
+         "docBy": "claude"
         },
         {
          "name": "wm_activate",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true posts WM_ACTIVATE (click-activate) to the game window each round.",
+         "docBy": "claude"
         },
         {
          "name": "wm_activateapp",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true posts WM_ACTIVATEAPP (activated) to the game window each round.",
+         "docBy": "claude"
         },
         {
          "name": "wm_ncactivate",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true posts WM_NCACTIVATE (active title bar) to the game window each round.",
+         "docBy": "claude"
         },
         {
          "name": "wm_setfocus",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true posts WM_SETFOCUS to the game window each round.",
+         "docBy": "claude"
         },
         {
          "name": "wm_mouseactivate",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true posts WM_MOUSEACTIVATE to the game window each round.",
+         "docBy": "claude"
         }
        ]
       }
@@ -8064,7 +8270,9 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         }
        ]
       }
@@ -8082,12 +8290,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "enable",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true draws Proto Input's fake mouse cursor in that instance, false hides it.",
+         "docBy": "claude"
         }
        ]
       }
@@ -8716,12 +8928,16 @@
         {
          "name": "instanceHandle",
          "type": "number",
-         "csType": "uint"
+         "csType": "uint",
+         "doc": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+         "docBy": "claude"
         },
         {
          "name": "enable",
          "type": "boolean",
-         "csType": "bool"
+         "csType": "bool",
+         "doc": "true passes raw input from every device to the game, not just the player's; false lets Proto Input filter it per device.",
+         "docBy": "claude"
         }
        ]
       }

@@ -1154,6 +1154,25 @@ static void onSelected(HWND h, const char* label) {
   sptr_t start = item.hasEdit ? std::min(sciPos(h, item.editStart), caret) : wordStart(h, caret);
   sptr_t end = caret;
   while (end < sci(h, SCI_GETLENGTH) && isWord((unsigned char)sci(h, SCI_GETCHARAT, end)) && !item.hasEdit) end++;
+  // A snippet over several lines: each later line gets this line's indentation, and its tabs Notepad++'s indent.
+  if (item.text.find('\n') != std::string::npos) {
+    sptr_t line = sci(h, SCI_LINEFROMPOSITION, start);
+    std::string indent;
+    for (sptr_t p = sci(h, SCI_POSITIONFROMLINE, line); p < start; p++) {
+      int c = (int)sci(h, SCI_GETCHARAT, p);
+      if (c != ' ' && c != '\t') break;
+      indent += (char)c;
+    }
+    std::string tab = sci(h, SCI_GETUSETABS) ? "\t" : std::string((size_t)std::max<sptr_t>(1, sci(h, SCI_GETINDENT)), ' ');
+    std::string eol = sci(h, SCI_GETEOLMODE) == SC_EOL_CRLF ? "\r\n" : "\n";
+    std::string out;
+    for (char c : item.text) {
+      if (c == '\n') out += eol + indent;
+      else if (c == '\t') out += tab;
+      else out += c;
+    }
+    item.text = out;
+  }
   sci(h, SCI_SETTARGETRANGE, start, end);
   sci(h, SCI_REPLACETARGET, item.text.size(), (sptr_t)item.text.c_str());
   // A function: the cursor between its parentheses, with its parameters shown.
@@ -1184,13 +1203,17 @@ static void signatureHelp(HWND h) {
     }
     std::string label = sig["label"].str();
     std::string text = label;
+    int ap = r["activeParameter"].num(sig["activeParameter"].num(0));
+    const Value& p = sig["parameters"][(size_t)ap];
+    // The parameter being typed first (what to pass), then the method's own docs.
+    const Value& pd = p["documentation"];
+    std::string pds = plain(pd.isStr() ? pd.str() : pd["value"].str(), 3);
+    if (!pds.empty() && p["label"].isStr()) text += "\n" + p["label"].str() + ": " + pds;
     const Value& doc = sig["documentation"];
-    std::string ds = plain(doc.isStr() ? doc.str() : doc["value"].str(), 4);
+    std::string ds = plain(doc.isStr() ? doc.str() : doc["value"].str(), pds.empty() ? 4 : 2);
     if (!ds.empty()) text += "\n" + ds;
     sptr_t caret = sci(h, SCI_GETCURRENTPOS);
     showTip(h, caret, text, TIP_SIGNATURE);
-    int ap = r["activeParameter"].num(sig["activeParameter"].num(0));
-    const Value& p = sig["parameters"][(size_t)ap];
     if (p["label"].isStr()) {
       size_t at = label.find(p["label"].str(), label.find('('));
       if (at != std::string::npos) sci(h, SCI_CALLTIPSETHLT, at, at + p["label"].str().size());

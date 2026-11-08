@@ -18,27 +18,34 @@ export interface OwnName {
   end: number;
 }
 
-/** The program, parsed even while lines are being typed: the line being edited, then each line the parser stops
- *  at, is blanked out and the rest tried again (a few times at most). */
+/** The program, parsed even while lines are being typed: each line the parser stops at is blanked out and the rest
+ *  tried again (a few times at most); failing that, the same after blanking the line being edited. */
 export function parseTolerant(text: string, offset?: number): Node | undefined {
   const blank = (t: string, at: number) => {
-    const s = t.lastIndexOf('\n', at - 1) + 1;
+    let s = t.lastIndexOf('\n', at - 1) + 1;
     let e = t.indexOf('\n', at);
     if (e < 0) e = t.length;
+    // The parser often stops on the line after the broken one (`};` after `name().`): blank the last line with code.
+    while (t.slice(s, e).trim() === '' && s > 0) {
+      e = s - 1;
+      s = t.lastIndexOf('\n', e - 1) + 1;
+    }
     return t.slice(0, s) + ' '.repeat(e - s) + t.slice(e);
   };
-  let t = text;
-  for (let tries = 0; tries < 8; tries++) {
-    try {
-      return parseLikeJint(t, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowHashBang: true }).program as Node;
-    } catch (e) {
-      const pos = (e as { pos?: number }).pos;
-      if (tries === 0 && offset !== undefined) t = blank(t, offset);
-      else if (typeof pos === 'number') t = blank(t, Math.min(pos, t.length - 1));
-      else return undefined;
+  // Where the parser stops, blanked line by line; failing that, the line being edited first.
+  const attempt = (t: string): Node | undefined => {
+    for (let tries = 0; tries < 8; tries++) {
+      try {
+        return parseLikeJint(t, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowHashBang: true }).program as Node;
+      } catch (e) {
+        const pos = (e as { pos?: number }).pos;
+        if (typeof pos !== 'number') return undefined;
+        t = blank(t, Math.min(pos, t.length - 1));
+      }
     }
-  }
-  return undefined;
+    return undefined;
+  };
+  return attempt(text) ?? (offset !== undefined ? attempt(blank(text, offset)) : undefined);
 }
 
 /** The comment block right above `at` (no blank line between), as plain text. */
@@ -235,3 +242,51 @@ export function codeStateAt(text: string, offset: number): 'code' | 'string' | '
 
 /** JavaScript keywords Jint's ES5 parser takes, for suggestions where a statement or expression starts. */
 export const KEYWORDS = ['var', 'function', 'return', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'new', 'typeof', 'instanceof', 'in', 'this', 'true', 'false', 'null', 'undefined', 'try', 'catch', 'finally', 'throw', 'delete'];
+
+/**
+ * What the handler's own functions give back, where it can be told: an `@returns {type}` in the comment above, or
+ * every `return` giving the same kind of value (a string, a number, a list of strings). Name -> TypeScript type.
+ */
+export function ownReturnTypes(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const program = parseTolerant(text);
+  if (!program) return out;
+  const kindOf = (n: Node | undefined): string | undefined => {
+    if (!n) return undefined;
+    if (n.type === 'Literal') return typeof n.value === 'string' ? 'string' : typeof n.value === 'number' ? 'number' : undefined;
+    if (n.type === 'BinaryExpression' && n.operator === '+') {
+      const a = kindOf(n.left);
+      const b = kindOf(n.right);
+      return a === 'string' || b === 'string' ? 'string' : a === 'number' && b === 'number' ? 'number' : undefined;
+    }
+    if (n.type === 'BinaryExpression' && ['-', '*', '/', '%'].includes(n.operator)) return 'number';
+    if (n.type === 'ArrayExpression') return n.elements.length && n.elements.every((e: Node) => kindOf(e) === 'string') ? 'string[]' : 'any[]';
+    return undefined;
+  };
+  const infer = (fn: Node, at: number): string | undefined => {
+    const tag = /@returns?\s+\{([^}]+)\}/.exec(leadingComment(text, at) ?? '');
+    if (tag) return tag[1].trim().replace(/^String$/, 'string').replace(/^Number$/, 'number');
+    const kinds = new Set<string | undefined>();
+    const walk = (n: Node) => {
+      if (n !== fn && isFunction(n)) return;
+      if (n.type === 'ReturnStatement') kinds.add(n.argument ? kindOf(n.argument) : undefined);
+      children(n).forEach(walk);
+    };
+    walk(fn.body);
+    const [only] = [...kinds];
+    return kinds.size === 1 ? only : undefined;
+  };
+  const visit = (n: Node, stmtStart?: number) => {
+    if (n.type === 'FunctionDeclaration' && n.id && !out.has(n.id.name)) {
+      const t = infer(n, n.start);
+      if (t) out.set(n.id.name, t);
+    }
+    if (n.type === 'VariableDeclaration') for (const d of n.declarations) if (d.id.type === 'Identifier' && d.init && isFunction(d.init) && !out.has(d.id.name)) {
+      const t = infer(d.init, n.declarations[0] === d ? n.start : d.start);
+      if (t) out.set(d.id.name, t);
+    }
+    children(n).forEach((c) => visit(c, stmtStart));
+  };
+  visit(program);
+  return out;
+}

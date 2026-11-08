@@ -107,7 +107,8 @@ export function snippetToPlain(s: string): string {
   return s
     .replace(/\$\{\d+\|([^,|}]*)[^}]*\|\}/g, '$1')
     .replace(/\$\{\d+:([^}]*)\}/g, '$1')
-    .replace(/\$\{?\d+\}?/g, '');
+    .replace(/\$\{?\d+\}?/g, '')
+    .replace(/\\([\\$}])/g, '$1');
 }
 
 type Send = (msg: unknown) => void;
@@ -397,7 +398,7 @@ export class Server {
         const s = signatureHelpAt(doc.text, linesOf(doc).offset(p.position));
         if (!s) return null;
         return {
-          signatures: s.signatures.map((x) => ({ label: x.label, documentation: x.documentation === undefined ? undefined : { kind: 'markdown', value: x.documentation }, parameters: x.parameters.map((label) => ({ label })) })),
+          signatures: s.signatures.map((x) => ({ label: x.label, documentation: x.documentation === undefined ? undefined : { kind: 'markdown', value: x.documentation }, parameters: x.parameters.map((label, i) => ({ label, ...(x.parameterDocs?.[i] ? { documentation: { kind: 'markdown', value: x.parameterDocs[i] } } : {}) })) })),
           activeSignature: s.activeSignature,
           activeParameter: s.activeParameter,
         };
@@ -521,6 +522,7 @@ export class Server {
       ...(e.documentation !== undefined ? { documentation: { kind: 'markdown', value: e.documentation } } : {}),
       ...(e.range ? { textEdit: { range: l.range(e.range), newText: text } } : { insertText: text }),
       insertTextFormat: snippet ? 2 : 1,
+      ...(text.includes('\n') ? { insertTextMode: 2 } : {}), // later lines get the line's indentation
       ...(e.filterText ? { filterText: e.filterText } : {}),
       ...(e.sortText ? { sortText: e.sortText } : {}),
       ...(e.preselect ? { preselect: true } : {}),

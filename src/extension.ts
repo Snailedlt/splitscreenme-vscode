@@ -353,7 +353,7 @@ function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.S
   const help = new vscode.SignatureHelp();
   for (const sig of s.signatures) {
     const info = new vscode.SignatureInformation(sig.label, sig.documentation === undefined ? undefined : markdown(sig.documentation));
-    info.parameters = sig.parameters.map((p) => new vscode.ParameterInformation(p));
+    info.parameters = sig.parameters.map((p, i) => new vscode.ParameterInformation(p, sig.parameterDocs?.[i] ? markdown(sig.parameterDocs[i]!) : undefined));
     help.signatures.push(info);
   }
   help.activeSignature = s.activeSignature;

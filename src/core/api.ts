@@ -22,6 +22,10 @@ export interface Param {
   csType?: string;
   rest?: boolean;
   optional?: boolean;
+  /** What to pass, in plain words (JavaScript's from TypeScript's docs; Nucleus' from data/claude-docs.json). */
+  doc?: string;
+  /** The doc was written by Claude (AI) from the source. */
+  docBy?: 'claude';
 }
 export interface Overload {
   returns: string;
@@ -36,6 +40,8 @@ export interface Member {
   default?: string;
   readonly?: boolean;
   internal?: boolean;
+  /** One of the handler's own functions (its return type worked out from its code), not a Nucleus member. */
+  own?: boolean;
   required?: boolean;
   doc: string;
   /** Set when the doc was written by Claude (data/claude-docs.json) rather than taken from the official docs. */
@@ -371,6 +377,10 @@ export function memberMarkdown(owner: string, name: string, m: Member): string {
   if (m.deprecated) parts.push(`**${m.deprecated}**`);
   if (m.doc) parts.push(m.doc);
   if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_${m.docCheckedBy ? '' : ` [Is it wrong? Tell us](${docReviewUrl(`${ownerLabel(owner)}.${name}`)})`}`);
+  // What to pass for each parameter (every name once, from whichever overload has it).
+  const params = new Map<string, Param>();
+  for (const o of m.overloads ?? []) for (const p of o.params) if (p.doc && !params.has(p.name)) params.set(p.name, p);
+  if (params.size) parts.push([...params.values()].map((p) => `- \`${p.name}\`: ${p.doc}`).join('\n') + ([...params.values()].some((p) => p.docBy === 'claude') ? '\n\n_✎ Parameters: AI-written from the Nucleus source._' : ''));
   const meta: string[] = [];
   if (m.default !== undefined) meta.push(`Default: \`${m.default}\``);
   if (m.category) meta.push(`Category: ${m.category}`);

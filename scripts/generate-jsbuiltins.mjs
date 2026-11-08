@@ -28,19 +28,24 @@ export function generate() {
       .replace(/\bthis\b/g, 'any');
   // TypeScript-only overloads (type guards like `value is S`) mean nothing in a handler.
   const typeOnly = (m) => /\bis\b/.test(text(m.type)) || m.parameters.some((p) => /\bis\b/.test(text(p.type)));
+  // A comment's text, with {@link x} written as `x`.
+  const said = (c) => (typeof c === 'string' ? c : (c ?? []).map((x) => (x.name ? '`' + x.name.getText(src) + '`' + (x.text ? ' ' + x.text : '') : x.text)).join(''));
   const docOf = (n) => {
-    const d = (n.jsDoc ?? []).map((j) => (typeof j.comment === 'string' ? j.comment : (j.comment ?? []).map((c) => c.text).join(''))).join('\n').trim();
+    const d = (n.jsDoc ?? []).map((j) => said(j.comment)).join('\n').trim();
     const params = {};
-    for (const j of n.jsDoc ?? []) for (const tag of j.tags ?? []) if (ts.isJSDocParameterTag(tag)) params[tag.name.getText(src)] = typeof tag.comment === 'string' ? tag.comment : (tag.comment ?? []).map((c) => c.text).join('');
+    for (const j of n.jsDoc ?? []) for (const tag of j.tags ?? []) if (ts.isJSDocParameterTag(tag)) params[tag.name.getText(src)] = said(tag.comment);
     return { doc: d, params };
   };
-  const params = (sig) =>
-    sig.parameters.map((p) => ({
+  const params = (sig) => {
+    const docs = docOf(sig).params;
+    return sig.parameters.map((p) => ({
       name: p.name.getText(src),
       type: plain(text(p.type)),
+      ...(docs[p.name.getText(src)] ? { doc: docs[p.name.getText(src)].replace(/\s+/g, ' ').trim() } : {}),
       ...(p.questionToken ? { optional: true } : {}),
       ...(p.dotDotDotToken ? { rest: true } : {}),
     }));
+  };
 
   const objects = {};
   for (const [name, ifaces] of Object.entries(OBJECTS)) {

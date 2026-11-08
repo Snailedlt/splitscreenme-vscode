@@ -1,6 +1,7 @@
 // Text-based expression resolution for completion, hover and signature help.
 // Works on incomplete code (while typing), so it scans text instead of parsing.
 import { Resolved, resolveCall, resolveGlobal, resolveIndex, resolveMember, api, Member } from './api';
+import { ownReturnTypes } from './ownsymbols';
 
 const ID = /[A-Za-z_$][\w$]*/y;
 
@@ -142,6 +143,8 @@ export function findAliases(text: string): Map<string, Chain | null> {
     else if (prev && chain && prev.join('.') !== chain.join('.')) map.set(name, null);
     else if (!chain) map.set(name, null);
   }
+  // The handler's own functions whose result type is known: `myFn().` gets that type's members.
+  for (const [name, type] of ownReturnTypes(text)) map.set(name, [`$function:${type}`]);
   return map;
 }
 
@@ -155,6 +158,7 @@ export function resolveChain(chain: Chain, aliases: Map<string, Chain | null>, d
   else if (head === '$string') cur = { kind: 'object', type: 'String' };
   else if (head === '$array') cur = { kind: 'object', type: 'Array' };
   else if (head === '$number') cur = { kind: 'object', type: 'Number' };
+  else if (head.startsWith('$function:')) cur = { kind: 'member', owner: '', name: head, member: { kind: 'method', own: true, doc: '', overloads: [{ returns: head.slice(10), params: [] }] } };
   else cur = resolveGlobal(head);
   for (const seg of rest) {
     if (!cur) return undefined;

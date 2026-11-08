@@ -125,3 +125,40 @@ test('Context.Options hover lists the keys the handler adds', () => {
   const h = hoverAt(t, t.indexOf('Options[') + 2)!;
   assert.match(h.markdown, /This handler adds:\*\*\n- `"lang"`: Language \(`English`, `French`\)\n- `"mode"`: Window mode/);
 });
+
+test('snippets: at the start of a statement, where they make sense, lint-clean', async () => {
+  const { SNIPPETS } = await import('../core/snippets');
+  const { lint } = await import('../core/lint');
+  const { snippetToPlain } = await import('../lsp');
+  let p = at('ini|');
+  const c = completionsAt(p.text, p.offset)!.filter((x) => x.kind === 'snippet');
+  assert.deepEqual(c.map((x) => x.label), ['iniset']);
+  p = at('var x = ini|');
+  assert.ok(!(completionsAt(p.text, p.offset) ?? []).some((x) => x.kind === 'snippet'), 'not inside an expression');
+  const top = 'Game.GUID = "A";\nopt|\n';
+  assert.deepEqual((completionsAt(top.replace('|', ''), top.indexOf('|'), { own: false }) ?? []).filter((x) => x.kind === 'snippet').map((x) => x.label), ['option'], 'top level; VS Code gets them too');
+  for (const s of SNIPPETS) {
+    const body = snippetToPlain(s.body);
+    const code = s.where === 'top' ? `Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\n${body}\n` : `Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.AddOption("A", "", "key", ["Yes", "No"]);\nGame.Play = function () {\n${body}\n};\n`;
+    const bad = lint(code).filter((d) => d.severity === 'error' || d.severity === 'warning');
+    assert.deepEqual(bad.map((d) => `${d.rule}: ${d.message}`), [], s.prefix);
+  }
+  assert.match(snippetToPlain(SNIPPETS.find((s) => s.prefix === 'iniset')!.body), /\+ "\\\\config\.ini"/, 'a backslash written the JavaScript way');
+});
+
+test('parameter docs: JavaScript\'s from TypeScript, own functions from @param; own functions\' return types', () => {
+  let p = at('"a".replace("b", |');
+  let s = signatureHelpAt(p.text, p.offset)!;
+  assert.match(s.signatures[0].parameterDocs![1]!, /text to replace/);
+  const t = H.replace('// Copies the config for a player.\n// Returns the copied path.', '// Copies the config for a player.\n// @param player Which player (Context.PlayerID).\n// @param {string} folder - Where to copy it.');
+  const i = t.indexOf('@\n') ;
+  const code = t.slice(0, i) + 'copyCfg(1, ' + t.slice(i + 1);
+  s = signatureHelpAt(code, i + 'copyCfg(1, '.length)!;
+  assert.deepEqual(s.signatures[0].parameterDocs, ['Which player (Context.PlayerID).', 'Where to copy it.']);
+  assert.equal(s.signatures[0].documentation, 'Copies the config for a player.');
+  const r = 'function name() { return "x" + 1; }\nfunction n2() { return 2 * 3; }\nGame.Play = function () {\n  name().|\n};\n';
+  const ri = r.indexOf('|');
+  assert.ok(labels(completionsAt(r.slice(0, ri) + r.slice(ri + 1), ri)).includes('toUpperCase'));
+  const h = hoverAt(r, r.indexOf('name()') + 1)!;
+  assert.match(h.markdown, /function name\(\): string/);
+});
