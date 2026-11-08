@@ -638,3 +638,25 @@ test('duplicate-assignment: remove this one, or keep it and remove the later one
   // Fix all only applies the preferred one (the later value wins, as in Nucleus).
   assert.equal(d[0].fixes!.filter((f) => f.preferred).length, 1);
 });
+
+test('ESLint rules: general JavaScript mistakes, with a plain why, and no noise on correct code', () => {
+  const H = 'Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\n';
+  const rules = (code: string) => lint(H + code).map((d) => d.rule);
+  assert.ok(rules('Game.Play = function () { if ((Player.Owner.IsDualVertical = "true")) { } };').includes('no-constant-condition'), 'assignment in a condition (a real Hub bug)');
+  assert.ok(rules('var p = "C:\\Games\\Shooter";').includes('no-useless-escape'), 'a Windows path with single backslashes');
+  assert.ok(rules('var p = "C:\\\\workshop\\453090";').includes('no-octal-escape'), 'a backslash before digits');
+  assert.ok(rules('var o = { a: 1, a: 2 };').includes('no-dupe-keys'));
+  assert.ok(rules('var n = 1; if (n == NaN) { }').includes('use-isnan'));
+  assert.ok(rules('if (typeof Game === "strng") { }').includes('valid-typeof'));
+  assert.ok(rules('Game.Play = function () { return; Context.StartArguments = "x"; };').includes('no-unreachable'));
+  assert.ok(rules('Game.Play = function () { Context.Width + 1; };').includes('no-unused-expressions'));
+  const d = lint(H + 'var o = { a: 1, a: 2 };').find((x) => x.rule === 'no-dupe-keys')!;
+  assert.match(d.message, /Duplicate key 'a'\. An object can't have the same key twice/);
+  assert.equal(d.severity, 'warning');
+  // Correct code: nothing from these rules.
+  const clean = 'var p = "C:\\\\Games\\\\Shooter";\nvar re = /\\d+/g;\nGame.Play = function () {\n  var args = Context.StartArguments;\n  if (args.indexOf("-w") === -1) { Context.StartArguments = args + " -w"; }\n  while (true) { break; }\n  var ok = Context.PlayerID > 0 && Context.Width;\n};\n';
+  assert.deepEqual(lint(H + clean).filter((x) => /^(no-|use-|valid-|for-)/.test(x.rule)).map((x) => x.rule), []);
+  // Switched off like any other rule; a stray name is reported once (undefined-name, not also as an unused expression).
+  assert.ok(!lint(H + 'var o = { a: 1, a: 2 };', { rules: { 'no-dupe-keys': 'off' } }).some((x) => x.rule === 'no-dupe-keys'));
+  assert.deepEqual(lint(H + 'Game.Play = function () { wwdsss; };').map((x) => x.rule), ['undefined-name']);
+});

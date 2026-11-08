@@ -180,6 +180,38 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 | `needs-option` | warning | An option Nucleus only reads when another is on: `FakeFocusInterval` / `FakeFocusSendActivate…` need `FakeFocus`, the fake-cursor options need `DrawFakeMouseCursor`, `SteamlessArgs` / `SteamlessTiming` need `UseSteamless`. Fix turns the parent on. |
 | `deprecated` | hint | Options the docs mark deprecated, such as the pre-Proto Input multi-keyboard settings. |
 
+General JavaScript mistakes are checked with [ESLint](https://eslint.org)'s own rules (run inside the tools, no setup), only the ones that catch real bugs and were checked against every Hub handler:
+
+| Rule | Default | Why it matters |
+| --- | --- | --- |
+| `no-cond-assign` | warning | A single `=` inside a condition assigns: the condition is the assigned value. To compare, write `==` (or `===`). |
+| `no-constant-condition` | warning | This condition is always the same, so one branch never runs. A common cause: `=` (assign) where `==` (compare) was meant. |
+| `no-dupe-keys` | warning | An object can't have the same key twice: the later value replaces the earlier one. |
+| `no-duplicate-case` | warning | Only the first of two identical `case`s ever runs. |
+| `no-dupe-else-if` | warning | This `else if` tests what an earlier branch already caught, so it never runs. |
+| `no-dupe-args` | warning | Two parameters with the same name: the second hides the first. |
+| `use-isnan` | warning | Nothing equals NaN, not even NaN: this comparison is always false. Use `isNaN(x)`. |
+| `valid-typeof` | warning | `typeof` only gives "undefined", "object", "boolean", "number", "string" or "function": this comparison is never true (a typo?). |
+| `no-unreachable` | warning | Nothing after `return`, `throw`, `break` or `continue` runs. |
+| `no-unused-expressions` | warning | This line computes something and throws the result away: it does nothing. A missing assignment or call, or a statement split over two lines? |
+| `no-self-assign` | warning | Assigning a value to itself does nothing. |
+| `no-self-compare` | warning | Comparing something with itself is always the same; probably a typo. |
+| `no-unsafe-negation` | warning | `!a in b` means `(!a) in b`; you probably meant `!(a in b)`. |
+| `no-compare-neg-zero` | info | `x === -0` is also true for 0. Use `1 / x === -Infinity` if you really need to tell them apart. |
+| `no-invalid-regexp` | error | This regular expression is invalid: it throws when that line runs. |
+| `no-empty-character-class` | warning | `[]` in a regular expression matches nothing, so the whole expression never matches. |
+| `no-control-regex` | info | A control character in a regular expression is almost always a mistake (a lost backslash). |
+| `no-sparse-arrays` | warning | Two commas in a row leave a hole (`undefined`) in the array; usually a typo. |
+| `no-useless-escape` | warning | In a string a backslash only escapes some characters: here it disappears. In a Windows path write two backslashes (`"C:\\Games"`), or `"\\"` for one. |
+| `no-octal-escape` | warning | A backslash before a digit in a string is a character code, not a backslash: `"\\45"`, not `"\45"` (which is "%"). Common in Windows paths with numbers. |
+| `no-loss-of-precision` | warning | JavaScript numbers can't hold this value exactly: it is silently rounded. |
+| `for-direction` | warning | The counter moves away from the end condition, so the loop never stops (or never runs). |
+| `no-unsafe-finally` | warning | A `return`/`throw` in `finally` overrides the one in `try`/`catch`, hiding errors. |
+| `no-func-assign` | warning | This overwrites a function declared with the same name. |
+| `no-ex-assign` | warning | Overwriting the caught error loses it. |
+| `no-obj-calls` | error | `Math` and `JSON` are objects, not functions: calling them throws. |
+| `no-shadow-restricted-names` | warning | Naming a variable `undefined`, `NaN` or `Infinity` changes what that name means everywhere after. |
+
 Change severities with the `splitscreenme.lint.rules` setting, e.g. `{ "deprecated": "off" }`, or with comments:
 
 ```js

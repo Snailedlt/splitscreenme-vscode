@@ -39,6 +39,8 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/core/`: pure logic, no `vscode` import, shared by the extension, the CLI and the skill.
   - `api.ts`: typed access to the generated API model, member resolution.
   - `lint.ts`: the linter (acorn AST). `RULES` is the rule registry.
+  - `jsrules.ts`: general JavaScript mistakes from ESLint's own rules (its `Linter`, in-process, `eslint/universal`), each with a plain title and why, merged into `lint()`'s results. Add one only after running it over every Hub handler (the `data` branch's `hub/`) with no false alarms. The Try it sandbox bundle stubs ESLint out (`eslint-stub.ts`); the workbench's build shims `path` and `process` for it.
+  - `jsbuiltins.ts`: JavaScript's ES5 objects and methods (String, Array, Math, JSON, Number, global functions) for completion/hover/signature help, from `data/js-builtins.json` (generated from TypeScript's `lib.es5.d.ts` by `scripts/generate-jsbuiltins.mjs`; a test checks it's current).
   - `format.ts`: Format Document / `ncdev format`: indentation and spacing only. Line breaks never move and the result is re-tokenized and compared with the original; any difference and it refuses. Keep that guarantee.
   - `complete.ts`: text-based resolution for completion/hover/signature help (works on incomplete code).
   - `features.ts`: the editor features as plain data (hover, completion, signature help, quick fixes, Format Document edits, inlay hints, handler detection). `extension.ts` and `lsp.ts` only convert them.

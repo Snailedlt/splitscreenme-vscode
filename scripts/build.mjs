@@ -20,7 +20,7 @@ const common = {
 // The "Try it" simulator, bundled to a string that src/sandbox.ts evaluates inside an isolated
 // vm context (see there). Built first so the other bundles can embed it.
 const simSandbox = (
-  await esbuild.build({ ...common, entryPoints: ['src/sim-sandbox-entry.ts'], format: 'iife', platform: 'neutral', mainFields: ['module', 'main'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
+  await esbuild.build({ ...common, entryPoints: ['src/sim-sandbox-entry.ts'], format: 'iife', platform: 'neutral', alias: { 'eslint/universal': './src/core/eslint-stub.ts' }, mainFields: ['module', 'main'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
 ).outputFiles[0].text;
 common.define = { __SIM_SANDBOX__: JSON.stringify(simSandbox), __VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version) };
 

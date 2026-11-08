@@ -1,6 +1,7 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
 import { blockTarget, hex, wmName } from './wm';
+import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
 import { BEFORE_SESSION } from './lifecycle';
@@ -38,6 +39,39 @@ const OBSOLETE: Record<string, string> = {
   'Game.ForceFinishOnPlay':
     "is from the original Nucleus Coop, where it closed running copies of the game before each player started. SplitScreen.Me's Nucleus doesn't read it: it always closes leftover copies of the game (its executable, the launcher and the names in `Game.KillProcessesOnClose`) when a session starts. Nucleus ignores the line, so remove it.",
 };
+
+const JS_SEVERITY: Record<JsRuleId, Severity> = {
+  'no-invalid-regexp': 'error',
+  'no-obj-calls': 'error',
+  'no-compare-neg-zero': 'info',
+  'no-control-regex': 'info',
+  'no-cond-assign': 'warning',
+  'no-constant-condition': 'warning',
+  'no-dupe-keys': 'warning',
+  'no-duplicate-case': 'warning',
+  'no-dupe-else-if': 'warning',
+  'no-dupe-args': 'warning',
+  'use-isnan': 'warning',
+  'valid-typeof': 'warning',
+  'no-unreachable': 'warning',
+  'no-unused-expressions': 'warning',
+  'no-self-assign': 'warning',
+  'no-self-compare': 'warning',
+  'no-unsafe-negation': 'warning',
+  'no-empty-character-class': 'warning',
+  'no-sparse-arrays': 'warning',
+  'no-useless-escape': 'warning',
+  'no-octal-escape': 'warning',
+  'no-loss-of-precision': 'warning',
+  'for-direction': 'warning',
+  'no-unsafe-finally': 'warning',
+  'no-func-assign': 'warning',
+  'no-ex-assign': 'warning',
+  'no-shadow-restricted-names': 'warning',
+};
+const JS_RULE_ENTRIES = Object.fromEntries(
+  (Object.keys(JS_RULES) as JsRuleId[]).map((id) => [id, { severity: JS_SEVERITY[id], description: `ESLint's \`${id}\`: ${JS_RULES[id].why}` }]),
+) as { [K in JsRuleId]: { severity: Severity; description: string } };
 
 export const RULES = {
   'syntax-error': { severity: 'error', description: 'The file cannot be parsed.' },
@@ -119,6 +153,8 @@ export const RULES = {
     description: 'Callbacks Nucleus never runs or calls without checking: `Game.SetupSse` (never called), `Game.Play` with both `GamePlayBeforeGameSetup` and `GamePlayAfterLaunch` (never runs), `Context.StartArguments` set in a `Game.Play` that runs after launch (no effect), and `Game.CustomHotkeys` entries without their `Game.OnCustomHotKey_N` (Nucleus crashes when the hotkey is pressed).',
   },
   deprecated: { severity: 'hint', description: 'The option is deprecated (setting it to false is fine).' },
+  // General JavaScript mistakes: ESLint's own rules (core/jsrules.ts).
+  ...JS_RULE_ENTRIES,
 } as const satisfies Record<string, { severity: Severity; description: string }>;
 
 export type RuleId = keyof typeof RULES;
@@ -234,6 +270,20 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   }
 
   new Analyzer(text, program, out, options.plugins, options.published).run();
+  // ESLint's general JavaScript rules, unless switched off (a name that isn't defined is ours to report).
+  const jsRules = (Object.keys(JS_RULES) as JsRuleId[]).filter((r) => options.rules?.[r] !== 'off');
+  for (const d of jsRuleDiagnostics(text, jsRules)) {
+    if (d.rule === 'no-unused-expressions' && out.some((o) => o.rule === 'undefined-name' && o.start < d.end && o.end > d.start)) continue;
+    out.push({
+      rule: d.rule,
+      severity: RULES[d.rule].severity,
+      message: d.message,
+      start: d.start,
+      end: d.end,
+      ...(d.fixes.length ? { fixes: d.fixes.map((f) => ({ title: f.title, edits: f.edits })) } : {}),
+      ...(d.rule === 'no-unreachable' ? { tags: ['unnecessary' as const] } : {}),
+    });
+  }
   return finalize(out, text, comments, options);
 }
 
