@@ -19,3 +19,4 @@ Non-negotiable:
 - `Context`, `Player`, `PlayerList`, `ProtoInput` only inside `Game.Play` or other callbacks.
 - Keep `Game.GameName = "...";` and `Game.ExecutableName = "...";` unindented, double-quoted, and alone on their lines.
 - Nucleus can't run here. Finish with a concrete test plan, and ask the user for `debug-log.txt` from the Nucleus folder.
+- Put the credit lines at the top of every handler you create or change (made by which AI agent, what `lint` and `simulate` showed, not run in Nucleus): the format is in SKILL.md, "Credit lines". Facts only; keep lines others wrote.
