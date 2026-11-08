@@ -85,7 +85,7 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
   | `nucleus format <file> --write` | Indentation and spacing, never the code itself |
   | `nucleus api Game.KillMutex` / `nucleus api --search mutex` | The "hover": type, default and docs |
   | `nucleus hub search <game>` / `nucleus hub fetch <id>` | Study how existing handlers solved the same problem |
-  | `nucleus new …` / `nucleus package …` | Scaffold a handler / build the `.nc` package |
+  | `nucleus new …` / `nucleus install …` / `nucleus package …` | Scaffold a handler / copy it into Nucleus' `handlers` folder / build the `.nc` package |
 
 ### Claude Code
 
@@ -301,6 +301,7 @@ This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALA
 - **Suggestions as you type** after a dot, `=`, a quote…: the members that exist there, the values an option takes (`true`/`false`, `Nucleus.DPIHandling.True`…), the game's own files once its folder is linked. The selected one's type and docs show in the status bar. Parameter hints after `(`.
 - **Alt+F12**: go to where a function, variable or option is defined; *Find references* lists every use.
 - **Alt+Enter**: the fixes for the line. **Plugins › Nucleus Co-op handlers** has *Fix all*, *Format handler*, *Try it* (what Nucleus would set up for 1–4 players, in a new tab), a *Problems panel* (double-click to jump, right-click for the fixes), *Link the game's folder…*, *Open in the browser workbench* (this handler, in the workbench's visual editor and Test all), the *API reference* and *Check for updates*. Every command can get a shortcut in *Settings › Shortcut Mapper*.
+- **New handler…** asks the game's name, its .exe and what to start with, then creates and opens the handler. **Install to Nucleus Co-op** copies it (and its `<Name>/` folder) into Nucleus' `handlers` folder, asking first if it has errors or is already installed. The **Outline panel** lists the handler's options, functions and variables; click one to jump there.
 - A **Run › Nucleus: check this handler** entry runs `ncdev lint` on the open file in a console.
 
 `ncdev update` keeps the tool current (the plugin's menu says when there's a new one). `ncdev setup notepad++ --check` says what's installed and `--remove` takes it all out again. Without the standalone `ncdev` (e.g. `node nucleus.js setup notepad++`), the setup adds the Nucleus names and call tips to Notepad++'s own JavaScript suggestions instead (no plugin).

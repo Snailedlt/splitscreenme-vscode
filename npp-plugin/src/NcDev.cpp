@@ -45,11 +45,13 @@ using json::Array;
 #define NPPM_DMMUPDATEDISPINFO (NPPMSG + 32)
 #define NPPM_DMMREGASDCKDLG (NPPMSG + 33)
 #define DWS_ADDINFO 0x00000004
+#define NPPM_SAVECURRENTFILE (NPPMSG + 38)
 #define NPPM_SETMENUITEMCHECK (NPPMSG + 40)
 #define NPPM_GETPLUGINSCONFIGDIR (NPPMSG + 46)
 #define NPPM_MENUCOMMAND (NPPMSG + 48)
 #define NPPM_GETFULLPATHFROMBUFFERID (NPPMSG + 58)
 #define NPPM_GETCURRENTBUFFERID (NPPMSG + 60)
+#define NPPM_DOOPEN (NPPMSG + 77)
 #define NPPM_GETPLUGINHOMEPATH (NPPMSG + 97)
 #define NPPM_ISDARKMODEENABLED (NPPMSG + 107)
 #define NPPM_GETDARKMODECOLORS (NPPMSG + 108)
@@ -69,6 +71,8 @@ using json::Array;
 
 #define CONT_BOTTOM 3
 #define DWS_DF_CONT_BOTTOM (CONT_BOTTOM << 28)
+#define CONT_RIGHT 1
+#define DWS_DF_CONT_RIGHT (CONT_RIGHT << 28)
 #define DMN_CLOSE (1050 + 1)
 
 struct NppData {
@@ -599,6 +603,7 @@ static Range diagRange(HWND h, const Value& d) {
 }
 
 static void refreshPanel();
+static void refreshOutline();
 static std::string plain(const std::string& md, size_t maxLines = 24);
 static void applyDiagnostics() {
   Doc* d = currentDoc();
@@ -618,6 +623,7 @@ static void applyDiagnostics() {
     }
   }
   refreshPanel();
+  refreshOutline();
 }
 
 // The Problems panel (dockable, bottom): every problem in the current handler; double-click or Enter jumps to it.
@@ -636,7 +642,7 @@ static void gotoProblem(int i) {
   sci(h, SCI_SETSEL, r.start, r.end);
   SetFocus(h);
 }
-static void themePanel() {
+static void themeList(HWND list) {
   if (!list) return;
   DarkColors c{};
   if (SendMessage(npp._nppHandle, NPPM_ISDARKMODEENABLED, 0, 0) && SendMessage(npp._nppHandle, NPPM_GETDARKMODECOLORS, sizeof c, (LPARAM)&c)) {
@@ -649,6 +655,11 @@ static void themePanel() {
     ListView_SetTextColor(list, GetSysColor(COLOR_WINDOWTEXT));
   }
   InvalidateRect(list, nullptr, TRUE);
+}
+static HWND outList;
+static void themePanel() {
+  themeList(list);
+  themeList(outList);
 }
 static void refreshPanel() {
   if (!list || !panelShown) return;
@@ -760,6 +771,125 @@ static void createPanel() {
   SendMessage(npp._nppHandle, NPPM_DMMREGASDCKDLG, 0, (LPARAM)&data);
   panelRegistered = true;
   themePanel();
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// The outline panel: the handler's functions, options and variables (the server's document symbols), a click away
+
+static HWND outPanel;
+static bool outShown = false, outRegistered = false;
+static int outCmd = 0, outRequest = 0;
+static std::vector<Value> outRanges;  // the selectionRange of each row
+static void refreshOutline();
+static void outRow(int i, const std::wstring& name, const std::wstring& kind) {
+  LVITEMW it{};
+  it.mask = LVIF_TEXT;
+  it.iItem = i;
+  std::wstring n = name;
+  it.pszText = &n[0];
+  ListView_InsertItem(outList, &it);
+  std::wstring k = kind;
+  ListView_SetItemText(outList, i, 1, &k[0]);
+}
+static void outMessage(const std::wstring& text) {
+  ListView_DeleteAllItems(outList);
+  outRanges.clear();
+  outRow(0, text, L"");
+}
+static void refreshOutline() {
+  if (!outList || !outShown) return;
+  Doc* d = currentDoc();
+  if (!d) return outMessage(L"Open a handler (.js) to see its outline.");
+  if (!lsp::ready || !d->open) return;  // comes again once the server has the handler
+  int mine = ++outRequest;
+  std::string uri = d->uri;
+  lsp::request("textDocument/documentSymbol", Value(Object{{"textDocument", Value(Object{{"uri", uri}})}}), [mine, uri](const Value& r) {
+    Doc* now = currentDoc();
+    if (mine != outRequest || !now || now->uri != uri || !outList) return;  // a newer request, or another tab
+    int top = ListView_GetTopIndex(outList);
+    SendMessage(outList, WM_SETREDRAW, FALSE, 0);
+    ListView_DeleteAllItems(outList);
+    outRanges.clear();
+    int i = 0;
+    std::function<void(const Value&, int)> add = [&](const Value& syms, int depth) {
+      for (auto& x : syms.arr()) {
+        int k = x["kind"].num(0);
+        std::wstring kind = k == 12 ? L"function" : k == 7 ? L"option" : k == 3 ? L"object" : L"variable";
+        std::string detail = x["detail"].str();
+        if (!detail.empty()) kind = wide(detail);
+        outRow(i++, std::wstring(depth * 4, L' ') + wide(x["name"].str()), kind);
+        outRanges.push_back(x["selectionRange"]);
+        if (x["children"].size()) add(x["children"], depth + 1);
+      }
+    };
+    if (r.isArr()) add(r, 0);
+    if (!i) outRow(0, L"Nothing to show yet: no functions, options or variables.", L"");
+    SendMessage(outList, WM_SETREDRAW, TRUE, 0);
+    ListView_EnsureVisible(outList, std::min(top + ListView_GetCountPerPage(outList) - 1, i - 1), FALSE);
+  });
+}
+static void gotoOutline(int i) {
+  if (i < 0 || i >= (int)outRanges.size()) return;
+  HWND h = curSci();
+  sptr_t s = sciPos(h, outRanges[i]["start"]), e = sciPos(h, outRanges[i]["end"]);
+  sci(h, SCI_GOTOPOS, s);
+  sci(h, SCI_SETSEL, s, e);
+  sci(h, SCI_SCROLLCARET);
+  SetFocus(h);
+}
+static LRESULT CALLBACK outProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
+  switch (m) {
+    case WM_SIZE:
+      if (outList) {
+        MoveWindow(outList, 0, 0, LOWORD(l), HIWORD(l), TRUE);
+        int w = LOWORD(l) - GetSystemMetrics(SM_CXVSCROLL) - 4;
+        ListView_SetColumnWidth(outList, 0, w * 3 / 5);
+        ListView_SetColumnWidth(outList, 1, w - w * 3 / 5);
+      }
+      return 0;
+    case WM_NOTIFY: {
+      auto* nm = (NMHDR*)l;
+      if (nm->code == DMN_CLOSE) {
+        outShown = false;
+        SendMessage(npp._nppHandle, NPPM_SETMENUITEMCHECK, outCmd, FALSE);
+        return 0;
+      }
+      if (nm->hwndFrom == outList && (nm->code == NM_CLICK || nm->code == NM_DBLCLK)) gotoOutline(((NMITEMACTIVATE*)l)->iItem);
+      if (nm->hwndFrom == outList && nm->code == LVN_KEYDOWN && ((NMLVKEYDOWN*)l)->wVKey == VK_RETURN) gotoOutline(ListView_GetNextItem(outList, -1, LVNI_SELECTED));
+      return 0;
+    }
+  }
+  return DefWindowProcW(hw, m, w, l);
+}
+static void createOutline() {
+  WNDCLASSW wc{};
+  wc.lpfnWndProc = outProc;
+  wc.hInstance = hModule;
+  wc.lpszClassName = L"NcDevOutline";
+  wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  RegisterClassW(&wc);
+  outPanel = CreateWindowExW(0, L"NcDevOutline", L"Nucleus outline", WS_CHILD | WS_CLIPCHILDREN, 0, 0, 300, 400, npp._nppHandle, nullptr, hModule, nullptr);
+  outList = CreateWindowExW(0, WC_LISTVIEWW, L"", WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 0, 0, 300, 400, outPanel, nullptr, hModule, nullptr);
+  ListView_SetExtendedListViewStyle(outList, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+  const wchar_t* cols[] = {L"Name", L"Value"};
+  int widths[] = {170, 110};
+  for (int i = 0; i < 2; i++) {
+    LVCOLUMNW c{};
+    c.mask = LVCF_TEXT | LVCF_WIDTH;
+    c.pszText = (LPWSTR)cols[i];
+    c.cx = widths[i];
+    ListView_InsertColumn(outList, i, &c);
+  }
+  static DockedWidgetData data{};
+  data.hClient = outPanel;
+  data.pszName = L"Nucleus outline";
+  data.dlgID = outCmd;
+  data.uMask = DWS_DF_CONT_RIGHT;
+  data.pszModuleName = L"NcDev.dll";
+  SendMessage(npp._nppHandle, NPPM_DMMREGASDCKDLG, 0, (LPARAM)&data);
+  outRegistered = true;
+  themeList(outList);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1217,6 +1347,274 @@ static void cmdWorkbench() {
     if (!r["withHandler"].boolean()) status(L"Nucleus: this handler is too large for a link: in the workbench, use Open file… to open it");
   });
 }
+
+static void cmdOutline() {
+  if (!outRegistered) createOutline();
+  outShown = !outShown;
+  SendMessage(npp._nppHandle, outShown ? NPPM_DMMSHOW : NPPM_DMMHIDE, 0, (LPARAM)outPanel);
+  SendMessage(npp._nppHandle, NPPM_SETMENUITEMCHECK, outCmd, outShown);
+  if (outShown) {
+    if (currentDoc() && !lsp::running) lsp::start();
+    refreshOutline();
+  }
+}
+
+/** One argument on a Windows command line, quoted the way programs read it back (CommandLineToArgvW rules). */
+static std::wstring quoteArg(const std::wstring& a) {
+  std::wstring out = L"\"";
+  size_t slashes = 0;
+  for (wchar_t c : a) {
+    if (c == L'\\') {
+      slashes++;
+      continue;
+    }
+    out.append(c == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+    slashes = 0;
+    out += c;
+  }
+  out.append(slashes * 2, L'\\');
+  return out + L"\"";
+}
+
+/** A folder picker; empty when cancelled. */
+static std::wstring pickFolder(const std::wstring& title) {
+  IFileOpenDialog* dlg = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return L"";
+  DWORD opts;
+  dlg->GetOptions(&opts);
+  dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+  dlg->SetTitle(title.c_str());
+  std::wstring folder;
+  if (SUCCEEDED(dlg->Show(npp._nppHandle))) {
+    IShellItem* item;
+    if (SUCCEEDED(dlg->GetResult(&item))) {
+      PWSTR p;
+      if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
+        folder = p;
+        CoTaskMemFree(p);
+      }
+      item->Release();
+    }
+  }
+  dlg->Release();
+  return folder;
+}
+
+// New handler: a small dialog (built in memory, no resource file), then where to save it; ncdev writes it.
+struct DlgBuilder {
+  std::vector<WORD> v;
+  WORD count = 0;
+  void dw(DWORD d) {
+    v.push_back(LOWORD(d));
+    v.push_back(HIWORD(d));
+  }
+  void str(const std::wstring& t) {
+    for (wchar_t c : t) v.push_back(c);
+    v.push_back(0);
+  }
+  DlgBuilder(const std::wstring& title, short cx, short cy) {
+    dw(DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU);
+    dw(0);
+    v.push_back(0);  // the number of controls, set by done()
+    for (short x : {(short)0, (short)0, cx, cy}) v.push_back(x);
+    v.push_back(0);  // no menu
+    v.push_back(0);  // the standard class
+    str(title);
+    v.push_back(9);
+    str(L"Segoe UI");
+  }
+  void item(WORD cls, DWORD style, short x, short y, short cx, short cy, WORD id, const std::wstring& text) {
+    if (v.size() % 2) v.push_back(0);  // controls start on a DWORD boundary
+    dw(style | WS_CHILD | WS_VISIBLE);
+    dw(0);
+    for (short n : {x, y, cx, cy}) v.push_back(n);
+    v.push_back(id);
+    v.push_back(0xFFFF);
+    v.push_back(cls);  // 0x80 button, 0x81 edit, 0x82 static
+    str(text);
+    v.push_back(0);
+    count++;
+  }
+  DLGTEMPLATE* done() {
+    v[4] = count;
+    return (DLGTEMPLATE*)v.data();
+  }
+};
+struct NewHandler {
+  std::wstring name, exe, steamId, maxPlayers = L"4";
+  std::vector<std::pair<std::string, std::wstring>> features;  // id, label (from ncdev new --list-features)
+  std::vector<bool> chosen;
+};
+enum { ID_NAME = 101, ID_EXE, ID_STEAM, ID_MAX, ID_FEATURE = 200 };
+static std::wstring itemText(HWND d, int id) {
+  wchar_t buf[512] = L"";
+  GetDlgItemTextW(d, id, buf, 512);
+  std::wstring t = buf;
+  size_t a = t.find_first_not_of(L" \t"), b = t.find_last_not_of(L" \t");
+  return a == std::wstring::npos ? L"" : t.substr(a, b - a + 1);
+}
+static INT_PTR CALLBACK newProc(HWND d, UINT m, WPARAM w, LPARAM l) {
+  auto* nh = (NewHandler*)GetWindowLongPtrW(d, DWLP_USER);
+  switch (m) {
+    case WM_INITDIALOG:
+      SetWindowLongPtrW(d, DWLP_USER, l);
+      SetDlgItemTextW(d, ID_MAX, ((NewHandler*)l)->maxPlayers.c_str());
+      SetFocus(GetDlgItem(d, ID_NAME));
+      return FALSE;
+    case WM_COMMAND:
+      if (LOWORD(w) == IDOK) {
+        nh->name = itemText(d, ID_NAME);
+        nh->exe = itemText(d, ID_EXE);
+        nh->steamId = itemText(d, ID_STEAM);
+        nh->maxPlayers = itemText(d, ID_MAX);
+        if (nh->name.empty() || nh->exe.empty()) {
+          MessageBoxW(d, L"The game's name and its .exe file name are needed (the exe Nucleus starts, e.g. Game.exe or Game-Win64-Shipping.exe).", PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+          SetFocus(GetDlgItem(d, nh->name.empty() ? ID_NAME : ID_EXE));
+          return TRUE;
+        }
+        for (size_t i = 0; i < nh->features.size(); i++) nh->chosen[i] = IsDlgButtonChecked(d, ID_FEATURE + (int)i) == BST_CHECKED;
+        EndDialog(d, IDOK);
+        return TRUE;
+      }
+      if (LOWORD(w) == IDCANCEL) {
+        EndDialog(d, IDCANCEL);
+        return TRUE;
+      }
+      return FALSE;
+  }
+  return FALSE;
+}
+static void cmdNewHandler() {
+  if (findTool().empty()) return lsp::start();  // offers to download the tools
+  NewHandler nh;
+  Value list;
+  if (json::parse(runTool(L"new --list-features --json", nullptr, 30000), list) && list.isArr())
+    for (auto& f : list.arr()) {
+      std::wstring label;
+      for (wchar_t c : wide(f["label"].str())) label += c == L'&' ? std::wstring(L"&&") : std::wstring(1, c);  // a single & would underline the next letter
+      nh.features.push_back({f["id"].str(), label});
+    }
+  nh.chosen.assign(nh.features.size(), false);
+  short y = 8, W = 260;
+  DlgBuilder b(L"New Nucleus Co-op handler", W, 0);
+  auto field = [&](const wchar_t* label, WORD id, DWORD extra = 0) {
+    b.item(0x82, SS_LEFT, 8, y, W - 16, 9, (WORD)-1, label);
+    b.item(0x81, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL | extra, 8, y + 10, W - 16, 13, id, L"");
+    y += 28;
+  };
+  field(L"&Game's name (as players know it, e.g. Halo: Reach)", ID_NAME);
+  field(L"The game's .&exe file name (e.g. Game.exe)", ID_EXE);
+  field(L"&Steam app ID (optional, the number in its store link)", ID_STEAM, ES_NUMBER);
+  field(L"&Most players at once", ID_MAX, ES_NUMBER);
+  if (!nh.features.empty()) {
+    b.item(0x82, SS_LEFT, 8, y, W - 16, 9, (WORD)-1, L"Start with (you can add these later too):");
+    y += 12;
+    for (size_t i = 0; i < nh.features.size(); i++, y += 13) b.item(0x80, BS_AUTOCHECKBOX | WS_TABSTOP, 12, y, W - 20, 11, (WORD)(ID_FEATURE + i), nh.features[i].second);
+    y += 4;
+  }
+  b.item(0x80, BS_DEFPUSHBUTTON | WS_TABSTOP, W - 112, y, 50, 14, IDOK, L"Create…");
+  b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, W - 58, y, 50, 14, IDCANCEL, L"Cancel");
+  b.v[8] = y + 22;  // the dialog's height, now known
+  if (DialogBoxIndirectParamW(hModule, b.done(), npp._nppHandle, newProc, (LPARAM)&nh) != IDOK) return;
+
+  // Where to save it: named after the game, as a Hub install names it.
+  std::wstring file;
+  for (wchar_t c : nh.name)
+    if (!wcschr(L"\\/:*?\"<>|", c)) file += c;
+  IFileSaveDialog* dlg = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+  COMDLG_FILTERSPEC types[] = {{L"Nucleus Co-op handler (*.js)", L"*.js"}};
+  dlg->SetFileTypes(1, types);
+  dlg->SetDefaultExtension(L"js");
+  dlg->SetFileName((file.empty() ? L"handler" : file).c_str());
+  dlg->SetTitle(L"Save the new handler");
+  std::wstring last = iniGet(L"ncdev", L"newFolder");
+  IShellItem* start = nullptr;
+  if (!last.empty() && SUCCEEDED(SHCreateItemFromParsingName(last.c_str(), nullptr, IID_PPV_ARGS(&start)))) {
+    dlg->SetFolder(start);
+    start->Release();
+  }
+  std::wstring out;
+  if (SUCCEEDED(dlg->Show(npp._nppHandle))) {
+    IShellItem* item;
+    if (SUCCEEDED(dlg->GetResult(&item))) {
+      PWSTR p;
+      if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
+        out = p;
+        CoTaskMemFree(p);
+      }
+      item->Release();
+    }
+  }
+  dlg->Release();
+  if (out.empty()) return;
+  iniSet(L"ncdev", L"newFolder", out.substr(0, out.find_last_of(L"\\/")).c_str());
+
+  std::wstring args = L"new --name " + quoteArg(nh.name) + L" --exe " + quoteArg(nh.exe) + L" --out " + quoteArg(out) + L" --force";
+  if (!nh.steamId.empty()) args += L" --steam-id " + quoteArg(nh.steamId);
+  if (!nh.maxPlayers.empty()) args += L" --max-players " + quoteArg(nh.maxPlayers);
+  std::string features;
+  for (size_t i = 0; i < nh.features.size(); i++)
+    if (nh.chosen[i]) features += (features.empty() ? "" : ",") + nh.features[i].first;
+  if (!features.empty()) args += L" --features " + quoteArg(wide(features));
+  DWORD code = 1;
+  std::string said = runTool(args, &code, 30000);
+  if (code != 0 || !exists(out)) {
+    MessageBoxW(npp._nppHandle, (L"Couldn't create the handler:\n\n" + wide(said)).c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
+    return;
+  }
+  SendMessage(npp._nppHandle, NPPM_DOOPEN, 0, (LPARAM)out.c_str());
+  status(L"Nucleus: created " + baseName(out));
+}
+
+// Install to Nucleus Co-op: the handler and its <Name>/ folder into Nucleus' handlers folder (ncdev install).
+static std::wstring nucleusFolder(bool ask) {
+  std::wstring dir = iniGet(L"nucleus", L"path");
+  if (!ask && !dir.empty() && exists(dir + L"\\handlers")) return dir;
+  for (;;) {
+    dir = pickFolder(L"Your Nucleus Co-op folder (the one with NucleusCoop.exe and \"handlers\")");
+    if (dir.empty()) return L"";
+    if (exists(dir + L"\\handlers")) break;
+    if (MessageBoxW(npp._nppHandle, (L"\"" + dir + L"\" has no \"handlers\" folder. Pick the Nucleus Co-op folder (the one with NucleusCoop.exe).").c_str(), PLUGIN_NAME, MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) return L"";
+  }
+  iniSet(L"nucleus", L"path", dir.c_str());
+  return dir;
+}
+static void cmdSetNucleus() {
+  std::wstring dir = nucleusFolder(true);
+  if (!dir.empty()) status(L"Nucleus: handlers install to " + dir + L"\\handlers");
+}
+static void cmdInstall() {
+  Doc* d = currentDoc();
+  if (!d) return needHandler();
+  if (findTool().empty()) return lsp::start();
+  if (sci(curSci(), SCI_GETMODIFY)) SendMessage(npp._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+  std::wstring nucleus = nucleusFolder(false);
+  if (nucleus.empty()) return;
+  bool force = false;
+  int errors = 0;
+  for (auto& x : diagnostics[d->uri].arr())
+    if (x["severity"].num(1) == 1) errors++;
+  if (errors) {
+    std::wstring q = baseName(d->path) + L" has " + std::to_wstring(errors) + (errors == 1 ? L" error" : L" errors") + L", so Nucleus may not load it (see the Problems panel). Install it anyway?";
+    if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return;
+    force = true;
+  }
+  std::wstring dest = nucleus + L"\\handlers\\" + baseName(d->path);
+  if (_wcsicmp(dest.c_str(), d->path.c_str()) == 0) {
+    MessageBoxW(npp._nppHandle, L"This handler is already in Nucleus' handlers folder: Nucleus uses it as it is.", PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  if (exists(dest)) {
+    std::wstring q = baseName(d->path) + L" is already installed in\n" + nucleus + L"\\handlers\n\nReplace it with this one?";
+    if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    force = true;
+  }
+  DWORD code = 1;
+  std::string said = runTool(L"install " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + (force ? L" --force" : L""), &code, 60000);
+  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+  MessageBoxW(npp._nppHandle, wide(said.empty() ? "Couldn't run ncdev install." : said).c_str(), PLUGIN_NAME, MB_OK | (code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -1239,26 +1637,7 @@ static void cmdPanel() {
 static void cmdLinkFolder() {
   Doc* d = currentDoc();
   if (!d) return needHandler();
-  IFileOpenDialog* dlg = nullptr;
-  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
-  DWORD opts;
-  dlg->GetOptions(&opts);
-  dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-  std::wstring title = L"The folder " + baseName(d->path) + L"'s game is installed in (where its .exe is, or above)";
-  dlg->SetTitle(title.c_str());
-  std::wstring folder;
-  if (SUCCEEDED(dlg->Show(npp._nppHandle))) {
-    IShellItem* item;
-    if (SUCCEEDED(dlg->GetResult(&item))) {
-      PWSTR p;
-      if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &p))) {
-        folder = p;
-        CoTaskMemFree(p);
-      }
-      item->Release();
-    }
-  }
-  dlg->Release();
+  std::wstring folder = pickFolder(L"The folder " + baseName(d->path) + L"'s game is installed in (where its .exe is, or above)");
   if (folder.empty()) return;
   iniSet(L"gameFolders", baseName(d->path), folder.c_str());
   if (lsp::running) lsp::notify("workspace/didChangeConfiguration", Value(Object{{"settings", lsp::settings()}}));
@@ -1306,7 +1685,12 @@ static FuncItem funcs[] = {
     {L"Format handler", cmdFormat, 0, false, nullptr},
     {L"Try it (simulate)…", cmdTryIt, 0, false, nullptr},
     {L"Problems panel", cmdPanel, 0, false, nullptr},
+    {L"Outline panel", cmdOutline, 0, false, nullptr},
     {L"Open in the browser workbench", cmdWorkbench, 0, false, nullptr},
+    {L"", nullptr, 0, false, nullptr},
+    {L"New handler…", cmdNewHandler, 0, false, nullptr},
+    {L"Install to Nucleus Co-op", cmdInstall, 0, false, nullptr},
+    {L"Set the Nucleus Co-op folder…", cmdSetNucleus, 0, false, nullptr},
     {L"", nullptr, 0, false, nullptr},
     {L"Link the game's folder…", cmdLinkFolder, 0, false, nullptr},
     {L"Unlink the game's folder", cmdUnlinkFolder, 0, false, nullptr},
@@ -1315,7 +1699,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 8, UPDATE_INDEX = 15;
+static const int PANEL_INDEX = 8, OUTLINE_INDEX = 9, UPDATE_INDEX = 20;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)
@@ -1438,6 +1822,7 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* n) {
   switch (n->nmhdr.code) {
     case NPPN_READY:
       panelCmd = funcs[PANEL_INDEX]._cmdID;
+      outCmd = funcs[OUTLINE_INDEX]._cmdID;
       setupIndicators();
       if (currentDoc()) lsp::start();
       checkForUpdate();
@@ -1450,6 +1835,7 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* n) {
         if (!lsp::running) lsp::start();
         else lsp::openCurrent();
       } else applyDiagnostics();
+      refreshOutline();
       return;
     case NPPN_FILEBEFORECLOSE:
       closeBuffer(n->nmhdr.idFrom);

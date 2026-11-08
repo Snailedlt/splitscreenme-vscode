@@ -10,6 +10,7 @@ import { hubHandlers, hubPackage } from './hubcache';
 import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
 import { gameFolderName } from './core/pkgcheck';
+import { installHandler as installFiles, InstallError } from './install';
 
 export interface CommandHost {
   lintFiles(entries: { uri: vscode.Uri; text: string }[]): void;
@@ -189,26 +190,19 @@ async function installHandler(uri?: vscode.Uri) {
 
   const base = path.basename(file.fsPath, '.js');
   const handlers = path.join(nucleus, 'handlers');
-  const destJs = path.join(handlers, `${base}.js`);
-  if (path.resolve(destJs) === path.resolve(file.fsPath)) {
-    vscode.window.showInformationMessage('This handler is already in the Nucleus handlers folder.');
-    return;
-  }
-  const exists = await fs.stat(destJs).then(() => true, () => false);
-  if (exists) {
+  let overwrite = false;
+  if (await fs.stat(path.join(handlers, `${base}.js`)).then(() => true, () => false)) {
     const ok = await vscode.window.showWarningMessage(`${base}.js already exists in ${handlers}. Overwrite it?`, { modal: true }, 'Overwrite');
     if (ok !== 'Overwrite') return;
+    overwrite = true;
   }
-  await fs.copyFile(file.fsPath, destJs);
-  const assetDir = path.join(path.dirname(file.fsPath), base);
   let copied = 0;
-  if (await isDir(assetDir)) {
-    for (const f of await listFiles(assetDir)) {
-      const dest = path.join(handlers, base, ...f.rel.split('/'));
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.copyFile(f.abs, dest);
-      copied++;
-    }
+  try {
+    copied = installFiles(file.fsPath, nucleus, { overwrite }).assets;
+  } catch (e) {
+    if (e instanceof InstallError && e.code === 'same-file') vscode.window.showInformationMessage(e.message);
+    else vscode.window.showErrorMessage(`Couldn't install: ${(e as Error).message}`);
+    return;
   }
   vscode.window.showInformationMessage(
     `Installed ${base}.js${copied ? ` and ${copied} asset file(s)` : ''} to ${handlers}. Restart Nucleus Co-op (or re-add the game) to pick up changes.`,

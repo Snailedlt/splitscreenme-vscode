@@ -1,6 +1,7 @@
 // `ncdev` (Nucleus Co-op dev tools): command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
 // Also a standalone .exe (#18, scripts/sea.mjs). `nucleus` is its old name and still works; `nucleus-lint <paths>`
 // is kept as a shortcut for `ncdev lint <paths>`.
+import { installHandler } from './install';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
 import { packageFilesFor } from './pkgfiles';
@@ -57,7 +58,11 @@ Commands:
   hub fetch <id> [--out dir]  Download a Hub handler package and extract it (default ./hub-handlers/<title>)
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
       [--features ${FEATURES.map((f) => f.id).join(',')}] [--out file.js] [--force]
-                              Create a handler from a template
+                              Create a handler from a template (--list-features: the features)
+  install <handler.js> --nucleus <folder> [--force]
+                              Copy the handler (and its <Name>/ folder) into Nucleus Co-op's
+                              handlers folder. --force replaces an installed one and installs
+                              despite errors
   package <handler.js> [--out file.nc] [--force]
                               Build a Hub package (handler.js + the <Name>/ asset folder)
   init-agent [dir]            Install AI agent instructions and this tool into a handler folder
@@ -105,7 +110,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -124,7 +129,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'update', 'version'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'update', 'version'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (!cmd && (argv[0] === '--version' || argv[0] === '-v')) cmd = 'version';
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
@@ -156,6 +161,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdHub(args, json);
     case 'new':
       return cmdNew(args, json);
+    case 'install':
+      return cmdInstall(args, json);
     case 'package':
       return cmdPackage(args, json);
     case 'init-agent':
@@ -432,6 +439,10 @@ async function cmdHub(args: Args, json: boolean): Promise<number> {
 }
 
 function cmdNew(args: Args, json: boolean): number {
+  if (has(args, '--list-features')) {
+    print(json, FEATURES, () => FEATURES.map((f) => `${f.id.padEnd(16)}${f.label}: ${f.detail}`).join('\n'));
+    return 0;
+  }
   const name = flag(args, '--name');
   const exe = flag(args, '--exe');
   if (!name || !exe) throw new Usage('new: --name and --exe are required');
@@ -443,6 +454,18 @@ function cmdNew(args: Args, json: boolean): number {
   const maxPlayers = flag(args, '--max-players');
   fs.writeFileSync(out, renderHandler({ gameName: name, executableName: exe, steamId: flag(args, '--steam-id'), maxPlayers: maxPlayers ? Number(maxPlayers) : undefined, features: features as Feature[] }));
   print(json, { file: path.resolve(out) }, () => `Created ${out}`);
+  return 0;
+}
+
+function cmdInstall(args: Args, json: boolean): number {
+  const file = args.positional[0];
+  if (!file?.endsWith('.js')) throw new Usage('install: give the handler .js file');
+  const nucleus = flag(args, '--nucleus');
+  if (!nucleus) throw new Usage('install: --nucleus <folder> is required (the Nucleus Co-op folder, with NucleusCoop.exe and handlers)');
+  const errors = lint(fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error');
+  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s), so Nucleus may not load it; fix them or pass --force. Run "ncdev lint ${file}".`);
+  const { dest, assets } = installHandler(file, nucleus, { overwrite: has(args, '--force') });
+  print(json, { file: dest, assetCount: assets }, () => `Installed ${path.basename(dest)}${assets ? ` and ${assets} asset file(s)` : ''} to ${path.dirname(dest)}. Restart Nucleus Co-op (or re-add the game) to pick it up.`);
   return 0;
 }
 
