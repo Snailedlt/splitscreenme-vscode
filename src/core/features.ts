@@ -424,7 +424,7 @@ export function signatureHelpAt(text: string, offset: number, opts: FeatureOptio
     const { owner, name, member } = c.callee;
     for (const o of member.overloads ?? []) {
       const params = o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`);
-      const docs = o.params.map((p) => (p.doc ? p.doc + (p.docBy === 'claude' ? ' _(AI-written)_' : '') : undefined));
+      const docs = o.params.map((p) => (p.doc ? p.doc + (p.docBy === 'claude' ? ' (AI-written)' : '') : undefined));
       signatures.push({ label: `${ownerLabel(owner) ? `${ownerLabel(owner)}.` : ''}${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params, ...(docs.some(Boolean) ? { parameterDocs: docs } : {}) });
     }
     // Prefer the first overload that has enough parameters for the cursor position.

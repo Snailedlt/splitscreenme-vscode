@@ -1208,7 +1208,19 @@ static void signatureHelp(HWND h) {
     // The parameter being typed first (what to pass), then the method's own docs.
     const Value& pd = p["documentation"];
     std::string pds = plain(pd.isStr() ? pd.str() : pd["value"].str(), 3);
-    if (!pds.empty() && p["label"].isStr()) text += "\n" + p["label"].str() + ": " + pds;
+    if (!pds.empty() && p["label"].isStr()) {
+      // Wrapped at about 100 characters: a call tip doesn't wrap by itself.
+      std::string line = p["label"].str() + ": ", word;
+      std::string wrapped;
+      for (size_t i = 0; i <= pds.size(); i++) {
+        if (i == pds.size() || pds[i] == ' ' || pds[i] == '\n') {
+          if (line.size() + word.size() > 100 && line.size() > 2) wrapped += line + "\n", line = "  ";
+          line += word + (i < pds.size() ? " " : "");
+          word.clear();
+        } else word += pds[i];
+      }
+      text += "\n" + wrapped + line;
+    }
     const Value& doc = sig["documentation"];
     std::string ds = plain(doc.isStr() ? doc.str() : doc["value"].str(), pds.empty() ? 4 : 2);
     if (!ds.empty()) text += "\n" + ds;
