@@ -493,7 +493,90 @@
           "description": "Nucleus Co-op installation folder (contains NucleusCoop.exe and \"handlers\"). Used by \"Install Handler into Nucleus Co-op\"."
         }
       }
-    }
+    },
+    "breakpoints": [
+      {
+        "language": "javascript"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "nucleus",
+        "label": "Nucleus handler (simulated)",
+        "languages": [
+          "javascript"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The handler to step through.",
+                "default": "${file}"
+              },
+              "players": {
+                "type": "number",
+                "description": "How many players Nucleus sets up (1-16).",
+                "default": 2
+              },
+              "keyboard": {
+                "description": "Who has the keyboard and mouse: a player number, \"all\" (each player their own) or \"none\".",
+                "default": 1,
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      "all",
+                      "none"
+                    ]
+                  }
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "description": "The monitor's size.",
+                "default": "1920x1080",
+                "pattern": "^\\d+x\\d+$"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Pause on the first statement instead of running to a breakpoint.",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "nucleus",
+            "request": "launch",
+            "name": "Step through the handler",
+            "program": "${file}",
+            "players": 2
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Nucleus: step through a handler",
+            "description": "Run the handler the way Nucleus does, simulated, and pause at breakpoints",
+            "body": {
+              "type": "nucleus",
+              "request": "launch",
+              "name": "Step through the handler",
+              "program": "^\"\\${file}\"",
+              "players": 2,
+              "keyboard": 1,
+              "resolution": "1920x1080"
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs",

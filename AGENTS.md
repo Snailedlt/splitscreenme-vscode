@@ -48,6 +48,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
 - `src/pkgfiles.ts`: the files in `<Name>/` next to `<Name>.js` on disk, for the package checks (extension, CLI, LSP). `src/gamefolders.ts`: VS Code's *Link the Game's Folder…*, its problems, fixes and completion (`splitscreenme.gameFolders`).
+- `src/dap.ts`: the Debug Adapter (DAP) over `core/debug.ts` (no `vscode` import); `src/debugvscode.ts` registers it inline for VS Code's Run and Debug (`"type": "nucleus"`).
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
 - `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
 - `src/lsp.ts`: `nucleus lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.

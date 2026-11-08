@@ -21,6 +21,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **An outline of your handler.** The Outline view, breadcrumbs and *Go to Symbol* (Ctrl+Shift+O) list the handler's settings grouped by object (Game, Game.ProtoInput, Game.Hook…) with their values, the callbacks with what they set inside, and your own functions and variables. In other editors through `nucleus lsp` too.
 - **Every Hub handler.** *Browse Handlers on the Hub* and `nucleus hub search` now see all of them (about 900), not only the 600 with the most stars.
 - **Check a handler against the game on your PC.** *Nucleus: Link the Game's Folder…* points a handler at the game's install folder; then `ExecutableName`, `BinariesFolder`, the symlink and copy lists and more are checked against the real files, with fixes ("did you mean ShooterGame-Win64-Shipping.exe?"), and those lists suggest the game's own files as you type. Only names and sizes are read. Suggested by messenils.
+- **Debug a handler with VS Code's own debugger.** Press F5 in a handler (or add a "Nucleus handler" launch configuration): set breakpoints in the margin, conditional ones too, step with F10 / F11 / Shift+F11, even step back, and see the variables, `Context`, `Player`, the options set so far and what Nucleus would have done, with hover values and the Debug Console. It runs the way Nucleus does (simulated); `players`, `keyboard` and `resolution` in launch.json pick the setup.
 
 ---
 

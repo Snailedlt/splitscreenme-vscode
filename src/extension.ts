@@ -8,6 +8,7 @@ import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 import { checkPackage, type PkgProblem } from './core/pkgcheck';
 import { gameFolderDiagnostics, registerGameFolders } from './gamefolders';
+import { registerDebugger } from './debugvscode';
 import { forgetPackageFiles, packageFileForPath, packageFilesFor, packageFilePath } from './pkgfiles';
 
 const SOURCE = 'nucleus';
@@ -168,6 +169,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   registerTryIt(context, isHandler);
   registerGameFolders(context, isHandler, SELECTOR, (d) => refresh(d, 0));
+  registerDebugger(context, isHandler);
 
   registerCommands(context, {
     lintFiles: (entries) => {

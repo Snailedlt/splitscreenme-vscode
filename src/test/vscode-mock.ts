@@ -205,3 +205,16 @@ export function makeDocument(text: string, fileName = '/work/handlers/Game.js') 
 }
 
 export const TextEdit = { replace: (range: any, newText: string) => ({ range, newText }) };
+export const debug = {
+  registerDebugAdapterDescriptorFactory: () => disposable,
+  registerDebugConfigurationProvider: () => disposable,
+};
+export class DebugAdapterInlineImplementation {
+  constructor(public implementation: unknown) {}
+}
+export class EventEmitter<T> {
+  private ls: ((e: T) => void)[] = [];
+  event = (l: (e: T) => void) => (this.ls.push(l), disposable);
+  fire(e: T) { this.ls.forEach((l) => l(e)); }
+  dispose() {}
+}
