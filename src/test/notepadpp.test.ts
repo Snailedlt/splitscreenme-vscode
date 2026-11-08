@@ -33,6 +33,7 @@ test('notepad++: our names merged into its JavaScript list, sorted, with call ti
   assert.match(out, /<KeyWord name="Context\.ModifySaveFile" func="yes">[\s\S]*?<Param name="string installSavePath" \/>/, 'call tips with short C# types');
   assert.ok(!names.some((n) => n.startsWith('Hub.')), 'no Hub.* lines (written by the Hub)');
   assert.equal(notepadPPVersion(out), '9.9.9');
+  for (const c of out.matchAll(/<!--([\s\S]*?)-->/g)) assert.ok(!c[1].includes('--'), 'valid XML: no "--" inside a comment');
   assert.equal(notepadPPVersion(ORIGINAL), undefined);
   // Merging again (from a merged file) doesn't duplicate anything.
   const again = mergeNotepadPP(out, '9.9.9');

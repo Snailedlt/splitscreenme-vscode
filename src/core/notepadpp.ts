@@ -57,7 +57,7 @@ export function mergeNotepadPP(original: string, version = ''): string {
   const envDot = /additionalWordChar="[^"]*\.[^"]*"/.test(env) ? env : /additionalWordChar="/.test(env) ? env.replace(/additionalWordChar="/, 'additionalWordChar=".') : env.replace(/\s*\/>$/, ' additionalWordChar="." />');
   const lang = body.match(/<AutoComplete\b[^>]*>/)?.[0] ?? '<AutoComplete language="JavaScript">';
   return `<?xml version="1.0" encoding="UTF-8" ?>
-<!-- ${NPP_MARKER} ${version}: Nucleus Co-op handler names added to Notepad++'s own JavaScript list (\`nucleus setup notepad++\`; \`--remove\` puts the original back). ${NPP_MARKER} end -->
+<!-- ${NPP_MARKER} ${version}: Nucleus Co-op handler names added to Notepad++'s own JavaScript list (by nucleus setup notepad++; its remove option puts the original back). ${NPP_MARKER} end -->
 <NotepadPlus>
 \t${lang}
 \t\t${envDot}

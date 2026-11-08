@@ -109,7 +109,7 @@ ${a}
 `);e.set(s.path,`<KeyWord name="${St(s.path)}" func="yes">
 ${r}
 		</KeyWord>`)}else e.set(s.path,`<KeyWord name="${St(s.path)}" />`)}for(let[s,o]of Object.entries(w.enums))for(let r of Object.keys(o.values))e.set(`Nucleus.${s}.${r}`,`<KeyWord name="${St(`Nucleus.${s}.${r}`)}" />`);return e}function Vr(e,t=""){let n=new Map,s=e.replace(new RegExp(`<!-- ${Yt}[\\s\\S]*?${Yt} end -->\\s*`,"g"),"");for(let u of s.matchAll(/<KeyWord\s+name="([^"]+)"[^>]*?(?:\/>|>[\s\S]*?<\/KeyWord>)/g))n.set(u[1].replace(/&amp;/g,"&"),u[0]);let o=cl();for(let[u,c]of o)n.set(u,c);let r=[...n.keys()].sort((u,c)=>u<c?-1:u>c?1:0),i=s.match(/<Environment\b[^>]*\/>/)?.[0]??'<Environment ignoreCase="no" startFunc="(" stopFunc=")" paramSeparator="," terminal=";" />',a=/additionalWordChar="[^"]*\.[^"]*"/.test(i)?i:/additionalWordChar="/.test(i)?i.replace(/additionalWordChar="/,'additionalWordChar=".'):i.replace(/\s*\/>$/,' additionalWordChar="." />'),l=s.match(/<AutoComplete\b[^>]*>/)?.[0]??'<AutoComplete language="JavaScript">';return`<?xml version="1.0" encoding="UTF-8" ?>
-<!-- ${Yt} ${t}: Nucleus Co-op handler names added to Notepad++'s own JavaScript list (\`nucleus setup notepad++\`; \`--remove\` puts the original back). ${Yt} end -->
+<!-- ${Yt} ${t}: Nucleus Co-op handler names added to Notepad++'s own JavaScript list (by nucleus setup notepad++; its remove option puts the original back). ${Yt} end -->
 <NotepadPlus>
 	${l}
 		${a}
