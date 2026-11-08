@@ -129,7 +129,7 @@ export function completionsAt(text: string, offset: number): CompletionEntry[] |
       kind: 'constant' as const,
       insertText: `${before && !before.endsWith(',') ? ', ' : ''}${hex(m.id)}`,
       filterText: `${m.name} ${hex(m.id)}`,
-      detail: m.hub ? `Blocked by ${m.hub} of 600 Hub handlers` : 'Window message',
+      detail: m.hub ? `Blocked by ${m.hub} of the 600 most-starred Hub handlers` : 'Window message',
       documentation: messageMarkdown(m.id),
       sortText: String(i).padStart(2, '0'),
     }));
