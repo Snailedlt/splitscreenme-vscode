@@ -7,6 +7,7 @@
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { definitionAt, referencesAt } from './core/definition';
+import { workbenchLinkFor } from './workbenchlink';
 import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -38,7 +39,7 @@ export interface LspSettings {
 }
 const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {} };
 
-export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll' } as const;
+export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
 
 // LSP enums (numbers in the protocol)
@@ -556,6 +557,11 @@ export class Server {
         const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
         const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
         return formatSimulation(r, kb);
+      }
+      case COMMANDS.workbenchLink: {
+        // The browser workbench with this handler open (a share link); `ref` says which editor asked.
+        const ref = typeof (args[0] as any)?.ref === 'string' && /^[\w.-]{1,40}$/.test((args[0] as any).ref) ? (args[0] as any).ref : 'lsp';
+        return workbenchLinkFor(doc?.text, ref);
       }
       case COMMANDS.fixAll: {
         if (!doc) throw new Error('nucleus.fixAll: give the uri of an open document.');

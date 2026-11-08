@@ -1,3 +1,5 @@
+import { workbenchLinkFor } from './workbenchlink';
+import { WORKBENCH_URL } from './core/sharelink';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -31,6 +33,7 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
   reg('splitscreenme.browseHub', () => browseHub(context));
   reg('splitscreenme.setupTypes', () => setupTypes(context));
   reg('splitscreenme.openDocs', openDocs);
+  reg('splitscreenme.openInWorkbench', openInWorkbench);
   reg('splitscreenme.lintWorkspace', () => lintWorkspace(host));
   reg('splitscreenme.setupAgents', () => setupAgents(context));
 }
@@ -351,6 +354,15 @@ async function setupTypes(context: vscode.ExtensionContext) {
 
 // ---------------------------------------------------------------------------
 
+/** The open handler in the browser workbench (its visual editor, Lines, Test all…), through a share link. */
+async function openInWorkbench() {
+  const doc = vscode.window.activeTextEditor?.document;
+  const text = doc && /\.js$/i.test(doc.fileName) ? doc.getText() : undefined;
+  const { url, withHandler } = workbenchLinkFor(text, 'vscode');
+  await vscode.env.openExternal(vscode.Uri.parse(url, true));
+  if (text !== undefined && !withHandler) vscode.window.showInformationMessage('This handler is too large to pass in a link: in the workbench, use Open file… to open it.');
+}
+
 async function openDocs() {
   const links = [
     { label: 'Handler API reference', url: 'https://www.splitscreen.me/docs/handler-api' },
@@ -358,6 +370,7 @@ async function openDocs() {
     { label: 'Proto Input', url: 'https://www.splitscreen.me/docs/protoinput' },
     { label: 'FAQ', url: 'https://www.splitscreen.me/docs/faq' },
     { label: 'Nucleus Co-op docs (legacy)', url: 'https://nucleus-coop.github.io/docs/' },
+    { label: 'Browser workbench (Nucleus: Open in the Browser Workbench opens this handler there)', url: `${WORKBENCH_URL}?ref=vscode` },
     { label: 'Handler hub', url: 'https://hub.splitscreen.me/' },
     { label: 'Nucleus Co-op source code', url: 'https://github.com/SplitScreen-Me/splitscreenme-nucleus' },
     { label: 'PCGamingWiki (check input & multiplayer support)', url: 'https://www.pcgamingwiki.com/wiki/Home' },

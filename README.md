@@ -2,7 +2,7 @@
 
 Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
 
-> **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=readme-vscode**
+> **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=readme-vscode-md**
 
 <p>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-problems-dark.png"><img src="docs/images/vscode-problems-light.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one"></picture>
@@ -14,7 +14,7 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-quickfix-dark.png"><img src="docs/images/vscode-quickfix-light.png" width="32%" alt="VS Code: the quick fix that wraps Game.KillMutex's value in an array"></picture>
 </p>
 
-*Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=readme-vscode). Testing it? See [TESTING.md](TESTING.md).*
+*Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=readme-vscode-md). Testing it? See [TESTING.md](TESTING.md).*
 
 - **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`.
 - **Hover docs** and **signature help** for every `Context` method and its overloads.
@@ -51,6 +51,7 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 | **Nucleus: Fix All Auto-fixable Problems** | Applies every safe fix to the open handler. To run it on save, add `"editor.codeActionsOnSave": { "source.fixAll.nucleus": "explicit" }`. |
 | **Nucleus: Lint All Handlers in Workspace** | Lints every handler in the workspace, not just open files. |
 | **Nucleus: Open Documentation…** | Quick links to the handler API, guides, Proto Input, FAQ, Hub and PCGamingWiki. |
+| **Nucleus: Open in the Browser Workbench** | The handler you're editing, in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=readme-vscode-md) (its visual editor, Lines, Test all), through a share link. |
 
 Package and Install both refuse to continue if the handler has lint errors, unless you confirm.
 
@@ -299,7 +300,7 @@ This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALA
 - **Problems are underlined** as you type (red: Nucleus would fail; orange: probably wrong; dotted: worth knowing). Hover one, or any name, for an explanation and the docs.
 - **Suggestions as you type** after a dot, `=`, a quote…: the members that exist there, the values an option takes (`true`/`false`, `Nucleus.DPIHandling.True`…), the game's own files once its folder is linked. The selected one's type and docs show in the status bar. Parameter hints after `(`.
 - **Alt+F12**: go to where a function, variable or option is defined; *Find references* lists every use.
-- **Alt+Enter**: the fixes for the line. **Plugins › Nucleus Co-op handlers** has *Fix all*, *Format handler*, *Try it* (what Nucleus would set up for 1–4 players, in a new tab), a *Problems panel* (double-click to jump, right-click for the fixes), *Link the game's folder…*, the *API reference* and *Check for updates*. Every command can get a shortcut in *Settings › Shortcut Mapper*.
+- **Alt+Enter**: the fixes for the line. **Plugins › Nucleus Co-op handlers** has *Fix all*, *Format handler*, *Try it* (what Nucleus would set up for 1–4 players, in a new tab), a *Problems panel* (double-click to jump, right-click for the fixes), *Link the game's folder…*, *Open in the browser workbench* (this handler, in the workbench's visual editor and Test all), the *API reference* and *Check for updates*. Every command can get a shortcut in *Settings › Shortcut Mapper*.
 - A **Run › Nucleus: check this handler** entry runs `ncdev lint` on the open file in a console.
 
 `ncdev update` keeps the tool current (the plugin's menu says when there's a new one). `ncdev setup notepad++ --check` says what's installed and `--remove` takes it all out again. Without the standalone `ncdev` (e.g. `node nucleus.js setup notepad++`), the setup adds the Nucleus names and call tips to Notepad++'s own JavaScript suggestions instead (no plugin).

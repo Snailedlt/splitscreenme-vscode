@@ -20,6 +20,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **`ncdev`, one download, nothing else to install.** The command-line tools are now `ncdev` (Nucleus Co-op dev tools), and `ncdev.exe` on the release page runs on Windows without Node.js. `ncdev update` gets the newest version, checked against the release's checksums. `nucleus` still works.
 
 - **Go to definition.** On a function or variable of the handler, F12 (VS Code, other editors) or Alt+F12 (Notepad++) jumps to where it's declared; on `Game.Play` or any option to where it's set; on `Context.Options["key"]` to its `Game.AddOption`. Find references lists every use (Language Server, Notepad++).
+- **Open a handler in the browser workbench.** *Nucleus: Open in the Browser Workbench* (VS Code) and *Plugins › Nucleus Co-op handlers › Open in the browser workbench* (Notepad++) open the handler you're editing there, for its visual editor, Lines and Test all.
 - **Common JavaScript mistakes caught.** The checks now include ESLint's rules for real bugs: `=` where `==` was meant, a backslash that disappears from a Windows path (`"C:\Games"`), the same key twice, code that never runs, a line that does nothing, and more, each explained in plain words. On the Hub's 896 handlers they found only real bugs.
 
 ### 🛠️ Improved

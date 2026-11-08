@@ -182,3 +182,30 @@ test('go to definition and references: own functions and variables (Jint scopes)
   // While typing (doesn't parse): still the declaration.
   assert.equal(line(definitionAt('function go() {}\nGame.Play = function () {\n  go(\n', 45)), 1);
 });
+
+test('Open in the Browser Workbench: the share link decodes to the handler, as the workbench reads it', () => {
+  const { workbenchLinkFor } = require('../workbenchlink');
+  const zlib = require('node:zlib');
+  const text = 'Game.GameName = "Ünïcode";\n'.repeat(20);
+  const { url, withHandler } = workbenchLinkFor(text, 'vscode');
+  assert.ok(withHandler);
+  assert.match(url, /^https:\/\/snailedlt\.github\.io\/nucleuscoop-handler-testbench\/\?ref=vscode#share-[0-9A-Za-z]+$/);
+  // The workbench's decoder (playground/src/share.ts fromBase62), then inflate.
+  const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const TAIL = [0, 2, 3, 5, 6, 7];
+  const code = url.split('#share-')[1];
+  const bytes: number[] = [];
+  for (let i = 0; i < code.length; i += 7) {
+    const part = code.slice(i, i + 7);
+    let n = 0;
+    for (const c of part) n = n * 62 + ALPHABET.indexOf(c);
+    const chunk: number[] = [];
+    for (let k = 0; k < TAIL.indexOf(part.length); k++) { chunk.unshift(n % 256); n = Math.floor(n / 256); }
+    bytes.push(...chunk);
+  }
+  assert.equal(zlib.inflateRawSync(Buffer.from(bytes)).toString('utf8'), text);
+  // Too large for a link: the workbench without it.
+  const big = workbenchLinkFor(Array.from({ length: 40000 }, (_, i) => `var v${i} = ${Math.random()};`).join('\n'), 'vscode');
+  assert.equal(big.withHandler, false);
+  assert.equal(big.url, 'https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode');
+});

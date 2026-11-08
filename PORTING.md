@@ -43,6 +43,7 @@ Positions in core are offsets into the text, counted in UTF-16 code units (what 
 | Checks against the game's install folder | `checkAgainstFolder()` (`core/gamefolder.ts`) + `folderAt()` (`src/gamefolder-node.ts`) | **Link the Game's Folder…**, problems, quick fixes, file suggestions in the lists | the `gameFolders` setting; problems with the fix in `data`, `quickfix` code actions, completion inside the lists |
 | Window-message names after `0x0008` | `inlayHints()` | InlayHintsProvider | `textDocument/inlayHint` |
 | Go to definition, find references | `definitionAt()`, `referencesAt()` (`core/definition.ts`) | F12 (with VS Code's own JavaScript support) | `textDocument/definition`, `textDocument/references` |
+| Open in the browser workbench | `workbenchLink()` (`core/sharelink.ts`), `workbenchLinkFor()` (`src/workbenchlink.ts`) | **Nucleus: Open in the Browser Workbench** | `workspace/executeCommand` `nucleus.workbenchLink` `{ uri, ref }`, returns `{ url, withHandler }` |
 | Try it (what each player gets) | `simulateIsolated()` (`src/sandbox.ts`) + `formatSimulation()` (`src/simformat.ts`) | **Nucleus: Try It** panel | `workspace/executeCommand` `nucleus.tryIt`, returns the text |
 | Is this file a handler? | `isHandlerFile()` | `isHandler()` | same, plus the `handlerGlobs` setting |
 

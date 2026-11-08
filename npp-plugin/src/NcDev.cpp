@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <shobjidl.h>
 #include <urlmon.h>
 #include <bcrypt.h>
@@ -1202,6 +1203,20 @@ static void cmdReferences() {
     if (i >= 0) jumpTo(h, r[(size_t)i]["range"]);
   });
 }
+/** The handler in the browser workbench (visual editor, Lines, Test all…), through a share link from the tool. */
+static void cmdWorkbench() {
+  Doc* d = active();
+  if (!d) {
+    ShellExecuteW(npp._nppHandle, L"open", L"https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=notepadpp", nullptr, nullptr, SW_SHOWNORMAL);
+    return;
+  }
+  lsp::request("workspace/executeCommand", Value(Object{{"command", "nucleus.workbenchLink"}, {"arguments", Value(Array{Value(Object{{"uri", d->uri}, {"ref", "notepadpp"}})})}}), [](const Value& r) {
+    std::string url = r["url"].str();
+    if (url.rfind("https://", 0) != 0) return;
+    ShellExecuteW(npp._nppHandle, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (!r["withHandler"].boolean()) status(L"Nucleus: this handler is too large for a link: in the workbench, use Open file… to open it");
+  });
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -1291,6 +1306,7 @@ static FuncItem funcs[] = {
     {L"Format handler", cmdFormat, 0, false, nullptr},
     {L"Try it (simulate)…", cmdTryIt, 0, false, nullptr},
     {L"Problems panel", cmdPanel, 0, false, nullptr},
+    {L"Open in the browser workbench", cmdWorkbench, 0, false, nullptr},
     {L"", nullptr, 0, false, nullptr},
     {L"Link the game's folder…", cmdLinkFolder, 0, false, nullptr},
     {L"Unlink the game's folder", cmdUnlinkFolder, 0, false, nullptr},
@@ -1299,7 +1315,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 8, UPDATE_INDEX = 14;
+static const int PANEL_INDEX = 8, UPDATE_INDEX = 15;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)

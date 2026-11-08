@@ -114,6 +114,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.openInWorkbench",
+        "title": "Open in the Browser Workbench",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.linkGameFolder",
         "title": "Link the Game's Folder…",
         "category": "Nucleus"
