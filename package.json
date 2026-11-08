@@ -75,7 +75,7 @@
       },
       {
         "command": "splitscreenme.formatHandler",
-        "title": "Format Handler (indentation and spacing)",
+        "title": "Format Handler",
         "category": "Nucleus"
       },
       {
@@ -207,15 +207,29 @@
         },
         "splitscreenme.format.quotes": {
           "type": "string",
-          "enum": ["double", "single", "keep"],
-          "enumDescriptions": ["\"Double\" quotes (also what the Hub install reads Game.GameName and Game.ExecutableName between)", "'Single' quotes", "Leave quotes as written"],
+          "enum": [
+            "double",
+            "single",
+            "keep"
+          ],
+          "enumDescriptions": [
+            "\"Double\" quotes (also what the Hub install reads Game.GameName and Game.ExecutableName between)",
+            "'Single' quotes",
+            "Leave quotes as written"
+          ],
           "default": "double",
           "markdownDescription": "Quotes around strings when formatting a handler. A string that contains the chosen quote keeps its own, so no escapes are added."
         },
         "splitscreenme.format.semicolons": {
           "type": "string",
-          "enum": ["add", "keep"],
-          "enumDescriptions": ["A semicolon at the end of every statement that ends without one", "Leave statement ends as written"],
+          "enum": [
+            "add",
+            "keep"
+          ],
+          "enumDescriptions": [
+            "A semicolon at the end of every statement that ends without one",
+            "Leave statement ends as written"
+          ],
           "default": "add",
           "markdownDescription": "Semicolons when formatting a handler. Either way the program stays exactly the same: the formatter checks that it parses to the same code before changing anything."
         },
@@ -863,6 +877,101 @@
               "keyboard": 1,
               "resolution": "1920x1080"
             }
+          }
+        ]
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "nucleus.start",
+        "title": "Make a Nucleus Co-op handler",
+        "description": "From an empty file to a handler players can download from the Hub: write it, let it check itself, try it, test it in Nucleus, share it.",
+        "when": "true",
+        "steps": [
+          {
+            "id": "start",
+            "title": "Start a handler",
+            "description": "Start from the template, with the game's name and its .exe, or from a handler that already works for a similar game (same engine, same launcher).\n[New Handler…](command:splitscreenme.newHandler)\n[Browse the Hub…](command:splitscreenme.browseHub)\nIn an empty .js file, typing `handler` offers the whole template too.",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-hover-light.png",
+                "dark": "media/walkthrough/vscode-hover-dark.png",
+                "hc": "media/walkthrough/vscode-hover-dark.png",
+                "hcLight": "media/walkthrough/vscode-hover-light.png"
+              },
+              "altText": "A handler open in VS Code, with the docs of an option shown on hover"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.newHandler",
+              "onCommand:splitscreenme.browseHub"
+            ]
+          },
+          {
+            "id": "check",
+            "title": "Let it check itself as you type",
+            "description": "Problems are underlined as you type: red stops Nucleus, orange is probably wrong. Hover one for why and what to do; **Ctrl+.** offers the fix. Hover any option for its docs; suggestions know what exists where.\n[Fix All Auto-fixable Problems](command:splitscreenme.fixAll)",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-problems-light.png",
+                "dark": "media/walkthrough/vscode-problems-dark.png",
+                "hc": "media/walkthrough/vscode-problems-dark.png",
+                "hcLight": "media/walkthrough/vscode-problems-light.png"
+              },
+              "altText": "Problems in a handler, each explained, with a fix offered"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.fixAll"
+            ]
+          },
+          {
+            "id": "tryit",
+            "title": "Try it before Nucleus does",
+            "description": "Try It runs `Game.Play` for each player, the way Nucleus would, and shows what each one gets: window, launch arguments, files changed. Nothing on your PC is touched.\n[Try It](command:splitscreenme.tryIt)",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-try-it-light.png",
+                "dark": "media/walkthrough/vscode-try-it-dark.png",
+                "hc": "media/walkthrough/vscode-try-it-dark.png",
+                "hcLight": "media/walkthrough/vscode-try-it-light.png"
+              },
+              "altText": "The Try It panel: what each player gets"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.tryIt"
+            ]
+          },
+          {
+            "id": "folder",
+            "title": "Link the game's folder",
+            "description": "Point it at where the game is installed and the checks can see the real files: the exe's name, the folders to link or copy, the files to suggest.\n[Link the Game's Folder…](command:splitscreenme.linkGameFolder)",
+            "media": {
+              "markdown": "media/walkthrough/folder.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.linkGameFolder"
+            ]
+          },
+          {
+            "id": "install",
+            "title": "Test it in Nucleus Co-op",
+            "description": "Install copies the handler (and its folder) into Nucleus' `handlers` folder. Turn on Nucleus' debug log, start 2 players, and if something's off, `debug-log.txt` in the Nucleus folder says why.\n[Install Handler into Nucleus Co-op](command:splitscreenme.installHandler)",
+            "media": {
+              "markdown": "media/walkthrough/install.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.installHandler"
+            ]
+          },
+          {
+            "id": "share",
+            "title": "Share it on the Hub",
+            "description": "Package makes the .nc file the Hub takes: the handler and its folder. Upload it at [hub.splitscreen.me](https://hub.splitscreen.me/).\n[Package Handler for the Hub](command:splitscreenme.packageHandler)",
+            "media": {
+              "markdown": "media/walkthrough/share.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.packageHandler"
+            ]
           }
         ]
       }
