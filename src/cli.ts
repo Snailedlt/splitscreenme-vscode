@@ -502,9 +502,9 @@ function cmdSetup(args: Args, json: boolean): number {
   // The standalone ncdev copies itself to one known place (%LOCALAPPDATA%\ncdev) and installs the plugin, which runs it.
   const standalone = isStandalone();
   const tool = standalone && changing ? installSelf() : standalone ? installPath() : undefined;
-  const plugin = standalone ? builtIn('NcDev.dll') : undefined;
+  const plugins = standalone ? { x64: builtIn('NcDev.dll'), x86: builtIn('NcDev-x86.dll') } : undefined;
   const runCommand = tool ? `cmd /k ""${tool}" lint "$(FULL_CURRENT_PATH)""` : `cmd /k ""${process.execPath}" "${path.resolve(process.argv[1])}" lint "$(FULL_CURRENT_PATH)""`;
-  const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand, plugin, toolPath: tool });
+  const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand, plugins, toolPath: tool });
   if (tool && changing && r.ok) r.lines.unshift(`ncdev is in ${path.dirname(tool)} (ncdev update keeps it current).`);
   print(json, r, () => r.lines.join('\n'));
   return r.ok ? 0 : 1;

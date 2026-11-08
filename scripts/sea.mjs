@@ -87,10 +87,12 @@ const config = {
   assets: { 'skill.json': path.join(tmp, 'skill.json') },
 };
 // The Notepad++ plugin (npp-plugin/build.sh), installed by `ncdev setup notepad++`.
-const dll = path.join(out, 'NcDev.dll');
-if (fs.existsSync(dll)) config.assets['NcDev.dll'] = path.resolve(dll);
-else if (process.argv.includes('--require-plugin')) throw new Error(`${dll} is missing: run npp-plugin/build.sh first.`);
-else console.warn('No NcDev.dll: this ncdev installs no Notepad++ plugin (npp-plugin/build.sh builds it).');
+for (const name of ['NcDev.dll', 'NcDev-x86.dll']) {
+  const dll = path.join(out, name);
+  if (fs.existsSync(dll)) config.assets[name] = path.resolve(dll);
+  else if (process.argv.includes('--require-plugin')) throw new Error(`${dll} is missing: run npp-plugin/build.sh first (with both MinGW compilers).`);
+  else console.warn(`No ${name}: this ncdev can't install the Notepad++ plugin for that Notepad++ (npp-plugin/build.sh builds it).`);
+}
 fs.writeFileSync(path.join(tmp, 'sea.json'), JSON.stringify(config));
 execFileSync(builder, ['--experimental-sea-config', path.join(tmp, 'sea.json')], { stdio: 'inherit' });
 

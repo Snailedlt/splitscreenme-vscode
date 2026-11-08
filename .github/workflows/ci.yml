@@ -34,7 +34,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix >/dev/null
+      - run: sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix >/dev/null
       - run: npm run build && sh npp-plugin/build.sh
       - uses: actions/cache@v4
         with:

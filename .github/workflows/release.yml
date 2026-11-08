@@ -45,14 +45,14 @@ jobs:
         run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${{ steps.version.outputs.tag }}.vsix"
       - name: Build ncdev.exe (standalone, with the Notepad++ plugin) and test the Linux build of it
         run: |
-          sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix osslsigncode >/dev/null
+          sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix osslsigncode >/dev/null
           sh npp-plugin/build.sh
           node scripts/sea.mjs --require-plugin --targets win-x64,linux-x64
           node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64
           grep ' ncdev.exe$' dist-sea/SHA256SUMS.txt > SHA256SUMS.txt
           cp dist-sea/ncdev.exe ncdev.exe
-          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll)
-          echo "NcDev.zip $(sha256sum NcDev.zip | cut -d' ' -f1)" > plugin-sha256.txt
+          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
+          sha256sum NcDev.zip NcDev-x86.zip > plugin-sha256.txt
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,7 +60,7 @@ jobs:
         run: |
           pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
           cp dist/cli.js nucleus.js
-          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" ncdev.exe SHA256SUMS.txt NcDev.zip nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
+          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" ncdev.exe SHA256SUMS.txt NcDev.zip NcDev-x86.zip nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
       - name: Announce on Discord (when DISCORD_WEBHOOKS is set)
         env:
           TAG: ${{ steps.version.outputs.tag }}

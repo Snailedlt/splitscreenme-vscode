@@ -8,7 +8,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { assetName, installRelease, latestRelease, newer, versionOf } from '../standalone';
-import { readIni, setupNotepadPP } from '../setup-npp';
+import { nppArch, readIni, setupNotepadPP } from '../setup-npp';
 import { mergeNotepadPP } from '../core/notepadpp';
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
@@ -82,7 +82,15 @@ test('notepad++: the plugin install (DLL, NcDev.ini, the static list taken out) 
   fs.writeFileSync(xml, mergeNotepadPP(original, '0.4.0'));
   fs.writeFileSync(path.join(dir, 'doLocalConf.xml'), '');
   const dll = Buffer.from('MZ fake plugin');
-  const r = setupNotepadPP({ path: dir, plugin: dll, toolPath: 'C:\\Users\\Ann\\AppData\\Local\\ncdev\\ncdev.exe', runCommand: 'cmd /k ncdev lint "$(FULL_CURRENT_PATH)"' });
+  // A 64-bit notepad++.exe (PE machine 0x8664) gets the 64-bit DLL; a 32-bit one the other.
+  const exe = Buffer.alloc(512);
+  exe.write('MZ', 0);
+  exe.writeUInt32LE(0x80, 0x3c);
+  exe.write('PE\0\0', 0x80, 'latin1');
+  exe.writeUInt16LE(0x8664, 0x84);
+  fs.writeFileSync(path.join(dir, 'notepad++.exe'), exe);
+  assert.equal(nppArch(dir), 'x64');
+  const r = setupNotepadPP({ path: dir, plugins: { x64: dll, x86: Buffer.from('MZ 32-bit') }, toolPath: 'C:\\Users\\Ann\\AppData\\Local\\ncdev\\ncdev.exe', runCommand: 'cmd /k ncdev lint "$(FULL_CURRENT_PATH)"' });
   assert.ok(r.ok, r.lines.join('\n'));
   assert.deepEqual(fs.readFileSync(path.join(dir, 'plugins', 'NcDev', 'NcDev.dll')), dll);
   assert.equal(fs.readFileSync(xml, 'utf8'), original, 'the plugin suggests names itself: the static list goes back to Notepad++\'s own');
@@ -92,12 +100,20 @@ test('notepad++: the plugin install (DLL, NcDev.ini, the static list taken out) 
   assert.match(readIni(ini), /^\[ncdev\]\r\npath=C:\\Users\\Ann\\AppData\\Local\\ncdev\\ncdev\.exe\r\n/);
   // The plugin keeps linked game folders in the same file: setting up again keeps them.
   fs.writeFileSync(ini, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${readIni(ini)}\r\n[gameFolders]\r\nShooter.js=D:\\Games\\Shooter\r\n`, 'utf16le')]));
-  setupNotepadPP({ path: dir, plugin: Buffer.from('MZ v2'), toolPath: 'C:\\ncdev.exe' });
+  setupNotepadPP({ path: dir, plugins: { x64: Buffer.from('MZ v2') }, toolPath: 'C:\\ncdev.exe' });
   assert.match(readIni(ini), /path=C:\\ncdev\.exe/);
   assert.match(readIni(ini), /\[gameFolders\]\r\nShooter\.js=D:\\Games\\Shooter/);
   assert.equal(fs.readFileSync(path.join(dir, 'plugins', 'NcDev', 'NcDev.dll'), 'utf8'), 'MZ v2');
   assert.equal(fs.readFileSync(path.join(dir, 'plugins', 'NcDev', 'NcDev.dll.old'), 'utf8'), 'MZ fake plugin', 'a loaded DLL is moved aside, not overwritten');
   assert.match(setupNotepadPP({ path: dir, check: true }).lines[0], /plugin is installed.*it runs C:\\ncdev\.exe/);
+  exe.writeUInt16LE(0x14c, 0x84);
+  fs.writeFileSync(path.join(dir, 'notepad++.exe'), exe);
+  assert.equal(nppArch(dir), 'x86');
+  setupNotepadPP({ path: dir, plugins: { x64: Buffer.from('MZ v2'), x86: Buffer.from('MZ 32-bit') }, toolPath: 'C:\\ncdev.exe' });
+  assert.equal(fs.readFileSync(path.join(dir, 'plugins', 'NcDev', 'NcDev.dll'), 'utf8'), 'MZ 32-bit', '32-bit Notepad++: the 32-bit DLL');
+  exe.writeUInt16LE(0xaa64, 0x84);
+  fs.writeFileSync(path.join(dir, 'notepad++.exe'), exe);
+  assert.match(setupNotepadPP({ path: dir, plugins: { x64: Buffer.from('MZ v2') }, toolPath: 'C:\\ncdev.exe' }).lines.join('\n'), /no plugin for arm64/);
   const rm = setupNotepadPP({ path: dir, remove: true, runCommand: '' });
   assert.match(rm.lines.join('\n'), /Removed the Nucleus plugin/);
   assert.ok(!fs.existsSync(path.join(dir, 'plugins', 'NcDev')) && !fs.existsSync(ini));

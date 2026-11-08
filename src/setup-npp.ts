@@ -43,10 +43,26 @@ export interface SetupOptions {
   check?: boolean;
   /** The Run menu's command line (with $(FULL_CURRENT_PATH)). */
   runCommand?: string;
-  /** The plugin DLL to install, when this ncdev has one. */
-  plugin?: Buffer;
+  /** The plugin DLLs this ncdev has, by Notepad++'s architecture; the one matching notepad++.exe is installed. */
+  plugins?: Partial<Record<NppArch, Buffer>>;
   /** Where the plugin finds ncdev (written to NcDev.ini). */
   toolPath?: string;
+}
+
+export type NppArch = 'x64' | 'x86' | 'arm64';
+/** 64-bit, 32-bit or ARM Notepad++ (the PE header's machine field of notepad++.exe); a plugin DLL must match it. */
+export function nppArch(dir: string): NppArch | undefined {
+  try {
+    const fd = fs.openSync(path.join(dir, 'notepad++.exe'), 'r');
+    const b = Buffer.alloc(4096);
+    fs.readSync(fd, b, 0, 4096, 0);
+    fs.closeSync(fd);
+    const pe = b.readUInt32LE(0x3c);
+    if (b.toString('latin1', pe, pe + 4) !== 'PE\0\0') return undefined;
+    return ({ 0x8664: 'x64', 0x14c: 'x86', 0xaa64: 'arm64' } as Record<number, NppArch>)[b.readUInt16LE(pe + 4)];
+  } catch {
+    return undefined;
+  }
 }
 
 /** NcDev.ini's text (UTF-16 with a BOM when we wrote it, maybe ANSI when someone edited it). */
@@ -86,6 +102,9 @@ export function setupNotepadPP(opts: SetupOptions): SetupResult {
   const current = fs.readFileSync(file, 'utf8');
   const installed = notepadPPVersion(current);
   const hasPlugin = fs.existsSync(dll);
+  // The DLL for this Notepad++ (64-bit when it can't be told). ARM64 Notepad++ gets the names instead.
+  const arch = nppArch(dir) ?? 'x64';
+  const plugin = opts.plugins?.[arch];
   if (opts.check) {
     if (hasPlugin) {
       const where = ini ? /^path=(.*)$/m.exec(readIni(ini))?.[1]?.trim() : undefined;
@@ -108,8 +127,8 @@ export function setupNotepadPP(opts: SetupOptions): SetupResult {
       }
       if (ini && fs.existsSync(ini)) fs.rmSync(ini);
       if (!lines.length) lines.push('Nothing to remove: no Nucleus plugin or names in this Notepad++.');
-    } else if (opts.plugin) {
-      replaceFile(dll, opts.plugin);
+    } else if (plugin) {
+      replaceFile(dll, plugin);
       if (ini) {
         fs.mkdirSync(path.dirname(ini), { recursive: true });
         // Keep the linked game folders; set where ncdev is.
@@ -122,12 +141,13 @@ export function setupNotepadPP(opts: SetupOptions): SetupResult {
         fs.copyFileSync(backup, file);
         fs.rmSync(backup);
       }
-      lines.push(`Installed the Nucleus plugin in Notepad++ (${dll}). Restart Notepad++, open a handler, and see Plugins › Nucleus Co-op handlers.`);
+      lines.push(`Installed the Nucleus plugin in Notepad++ (${arch === 'x86' ? '32-bit, ' : ''}${dll}). Restart Notepad++, open a handler, and see Plugins › Nucleus Co-op handlers.`);
     } else {
       // Always merge from Notepad++'s original, so names that left the API leave the list too.
       if (!fs.existsSync(backup)) fs.copyFileSync(file, backup);
       fs.writeFileSync(file, mergeNotepadPP(fs.readFileSync(backup, 'utf8'), VERSION));
       lines.push(`Added the Nucleus names and call tips to Notepad++ (${file}); its own JavaScript words are kept. Restart Notepad++ to use them.`);
+      if (opts.plugins && !plugin) lines.push(`There's no plugin for ${arch} Notepad++ yet, so it gets the names and call tips instead. Ask for one: https://github.com/Snailedlt/splitscreenme-vscode/issues`);
     }
   } catch (e: any) {
     if (e?.code === 'EACCES' || e?.code === 'EPERM') return { ok: false, lines: [`Notepad++'s folder isn't writable (${dir}). Run this once from a terminal opened as administrator (right-click › Run as administrator), or use a portable Notepad++ with --path.`] };
