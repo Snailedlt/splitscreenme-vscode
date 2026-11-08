@@ -199,6 +199,11 @@
           "default": true,
           "description": "For a handler with a Hub.Handler.Id line, compare Game.GUID with the version published on hub.splitscreen.me (guid-changed). Downloads that version once and keeps it in the cache."
         },
+        "splitscreenme.lint.packageChecks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check the files in a handler's folder (<Name>/ next to <Name>.js) as they'd go into the .nc: names Windows can't install, files that overwrite each other, broken INI/JSON, very large files, and files the handler uses (Game.Folder + \"\\\\x\") that aren't there."
+        },
         "splitscreenme.lint.rules": {
           "type": "object",
           "default": {},

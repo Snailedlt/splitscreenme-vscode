@@ -7,6 +7,7 @@ import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
+import { gameFolderName } from './core/pkgcheck';
 
 export interface CommandHost {
   lintFiles(entries: { uri: vscode.Uri; text: string }[]): void;
@@ -248,19 +249,56 @@ async function browseHub(context: vscode.ExtensionContext) {
     return;
   }
   const entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h));
-  const dir = vscode.Uri.joinPath(context.globalStorageUri, 'hub', `${pick.h._id}-v${pick.h.currentVersion}`);
-  for (const e of entries) {
-    if (e.name.endsWith('/') || !e.data) continue;
-    const safe = e.name.split('/').filter((p) => p && p !== '..' && p !== '.');
-    if (!safe.length) continue;
-    await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(dir, ...safe), e.data);
-  }
   const js = entries.find((e) => e.name === 'handler.js') ?? entries.find((e) => e.name.endsWith('.js') && !e.name.includes('/'));
-  if (!js) {
+  if (!js?.data) {
     vscode.window.showWarningMessage('The package has no handler.js.');
     return;
   }
-  await vscode.window.showTextDocument(vscode.Uri.joinPath(dir, js.name), { preview: false });
+  // Laid out the way a Hub install puts it (AGENTS.md): <GameName>.js, and the contents of every top-level folder merged
+  // into <GameName>/ (Game.Folder). Other files at the package root are dropped by the install, so they're left out here.
+  const handlerText = Buffer.from(js.data).toString('utf8');
+  const game = gameFolderName(handlerText).replace(/\\/g, '') || 'handler';
+  const dir = vscode.Uri.joinPath(context.globalStorageUri, 'hub', `${pick.h._id}-v${pick.h.currentVersion}`);
+  const handlerUri = vscode.Uri.joinPath(dir, `${game}.js`);
+  await vscode.workspace.fs.writeFile(handlerUri, js.data);
+  let others = 0;
+  let dropped = 0;
+  for (const e of entries) {
+    if (e === js || e.name.endsWith('/') || !e.data) continue;
+    const parts = e.name.split('/').filter((p) => p && p !== '..' && p !== '.');
+    if (parts.length < 2) {
+      dropped++;
+      continue;
+    }
+    await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(dir, game, ...parts.slice(1)), e.data);
+    others++;
+  }
+  await vscode.window.showTextDocument(handlerUri, { preview: false });
+  if (!others) return;
+  const choice = await vscode.window.showInformationMessage(
+    `${pick.h.title} comes with ${others} other file${others === 1 ? '' : 's'} in "${game}/"${dropped ? ` (${dropped} more at the package root, which a Hub install drops)` : ''}.`,
+    'Open as Folder',
+    'Copy into Workspace',
+  );
+  if (choice === 'Open as Folder') await vscode.commands.executeCommand('vscode.openFolder', dir, { forceNewWindow: true });
+  else if (choice === 'Copy into Workspace') {
+    const ws = vscode.workspace.workspaceFolders?.length === 1 ? vscode.workspace.workspaceFolders[0] : await vscode.window.showWorkspaceFolderPick({ placeHolder: `Copy ${game}.js and ${game}/ into…` });
+    if (!ws) {
+      vscode.window.showWarningMessage('Open a folder first (File › Open Folder…), then copy the handler into it.');
+      return;
+    }
+    const target = vscode.Uri.joinPath(ws.uri, `${game}.js`);
+    try {
+      await vscode.workspace.fs.stat(target);
+      const ok = await vscode.window.showWarningMessage(`${game}.js is already in ${ws.name}. Replace it and its folder?`, { modal: true }, 'Replace');
+      if (ok !== 'Replace') return;
+    } catch {
+      /* not there yet */
+    }
+    await vscode.workspace.fs.copy(handlerUri, target, { overwrite: true });
+    await vscode.workspace.fs.copy(vscode.Uri.joinPath(dir, game), vscode.Uri.joinPath(ws.uri, game), { overwrite: true });
+    await vscode.window.showTextDocument(target, { preview: false });
+  }
 }
 
 // ---------------------------------------------------------------------------

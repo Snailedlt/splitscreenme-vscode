@@ -132,6 +132,7 @@ export const workspace = {
   onDidChangeTextDocument: () => disposable,
   onDidCloseTextDocument: () => disposable,
   onDidChangeConfiguration: () => disposable,
+  createFileSystemWatcher: () => ({ onDidCreate: () => disposable, onDidChange: () => disposable, onDidDelete: () => disposable, dispose() {} }),
   getConfiguration: (section: string) => ({
     get: (key: string, def?: any) => (`${section}.${key}` in __config ? __config[`${section}.${key}`] : def),
     update: async () => {},

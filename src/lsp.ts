@@ -9,6 +9,8 @@ import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lin
 import { CodeActionEntry, CompletionEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
+import { checkPackage } from './core/pkgcheck';
+import { packageFilesFor } from './pkgfiles';
 import { publishedNow } from './published';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { formatSimulation } from './simformat';
@@ -156,6 +158,13 @@ export class Server {
     }
     const lines = linesOf(d);
     const diagnostics = this.lintDoc(d, () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
+    // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
+    const file = pathOf(uri);
+    const files = file ? packageFilesFor(file) : undefined;
+    for (const p of files ? checkPackage(d.text, files) : []) {
+      if (p.file || p.start === undefined) continue;
+      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: p.end ?? p.start }), severity: SEVERITY[p.severity], code: 'package', codeDescription: { href: RULES_URL }, source: 'nucleus', message: `${p.title}. ${p.why}` });
+    }
     this.notify('textDocument/publishDiagnostics', { uri, version: d.version, diagnostics });
   }
   private schedule(uri: string, delay = 200) {

@@ -1,6 +1,8 @@
 // `nucleus`: command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
 // `nucleus-lint <paths>` is kept as a shortcut for `nucleus lint <paths>`.
 import { lintPluginsFor } from './plugins';
+import { checkPackage } from './core/pkgcheck';
+import { packageFilesFor } from './pkgfiles';
 import { publishedFor } from './published';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -201,18 +203,27 @@ async function cmdLint(args: Args, json: boolean): Promise<number> {
       else if (d.severity === 'warning') warnings++;
     }
     const withPos = diags.map((d) => ({ ...d, line: lineOf(text, d.start) + 1, column: d.start - lineStart(text, d.start) + 1 }));
+    // The handler's folder (<Name>/ next to <Name>.js), as it goes into the .nc: core/pkgcheck.ts.
+    const pkgFiles = packageFilesFor(file, 0);
+    const pkg = (pkgFiles ? checkPackage(text, pkgFiles) : []).filter((p) => (quiet ? p.severity === 'error' : true));
+    for (const p of pkg) {
+      if (p.severity === 'error') errors++;
+      else if (p.severity === 'warning') warnings++;
+    }
+    const pkgOut = pkg.map((p) => ({ file: p.file ?? null, line: p.line ?? (p.start !== undefined ? lineOf(text, p.start) + 1 : null), severity: p.severity, message: `${p.title}. ${p.why}`, rule: 'package' }));
     fixedCount += fixed.length;
     if (json) {
-      out.push({ file, ...(fixMode ? { fixed } : {}), diagnostics: withPos });
+      out.push({ file, ...(fixMode ? { fixed } : {}), diagnostics: withPos, ...(pkgOut.length ? { package: pkgOut } : {}) });
       continue;
     }
-    if (!diags.length && !fixed.length) continue;
+    if (!diags.length && !fixed.length && !pkgOut.length) continue;
     console.log(file);
     for (const f of fixed) console.log(`  ${`${f.line}`.padEnd(9)} ${(fixMode === 'dry' ? 'would fix' : 'fixed').padEnd(8)} ${f.title}  [${f.rule}]`);
     for (const d of withPos) {
       console.log(`  ${`${d.line}:${d.column}`.padEnd(9)} ${d.severity.padEnd(8)} ${d.message}  [${d.rule}]`);
       for (const f of d.fixes ?? []) console.log(`  ${''.padEnd(9)} ${''.padEnd(8)} fix: ${f.title}`);
     }
+    for (const p of pkgOut) console.log(`  ${(p.file ? `${p.file}${p.line ? `:${p.line}` : ''}` : `${p.line ?? ''}`).padEnd(9)} ${p.severity.padEnd(8)} ${p.message}  [package]`);
     console.log();
   }
   if (json) console.log(JSON.stringify({ files: out, errors, warnings, ...(fixMode ? { fixed: fixedCount } : {}) }, null, 2));

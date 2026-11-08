@@ -12,6 +12,15 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### ✨ New
+
+- **Checks for the files next to your handler.** The files in `<Name>/` beside `<Name>.js` are checked as they'd go into the .nc: names Windows can't install, two files that overwrite each other, broken INI or JSON, very large files, and a file the handler uses through `Game.Folder` that's probably misspelled ("did you mean Config.json?"). In the Problems panel, `nucleus lint` and `nucleus lsp`; `splitscreenme.lint.packageChecks` turns them off.
+- **Hub handlers with all their files.** *Browse Handlers on the Hub › Open handler source* now lays the package out the way Nucleus installs it (`<GameName>.js` and `<GameName>/`), says how many other files it has, and offers **Open as Folder** and **Copy into Workspace**.
+
+---
+
 ## 0.4.0 (beta) · 2026-11-07
 
 **The biggest update yet.** Checks that catch settings which quietly do nothing, docs for 150 more API members (and a way to help check them), the same tools in any editor with LSP support, and a first look at stepping through a handler line by line. The workbench got its biggest update too: see its What's new.

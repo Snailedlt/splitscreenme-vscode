@@ -6,6 +6,8 @@ import { registerTryIt } from './tryit';
 import { CodeActionEntry, CompletionKind, completionsAt, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
+import { checkPackage, type PkgProblem } from './core/pkgcheck';
+import { forgetPackageFiles, packageFileForPath, packageFilesFor, packageFilePath } from './pkgfiles';
 
 const SOURCE = 'nucleus';
 const SELECTOR: vscode.DocumentSelector = [
@@ -28,7 +30,10 @@ export function isHandler(doc: vscode.TextDocument): boolean {
 
 export function activate(context: vscode.ExtensionContext) {
   const collection = vscode.languages.createDiagnosticCollection(SOURCE);
-  context.subscriptions.push(collection);
+  // Package checks on the files in a handler's folder (core/pkgcheck.ts): kept apart, since those files aren't handlers.
+  const pkgCollection = vscode.languages.createDiagnosticCollection(`${SOURCE}-package`);
+  const pkgUris = new Map<string, vscode.Uri[]>();
+  context.subscriptions.push(collection, pkgCollection);
   registerWhatsNew(context);
 
   // AI agents in VS Code (Copilot agent mode, VS Code 1.101+): offer the handler tools as an MCP
@@ -59,7 +64,26 @@ export function activate(context: vscode.ExtensionContext) {
         const text = doc.getText();
         // The Hub's published version, for guid-changed: fetched once (cached), then this runs again.
         const published = config().get('lint.compareWithHub', true) ? publishedNow(text, () => refresh(doc, 0)) : undefined;
-        collection.set(doc.uri, toVsDiagnostics(doc, lint(text, { rules: ruleOverrides(), plugins: doc.uri.scheme === 'file' ? lintPluginsFor(doc.uri.fsPath) : undefined, published })));
+        const diags = toVsDiagnostics(doc, lint(text, { rules: ruleOverrides(), plugins: doc.uri.scheme === 'file' ? lintPluginsFor(doc.uri.fsPath) : undefined, published }));
+        // The handler's folder, as it goes into the .nc: files a Hub install mishandles, files the handler uses that aren't there.
+        const files = doc.uri.scheme === 'file' && config().get('lint.packageChecks', true) ? packageFilesFor(doc.uri.fsPath) : undefined;
+        const problems = files ? checkPackage(text, files) : [];
+        diags.push(...problems.filter((p) => !p.file && p.start !== undefined).map((p) => pkgDiagnostic(p, new vscode.Range(doc.positionAt(p.start!), doc.positionAt(p.end ?? p.start!)))));
+        collection.set(doc.uri, diags);
+        for (const u of pkgUris.get(key) ?? []) pkgCollection.delete(u);
+        const byFile = new Map<string, vscode.Diagnostic[]>();
+        for (const p of problems.filter((p) => p.file)) {
+          const line = Math.max(0, (p.line ?? 1) - 1);
+          const list = byFile.get(p.file!) ?? [];
+          list.push(pkgDiagnostic(p, new vscode.Range(line, 0, line, p.line ? 1000 : 0)));
+          byFile.set(p.file!, list);
+        }
+        const uris = [...byFile].map(([name, list]) => {
+          const u = vscode.Uri.file(packageFilePath(doc.uri.fsPath, name));
+          pkgCollection.set(u, list);
+          return u;
+        });
+        pkgUris.set(key, uris);
       }, delay),
     );
   };
@@ -73,6 +97,18 @@ export function activate(context: vscode.ExtensionContext) {
       if (d.isUntitled) collection.delete(d.uri);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('splitscreenme') && refreshAll()),
+    // A file in a handler's folder changed: check that handler's package again.
+    ...(() => {
+      const w = vscode.workspace.createFileSystemWatcher('**/*');
+      const changed = (u: vscode.Uri) => {
+        const handler = packageFileForPath(u.fsPath, vscode.workspace.textDocuments.filter((d) => d.uri.scheme === 'file').map((d) => d.uri.fsPath));
+        if (!handler) return;
+        forgetPackageFiles(handler);
+        const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === handler);
+        if (doc) refresh(doc, 300);
+      };
+      return [w, w.onDidCreate(changed), w.onDidChange(changed), w.onDidDelete(changed)];
+    })(),
   );
   refreshAll();
 
@@ -166,6 +202,14 @@ function offsetToPosition(text: string) {
     }
     return new vscode.Position(lo, offset - starts[lo]);
   };
+}
+
+/** A package check's problem as a VS Code diagnostic (no quick fixes: moving files is up to the author). */
+function pkgDiagnostic(p: PkgProblem, range: vscode.Range): vscode.Diagnostic {
+  const v = new vscode.Diagnostic(range, `${p.title}. ${p.why}`, SEVERITY[p.severity]);
+  v.source = SOURCE;
+  v.code = 'package';
+  return v;
 }
 
 function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vscode.Diagnostic[] {
