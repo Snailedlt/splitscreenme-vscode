@@ -4,7 +4,7 @@
 // same behaviour. Positions are UTF-16 offsets into the text (what JavaScript strings index), which
 // is also what LSP counts by default. No `vscode` import here, no Node APIs either.
 import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './wm';
-import { api, claudeNote, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './api';
+import { api, claudeNote, DOCS_URL, isStringMember, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './api';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './complete';
 import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severity, TextEdit } from './lint';
 import { fixAll } from './fix';
@@ -222,6 +222,7 @@ function globalCompletions(text: string, offset: number): CompletionEntry[] | un
 function ownerOf(base: Resolved): string {
   if (base.kind === 'object') return base.type;
   if (base.kind === 'member' && base.member.ref) return base.member.ref;
+  if (base.kind === 'member' && isStringMember(base.member)) return 'String';
   return '';
 }
 
@@ -251,7 +252,7 @@ export function signatureHelpAt(text: string, offset: number): SignatureHelpInfo
     const { owner, name, member } = c.callee;
     for (const o of member.overloads ?? []) {
       const params = o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`);
-      signatures.push({ label: `${ownerLabel(owner)}.${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params });
+      signatures.push({ label: `${ownerLabel(owner) ? `${ownerLabel(owner)}.` : ''}${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params });
     }
     // Prefer the first overload that has enough parameters for the cursor position.
     const idx = (member.overloads ?? []).findIndex((o) => o.params.length > c.activeParameter || o.params.some((p) => p.rest));

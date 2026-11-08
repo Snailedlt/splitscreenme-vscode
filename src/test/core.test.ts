@@ -149,5 +149,18 @@ test('completion: JavaScript string methods after a string value (Jint ES5)', ()
   assert.ok(labels('var s = "-w " + Context.Width;\ns.').includes('split'), 'a variable set from a string');
   assert.ok(labels('Context.StartArguments.').includes('indexOf'));
   assert.ok(!labels('Context.StartArguments.').includes('includes'), 'ES5 only');
-  assert.match(signatureHelpAt('var s = "a";\ns.replace(', 25)?.signatures[0].label ?? '', /replace\(search: string \| RegExp, replacement: string\)/);
+  assert.match(signatureHelpAt('var s = "a";\ns.replace(', 25)?.signatures[0].label ?? '', /replace\(searchValue: string \| RegExp, replaceValue: string\)/);
+});
+
+test('JavaScript built-ins: generated from TypeScript\'s lib.es5.d.ts, current, and offered where they apply', () => {
+  const { execFileSync } = require('node:child_process');
+  execFileSync(process.execPath, ['scripts/generate-jsbuiltins.mjs', '--check'], { cwd: require('node:path').join(__dirname, '..') });
+  const labels = (t: string) => (completionsAt(t, t.length) ?? []).map((c) => c.label);
+  assert.ok(labels('Math.').includes('floor') && labels('JSON.').includes('stringify'));
+  assert.ok(labels('var list = ["a"];\nlist.').includes('forEach'), 'an array literal');
+  assert.ok(!labels('var list = ["a"];\nlist.').includes('includes'), 'ES5 only');
+  assert.match(signatureHelpAt('parseInt(', 9)?.signatures[0].label ?? '', /^parseInt\(string: string, radix\??: number\)/);
+  assert.ok(!JSON.stringify(require('../../data/js-builtins.json').objects).match(/=> value is|\bthis:/), 'no TypeScript-only notation');
+  assert.ok(lint('Game.GUID = "x";\nvar n = Math.flor(2.5);\n').some((d) => d.rule === 'unknown-member' && /flor/.test(d.message)), 'a misspelled Math method');
+  assert.ok(!lint('Game.GUID = "x";\nvar n = Math.floor(2.5) + Math.PI;\n').some((d) => d.rule === 'unknown-member'));
 });

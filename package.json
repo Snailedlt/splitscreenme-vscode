@@ -580,7 +580,7 @@
     ]
   },
   "scripts": {
-    "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs",
+    "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs && node scripts/generate-jsbuiltins.mjs",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit -p .",

@@ -1,6 +1,6 @@
 // Typed access to the generated Nucleus handler API model (data/nucleus-api.json).
 import raw from '../../data/nucleus-api.json';
-import { JS_STRING } from './jsbuiltins';
+import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS, JS_OBJECTS, isJsBuiltin, mdnUrl } from './jsbuiltins';
 import { DOTNET_OBJECTS } from './dotnet';
 
 export type SimpleType =
@@ -115,14 +115,17 @@ export function objectTypeOf(ts: string | undefined): string | undefined {
   return api.objects[ts] ? ts : undefined;
 }
 
-/** An API object by name; also `String` (JavaScript's string methods, core/jsbuiltins.ts), which isn't in the model. */
+/** An API object by name; also JavaScript's own (String, Array, Math, JSON, Number: core/jsbuiltins.ts). */
 export function objectOf(type: string): ApiObject | undefined {
-  return api.objects[type] ?? (type === 'String' ? JS_STRING : undefined);
+  return api.objects[type] ?? JS_OBJECTS[type];
 }
 /** A field or property that holds a string: its value has JavaScript's string methods. */
 export const isStringMember = (m: Member) => m.kind !== 'method' && m.kind !== 'object' && (m.type === 'string' || m.ts === 'string');
 
 export function resolveGlobal(name: string): Resolved | undefined {
+  // JavaScript's Math and JSON, and its global functions (parseInt…): for hover, completion and parameter hints.
+  if (JS_GLOBAL_OBJECTS.includes(name) && !api.globals[name]) return { kind: 'object', type: name };
+  if (JS_FUNCTIONS[name] && !api.globals[name]) return { kind: 'member', owner: '', name, member: JS_FUNCTIONS[name] };
   const g = api.globals[name];
   if (!g) return undefined;
   if (name === 'Nucleus') return { kind: 'nucleus' };
@@ -280,13 +283,14 @@ export function looksLikeTypo(name: string, candidates: string[]): boolean {
 
 export function memberSignature(owner: string, name: string, m: Member): string[] {
   const label = ownerLabel(owner);
+  const full = label ? `${label}.${name}` : name;
   if (m.kind === 'method') {
     return (m.overloads ?? []).map(
-      (o) => `${label}.${name}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}${p.optional ? '?' : ''}: ${p.type}`).join(', ')}): ${o.returns}`,
+      (o) => `${full}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}${p.optional ? '?' : ''}: ${p.type}`).join(', ')}): ${o.returns}`,
     );
   }
   const t = m.kind === 'object' ? m.ref ?? m.ts : m.ts;
-  return [`${m.readonly ? '(read-only) ' : ''}${label}.${name}: ${t}`];
+  return [`${m.readonly ? '(read-only) ' : ''}${full}: ${t}`];
 }
 
 /** "GameHook" -> "Game.Hook" etc., for messages. */
@@ -336,6 +340,6 @@ export function memberMarkdown(owner: string, name: string, m: Member): string {
   if (m.required) meta.push('**Required**');
   if (meta.length) parts.push(meta.join(' · '));
   if (m.example) parts.push('```js\n' + m.example + '\n```');
-  parts.push(`[Handler API docs](${DOCS_URL})`);
+  parts.push(isJsBuiltin(owner) ? `[MDN: ${owner ? `${owner}.` : ''}${name}](${mdnUrl(owner, name)})` : `[Handler API docs](${DOCS_URL})`);
   return parts.join('\n\n');
 }

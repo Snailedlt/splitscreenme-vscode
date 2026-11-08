@@ -1,35 +1,38 @@
-// JavaScript's own string methods, as Jint 2.11.58 has them (ES5): offered after a string value, such as
-// `Context.StartArguments.` or a variable set from a string (`var args = "-w " + Context.Width; args.`).
-// .NET strings reach handlers as JavaScript strings, so these are the methods that work on them (`.Contains`
-// and the other .NET string methods don't). Listed as an open object: other names aren't flagged unless they look
-// like a typo of one of these.
+// JavaScript's own ES5 objects (String, Array, Math, JSON, Number) and global functions, as Jint 2.11.58 has them,
+// from data/js-builtins.json (generated from TypeScript's lib.es5.d.ts by scripts/generate-jsbuiltins.mjs).
+// Offered after a string (`Context.StartArguments.`, `var args = "-w " + …; args.`), an array literal, `Math.` and
+// `JSON.`. .NET strings reach handlers as JavaScript strings, so these are the methods that work on them.
+import raw from '../../data/js-builtins.json';
 import type { ApiObject, Member } from './api';
 
-const m = (doc: string, returns: string, ...params: [string, string][][]): Member => ({
-  kind: 'method',
-  doc,
-  overloads: (params.length ? params : [[]]).map((ps) => ({ returns, params: ps.map(([name, type]) => ({ name, type })) })),
-});
+type Raw = { objects: Record<string, { doc: string; members: Record<string, Member> }>; functions: Record<string, Member> };
+const data = raw as unknown as Raw;
 
-export const JS_STRING: ApiObject = {
-  doc: 'A JavaScript string (ES5, as Jint runs it).',
-  open: true,
-  members: {
-    length: { kind: 'property', type: 'number', ts: 'number', readonly: true, doc: 'The number of characters.' },
-    charAt: m('The character at a position (0-based), or "" past the end.', 'string', [['index', 'number']]),
-    charCodeAt: m('The UTF-16 code of the character at a position.', 'number', [['index', 'number']]),
-    concat: m('The strings joined, like `+`.', 'string', [['other', 'string']]),
-    indexOf: m('Where a piece first appears (0-based), or -1. Use `s.indexOf("x") !== -1` to test whether it contains it (ES5 has no `includes`).', 'number', [['search', 'string']], [['search', 'string'], ['from', 'number']]),
-    lastIndexOf: m('Where a piece last appears, or -1.', 'number', [['search', 'string']]),
-    match: m('Matches a regular expression: the matches, or null.', 'string[] | null', [['pattern', 'RegExp']]),
-    replace: m('Replaces the first match (a string), or every match of a regular expression with the g flag: `s.replace(/\\\\/g, "/")`.', 'string', [['search', 'string | RegExp'], ['replacement', 'string']]),
-    search: m('Where a regular expression first matches, or -1.', 'number', [['pattern', 'RegExp']]),
-    slice: m('Part of the string, from `start` up to (not including) `end`; negative counts from the end.', 'string', [['start', 'number']], [['start', 'number'], ['end', 'number']]),
-    split: m('Cuts the string at each separator: `"a,b".split(",")` gives `["a", "b"]`.', 'string[]', [['separator', 'string | RegExp']]),
-    substr: m('`length` characters from `start`.', 'string', [['start', 'number']], [['start', 'number'], ['length', 'number']]),
-    substring: m('Part of the string, from `start` up to (not including) `end`.', 'string', [['start', 'number']], [['start', 'number'], ['end', 'number']]),
-    toLowerCase: m('The string in lower case.', 'string'),
-    toUpperCase: m('The string in upper case.', 'string'),
-    trim: m('The string without spaces and line breaks at both ends.', 'string'),
-  },
+/** Handler-specific notes added to TypeScript's docs. */
+const NOTES: Record<string, string> = {
+  'String.indexOf': 'To test whether a string contains another: `s.indexOf("x") !== -1` (ES5 has no `includes`; .NET\'s `Contains` doesn\'t work on these strings).',
+  'String.replace': 'With a string it replaces only the first match; for every match use a regular expression with the g flag: `s.replace(/\\\\/g, "/")`.',
+  'String.split': '`"a,b".split(",")` gives `["a", "b"]`.',
+  'Array.indexOf': 'To test whether an array contains a value: `a.indexOf(x) !== -1` (ES5 has no `includes`).',
 };
+
+/** Objects that aren't fixed lists of members for our purposes: other names aren't flagged unless they look like a typo. */
+const OPEN = new Set(['String', 'Array', 'Number']);
+
+export const JS_OBJECTS: Record<string, ApiObject> = Object.fromEntries(
+  Object.entries(data.objects).map(([name, o]) => [
+    name,
+    {
+      doc: o.doc,
+      open: OPEN.has(name),
+      members: Object.fromEntries(Object.entries(o.members).map(([k, m]) => [k, NOTES[`${name}.${k}`] ? { ...m, doc: `${m.doc}\n\n${NOTES[`${name}.${k}`]}` } : m])),
+    },
+  ]),
+);
+/** parseInt, parseFloat, isNaN, isFinite, encodeURIComponent… */
+export const JS_FUNCTIONS: Record<string, Member> = data.functions;
+/** Globals that are JavaScript objects with members (`Math.`, `JSON.`). */
+export const JS_GLOBAL_OBJECTS = ['Math', 'JSON'];
+export const isJsBuiltin = (owner: string) => owner === '' || !!JS_OBJECTS[owner];
+export const mdnUrl = (owner: string, name: string) =>
+  `https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/${owner || name}${owner ? `/${name}` : ''}`;

@@ -90,7 +90,7 @@ export function findAliases(text: string): Map<string, Chain | null> {
     const name = m[1];
     if (name === 'var' || name === 'let' || name === 'const') continue;
     // A string (`var args = "-w " + Context.Width;`): JavaScript's string methods (core/jsbuiltins.ts).
-    const chain = /^\s*["']/.test(m[2]) ? ['$string'] : parseForwardChain(m[2]);
+    const chain = /^\s*["']/.test(m[2]) ? ['$string'] : /^\s*\[/.test(m[2]) ? ['$array'] : parseForwardChain(m[2]);
     const prev = map.get(name);
     if (prev === undefined) map.set(name, chain ?? null);
     else if (prev && chain && prev.join('.') !== chain.join('.')) map.set(name, null);
@@ -107,6 +107,7 @@ export function resolveChain(chain: Chain, aliases: Map<string, Chain | null>, d
   if (alias) cur = resolveChain(alias, aliases, depth + 1);
   else if (alias === null) return undefined; // user variable we can't follow
   else if (head === '$string') cur = { kind: 'object', type: 'String' };
+  else if (head === '$array') cur = { kind: 'object', type: 'Array' };
   else cur = resolveGlobal(head);
   for (const seg of rest) {
     if (!cur) return undefined;
