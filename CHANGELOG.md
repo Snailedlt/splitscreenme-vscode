@@ -27,6 +27,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 ### 🛠️ Improved
 
 - **JavaScript's own methods in suggestions.** After a string (`Context.StartArguments.`), a list, `Math.` or `JSON.`, suggestions, hover and parameter hints cover JavaScript's built-in methods, only the ones Nucleus's engine has (`replace`, `split`, `indexOf`, `Math.floor`…), with a link to their docs. A misspelled `Math` method is flagged.
+- **Names Nucleus itself gets wrong.** Nucleus misspells two Proto Input options (`WindowActvateAppFilter`, `TranslateXAccelration`), and its readme and Handlers Tool give a few names that don't exist (`Usex360ce`, `IgnoreWindowBordercheck`…). Writing the correct spelling, or the readme's, now explains why it does nothing and offers the name that works.
 - **A fix for an exe that isn't there.** With the game's folder linked, a wrong `Game.ExecutableName` now offers the one exe it most likely means (e.g. Unreal's `…-Shipping.exe`), not only for near spellings.
 
 ---

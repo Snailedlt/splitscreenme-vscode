@@ -33,6 +33,26 @@ const KEY_NAMES = new Set([
 // never read (checked in splitscreenme-nucleus' whole history and the v3.0.0 branches), still in its
 // example handler (MasterHandler.js), so handlers keep copying them. A warning that says so, not a
 // typo guess.
+/**
+ * Names that come from Nucleus itself but don't work: the correct spelling of an option Nucleus misspells, and names
+ * from Nucleus's readme.txt, readme Proto Input.txt or the Handlers Tool's suggestions that don't match the real member
+ * (checked against splitscreenme-nucleus 3d22c0e). `to` is the member that works (none: there is nothing to use).
+ */
+const NUCLEUS_NAMES: Record<string, { to?: string; note: string }> = {
+  'Game.ProtoInput.WindowActivateAppFilter': { to: 'WindowActvateAppFilter', note: 'Nucleus spells this option without the second "i" (`WindowActvateAppFilter`, ProtoInputOptions.cs), so the correct spelling is ignored.' },
+  'Game.ProtoInput.TranslateXAcceleration': { to: 'TranslateXAccelration', note: 'Nucleus spells this option `TranslateXAccelration` (ProtoInputOptions.cs), so the correct spelling is ignored.' },
+  'Game.ProtoInput.FreezeExternalInputWhenInputNotLocke': { to: 'FreezeExternalInputWhenInputNotLocked', note: 'The Handlers Tool suggests this name with the last letter cut off; the option ends in "Locked".' },
+  'Game.IgnoreWindowBordercheck': { to: 'IgnoreWindowBorderCheck', note: "Nucleus's readme.txt spells it this way, but the option has a capital C." },
+  'Game.Usex360ce': { to: 'UseX360ce', note: "Nucleus's readme.txt spells it this way, but the option has a capital X." },
+  'Game.UseDI8CoopLvlUnlock': { to: 'UseDI8CoopLvlUnlocker', note: "Nucleus's readme.txt spells it this way, but the option ends in \"Unlocker\"." },
+  'Game.DrawFakeMouseForControllers': { to: 'DrawFakeMouseCursorForControllers', note: "Nucleus's readme.txt spells it this way, but the option is `DrawFakeMouseCursorForControllers`." },
+  'Context.OrigHeight': { note: "Nucleus's readme.txt lists it, but Context has no such member." },
+  'Context.OrigWidth': { note: "Nucleus's readme.txt lists it, but Context has no such member." },
+  'Context.NoDPIHandlingWidth': { note: "Nucleus's readme.txt lists it (deprecated), but Context no longer has it." },
+  'Context.NoDPIHandlingHeight': { note: "Nucleus's readme.txt lists it (deprecated), but Context no longer has it." },
+  'Context.GCD': { note: "Nucleus's readme.txt lists it, but it's private in Nucleus, so handlers can't call it." },
+};
+
 const OBSOLETE: Record<string, string> = {
   // HandlerData.ForceFinishOnPlay: WindowsGameProcessModule.PrePlayPlayer killed the game's exe.
   // Now GenericGameHandler always calls ProcessUtil.KillRemainingProcess when a session starts.
@@ -904,7 +924,9 @@ class Analyzer {
         // Only suggest something that can actually be assigned.
         return !isWriteTarget || !cm || (!cm.readonly && cm.kind !== 'method' && cm.kind !== 'object');
       });
-      const s = suggest(name, visible.length ? visible : candidates);
+      const known = NUCLEUS_NAMES[`${label}.${name}`];
+      const s = known ? known.to : suggest(name, visible.length ? visible : candidates);
+      const why = known ? ` ${known.note}` : '';
       // `preferred` marks fixes safe for "Fix all". A suggestion that only differs in digits
       // (ProtoController5 -> ProtoController1) is a different member, not a typo.
       const digitsOnly = !!s && s.replace(/\d+/g, '#') === name.replace(/\d+/g, '#');
@@ -914,7 +936,7 @@ class Analyzer {
         this.report({
           rule: 'unknown-member',
           severity: 'error',
-          message: `\`${name}\` does not exist on \`${label}\`. In "use strict" code Jint throws on this write, so the handler fails to load (or the instance fails, inside a callback).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          message: `\`${name}\` does not exist on \`${label}\`. In "use strict" code Jint throws on this write, so the handler fails to load (or the instance fails, inside a callback).${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
           start: n.property.start,
           end: n.property.end,
           fixes,
@@ -979,7 +1001,7 @@ class Analyzer {
         this.report({
           rule: 'unknown-member',
           severity: 'error',
-          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws (Jint: "Object has no method '${name}'") and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws (Jint: "Object has no method '${name}'") and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
           start: n.property.start,
           end: n.property.end,
           fixes,
@@ -989,7 +1011,7 @@ class Analyzer {
       const effect = isWrite ? 'Assigning it has no effect' : 'It will be undefined';
       this.report({
         rule: 'unknown-member',
-        message: `\`${name}\` does not exist on \`${label}\`. ${effect}.${s ? ` Did you mean \`${s}\`?` : ''}`,
+        message: `\`${name}\` does not exist on \`${label}\`. ${effect}.${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
         start: n.property.start,
         end: n.property.end,
         fixes,

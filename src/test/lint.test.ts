@@ -660,3 +660,31 @@ test('ESLint rules: general JavaScript mistakes, with a plain why, and no noise 
   assert.ok(!lint(H + 'var o = { a: 1, a: 2 };', { rules: { 'no-dupe-keys': 'off' } }).some((x) => x.rule === 'no-dupe-keys'));
   assert.deepEqual(lint(H + 'Game.Play = function () { wwdsss; };').map((x) => x.rule), ['undefined-name']);
 });
+
+test('names Nucleus itself gets wrong: misspelled options, readme names that do not exist', () => {
+  const cases: [string, string | undefined, RegExp][] = [
+    ['Game.ProtoInput.WindowActivateAppFilter = true;', 'WindowActvateAppFilter', /Nucleus spells this option/],
+    ['Game.ProtoInput.TranslateXAcceleration = 1;', 'TranslateXAccelration', /Nucleus spells this option/],
+    ['Game.ProtoInput.FreezeExternalInputWhenInputNotLocke = true;', 'FreezeExternalInputWhenInputNotLocked', /Handlers Tool/],
+    ['Game.IgnoreWindowBordercheck = true;', 'IgnoreWindowBorderCheck', /readme\.txt/],
+    ['Game.Usex360ce = true;', 'UseX360ce', /readme\.txt/],
+    ['Game.UseDI8CoopLvlUnlock = true;', 'UseDI8CoopLvlUnlocker', /readme\.txt/],
+    ['Game.DrawFakeMouseForControllers = true;', 'DrawFakeMouseCursorForControllers', /readme\.txt/],
+    ['Game.Play = function () { var h = Context.OrigHeight; };', undefined, /readme\.txt/],
+    ['Game.Play = function () { var g = Context.GCD(4, 3); };', undefined, /private/],
+  ];
+  for (const [line, to, note] of cases) {
+    const d = only(`${HEADER}${line}\n`, 'unknown-member');
+    assert.equal(d.length, 1, line);
+    assert.match(d[0].message, note, line);
+    if (to) {
+      assert.match(d[0].message, new RegExp(`Did you mean \`${to}\``), line);
+      assert.equal(d[0].fixes?.[0].edits[0].text, to, line);
+    } else {
+      assert.doesNotMatch(d[0].message, /Did you mean/, line);
+      assert.equal(d[0].fixes, undefined, line);
+    }
+  }
+  // The spellings Nucleus reads are fine.
+  assert.deepEqual(only(`${HEADER}Game.ProtoInput.WindowActvateAppFilter = true;\nGame.ProtoInput.TranslateXAccelration = 1;\n`, 'unknown-member'), []);
+});
