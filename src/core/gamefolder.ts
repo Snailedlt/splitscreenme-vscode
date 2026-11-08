@@ -171,10 +171,10 @@ export const folderLists = (handlerText: string): FolderList[] => listsIn(scan(h
 // Folder helpers.
 
 const lower = (s: string) => s.toLowerCase();
-const base = (p: string) => p.slice(p.lastIndexOf('/') + 1);
+export const base = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\.?\//, '').replace(/\/+$/, '');
-const join = (a: string, b: string) => (a ? (b ? `${a}/${b}` : a) : b);
+export const join = (a: string, b: string) => (a ? (b ? `${a}/${b}` : a) : b);
 const under = (p: string, root: string) => (root ? lower(p).startsWith(lower(root) + '/') : true);
 const rel = (p: string, root: string) => (root ? p.slice(root.length + 1) : p);
 const winPath = (p: string) => p.replace(/\//g, '\\');
