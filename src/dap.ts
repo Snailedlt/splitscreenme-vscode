@@ -4,7 +4,7 @@
 // recording, so Back and Reverse Continue work too. Nothing here imports `vscode`: extension.ts wraps it as an inline
 // adapter, and another editor could run it over stdio.
 import fs from 'node:fs';
-import { describePhase, describeStep, evaluateWatch, callsBefore, nextStop, type Breakpoint, type StepMode, type Trace, type ValueView } from './core/debug';
+import { describeStep, evaluateWatch, callsBefore, nextStop, type Breakpoint, type StepMode, type Trace, type ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { pluginsFor, traceIsolated } from './sandbox';
 
@@ -124,10 +124,12 @@ export class HandlerDebugSession {
       case 'stackTrace': {
         const step = this.trace?.steps[this.at];
         if (!step) return this.respond(req, { stackFrames: [], totalFrames: 0 });
-        const where = describePhase(step.phase);
+        // Short, where it matters: "Game.Play · player 2 of 4", "top of the file", "Game.OnStop · last player's Context".
+        const ph = step.phase;
+        const where = ph.kind === 'play' ? `player ${(ph.player ?? 0) + 1} of ${ph.players}` : ph.kind === 'top' ? '' : ph.player !== undefined ? `player ${ph.player + 1}'s Context` : '';
         const frames = (step.stack.length ? step.stack : [{ name: 'top of the file', line: step.line }]).map((f, i) => ({
           id: i,
-          name: i === 0 ? `${f.name}, ${where}` : f.name,
+          name: i === 0 && where ? `${f.name} · ${where}` : f.name,
           line: i === 0 ? step.line : f.line,
           column: i === 0 ? step.column : 1,
           source: { path: this.program, name: this.program.split(/[\\/]/).pop() },

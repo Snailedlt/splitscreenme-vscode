@@ -47,7 +47,7 @@ test('dap: breakpoint, stack, scopes, variables, evaluate, stepping back and on 
 
   const frames = req('stackTrace', { threadId: 1 }).res.body.stackFrames;
   assert.equal(frames[0].line, 7);
-  assert.match(frames[0].name, /player 2 of 2/);
+  assert.match(frames[0].name, /^Game\.Play · player 2 of 2$/);
   const scopes = req('scopes', { frameId: 0 }).res.body.scopes;
   const names = scopes.map((s: any) => s.name);
   assert.ok(names.includes('Variables') && names.includes('Context'), names.join(', '));
