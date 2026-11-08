@@ -65,7 +65,7 @@ before(async () => {
   const init = await request('initialize', { processId: null, rootUri: null, capabilities: { textDocument: { completion: { completionItem: { snippetSupport: true } } } }, initializationOptions: { lint: { compareWithHub: false } } });
   const caps = init.result.capabilities;
   assert.equal(caps.textDocumentSync.change, 1);
-  assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',']);
+  assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',', '"']);
   assert.ok(caps.hoverProvider && caps.documentFormattingProvider && caps.inlayHintProvider && caps.signatureHelpProvider);
   assert.ok(caps.executeCommandProvider.commands.includes('nucleus.tryIt'));
   notify('initialized', {});
@@ -140,6 +140,12 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   assert.deepEqual(hints.map((h: any) => h.label), ['WM_KILLFOCUS']);
   assert.deepEqual(hints[0].position, { line: 6, character: 41 });
 
+  const symbols = (await request('textDocument/documentSymbol', { textDocument: doc })).result;
+  // (This handler is half-typed, so it gets the line-by-line outline.)
+  assert.ok(symbols.some((s: any) => s.name === 'Game.Hook.ForceFocus' && s.kind === 7 && s.detail === '= true'), 'the settings');
+  assert.ok(symbols.some((s: any) => s.name === 'Game.Play' && s.kind === 12), 'the callbacks');
+  assert.ok(symbols.every((s: any) => s.range && s.selectionRange));
+
   // A request on a file that isn't open, or garbage params, doesn't crash the server.
   assert.equal((await request('textDocument/hover', { textDocument: { uri: 'file:///nope.js' }, position: { line: 0, character: 0 } })).result, null);
   assert.ok((await request('textDocument/hover', {})).result === null);
@@ -199,4 +205,93 @@ test('snippets become plain text for clients without snippet support', () => {
   assert.equal(snippetToPlain('Width = ${1:0};'), 'Width = 0;');
   assert.equal(snippetToPlain('GetFolder($1)'), 'GetFolder()');
   assert.equal(snippetToPlain('function () {\n\t$0\n}'), 'function () {\n\t\n}');
+});
+
+test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-pkg-'));
+  const js = path.join(dir, 'Pkg.js');
+  fs.mkdirSync(path.join(dir, 'Pkg'));
+  fs.writeFileSync(path.join(dir, 'Pkg', 'Config.json'), '{ bad');
+  const game = path.join(dir, 'game');
+  fs.mkdirSync(path.join(game, 'Binaries', 'Win64'), { recursive: true });
+  fs.writeFileSync(path.join(game, 'Binaries', 'Win64', 'Shooter-Win64-Shipping.exe'), 'x');
+  fs.writeFileSync(path.join(game, 'readme.txt'), 'x');
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { gameFolders: { 'Pkg.js': game } } } });
+  const text = 'Game.GUID = "Pkg";\nGame.GameName = "Pkg";\nGame.ExecutableName = "Shooter-Win64-Shiping.exe";\nGame.FileSymlinkExclusions = [""];\n';
+  const uri = pathToFileURL(js).href;
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const own = (await diagnosticsFor(uri, 1)).params.diagnostics;
+  const exe = own.find((d: any) => d.code === 'game-folder' && /executable/i.test(d.message));
+  assert.ok(exe, JSON.stringify(own.map((d: any) => d.message)));
+  assert.equal(exe.data.fix.text, 'Shooter-Win64-Shipping.exe');
+  const fileDiags = (await diagnosticsFor(pathToFileURL(path.join(dir, 'Pkg', 'Config.json')).href)).params.diagnostics;
+  assert.match(fileDiags[0].message, /Not valid JSON/);
+
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: exe.range, context: { diagnostics: [exe] } })).result;
+  const fix = actions.find((a: any) => a.title === exe.data.fix.title);
+  assert.equal(fix.edit.changes[uri][0].newText, 'Shooter-Win64-Shipping.exe');
+
+  const list = (await request('textDocument/completion', { textDocument: { uri }, position: { line: 3, character: 32 } })).result;
+  assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
+});
+
+test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const { spawn } = await import('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-ws-'));
+  fs.mkdirSync(path.join(root, 'handlers'));
+  const a = path.join(root, 'handlers', 'A.js');
+  fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = "M";\n');
+  fs.writeFileSync(path.join(root, 'notes.js'), 'console.log("not a handler");\n'); // outside handlers/: only checked if it looks like one
+  // A second server, started in that folder.
+  const p2 = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'lsp'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  after(() => p2.kill());
+  const got: any[] = [];
+  let buf = Buffer.alloc(0);
+  p2.stdout!.on('data', (c: Buffer) => {
+    buf = Buffer.concat([buf, c]);
+    for (;;) {
+      const sep = buf.indexOf('\r\n\r\n');
+      if (sep < 0) return;
+      const len = Number(/Content-Length: (\d+)/i.exec(buf.subarray(0, sep).toString())![1]);
+      if (buf.length < sep + 4 + len) return;
+      got.push(JSON.parse(buf.subarray(sep + 4, sep + 4 + len).toString()));
+      buf = buf.subarray(sep + 4 + len);
+    }
+  });
+  const send = (m: unknown) => {
+    const b = Buffer.from(JSON.stringify(m));
+    p2.stdin!.write(`Content-Length: ${b.length}\r\n\r\n`);
+    p2.stdin!.write(b);
+  };
+  const waitFor = async (f: (m: any) => boolean) => {
+    const until = Date.now() + 10000;
+    while (Date.now() < until) {
+      const m = got.find(f);
+      if (m) return m;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    throw new Error(`timed out; got ${JSON.stringify(got.map((m) => m.method ?? m.id))}`);
+  };
+  const aUri = pathToFileURL(a).href;
+  send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { rootUri: pathToFileURL(root).href, capabilities: { workspace: { didChangeWatchedFiles: { dynamicRegistration: true } } } } });
+  await waitFor((m) => m.id === 1);
+  send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+  const reg = await waitFor((m) => m.method === 'client/registerCapability');
+  assert.equal(reg.params.registrations[0].method, 'workspace/didChangeWatchedFiles');
+  const first = await waitFor((m) => m.method === 'textDocument/publishDiagnostics' && m.params.uri === aUri);
+  assert.ok(first.params.diagnostics.some((d: any) => d.code === 'type-mismatch'), 'the closed handler is checked');
+  assert.ok(!got.some((m) => m.method === 'textDocument/publishDiagnostics' && /notes\.js$/.test(m.params.uri)), 'not other .js files');
+  got.length = 0;
+  fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = ["M"];\n');
+  send({ jsonrpc: '2.0', method: 'workspace/didChangeWatchedFiles', params: { changes: [{ uri: aUri, type: 2 }] } });
+  const again = await waitFor((m) => m.method === 'textDocument/publishDiagnostics' && m.params.uri === aUri);
+  assert.ok(!again.params.diagnostics.some((d: any) => d.code === 'type-mismatch'), 'fixed on disk, re-checked');
+  send({ jsonrpc: '2.0', id: 2, method: 'shutdown' });
+  send({ jsonrpc: '2.0', method: 'exit' });
 });

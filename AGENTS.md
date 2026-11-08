@@ -4,6 +4,21 @@ Guidance for AI coding agents working on **this repository**: the SplitScreen.Me
 
 If you are writing or fixing a *game handler* rather than this tooling, use the skill in `plugin/skills/nucleus-handler/` (start with its `SKILL.md`).
 
+## Who it's for: a tool for every level
+
+**Priorities, in order:** 1. a great tool for experienced developers and handler authors (correct checks, speed, keyboard, the core features); 2. easy to understand and use for newcomers, without getting in the way of 1.
+
+The tools serve experienced developers, handler authors, Nucleus Co-op experts and complete newcomers alike. Welcome beginners without making the work slower or more cluttered for anyone else. (The model is Warcraft 3's editor: clickable, choices from lists, one-button testing, and a way into real code.)
+
+- **One code underneath.** Every view (Code, Form, Blocks, pickers) edits the real handler code, so nobody is locked into a beginner mode and people move up a tier by looking at the code.
+- **Two ways to work** (in the workbench; VS Code users write code, so there it means clear hovers and suggestions). Code is for people who write code. Form and Blocks belong together as the visual editor: plain-language names next to (or instead of) the API names, tips and docs right where each option is, values picked from lists. Each can be shown or hidden; most developers never open the visual editor, and most newcomers end up in Code.
+- **Help on request, not on screen.** Markers, hints, plain-language labels and pickers show on hover, tap or a key (Ctrl+Space, Alt+Enter), never permanently in the code.
+- **Keyboard first for experienced users.** Everything is reachable from the keyboard and the command palette; no wizard is ever required.
+- **The first-run choice only sets defaults.** "Guide me" turns on the visual editor, tips and guided help; "I write code" starts compact. Every part can be switched in Settings.
+- **The tool teaches.** Our community is small and won't write many guides, so the explanations live in the tool: plain-language docs on every option, "why" in every problem, examples from real Hub handlers, help that starts from the symptom ("my game pauses when it loses focus").
+- **Desktop first.** Over 90% of people write handlers on a desktop or laptop: design and test for that (mouse, keyboard, a wide screen). Phones are supported but not tailored: nothing broken, cut off or untappable, checked by the smoke test's phone checks. No phone-only features, no phone layouts driving a design, no manual phone testing or phone screenshots for every change.
+- **The check for every new feature:** does it add anything on screen for someone who didn't ask for it? If so, put it behind a hover, tap or key, or a setting.
+
 ## Commands
 
 ```bash
@@ -28,14 +43,19 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
   - `features.ts`: the editor features as plain data (hover, completion, signature help, quick fixes, Format Document edits, inlay hints, handler detection). `extension.ts` and `lsp.ts` only convert them.
   - `lookup.ts`: `nucleus api` lookup/search and the Markdown API reference.
   - `sim.ts`: "Try it", runs a handler per player emulating Jint. Shared with the testbench's browser workbench; keep it free of Node and DOM APIs.
+  - `pkgcheck.ts`: checks on a handler's package files (Windows names, overwrites, INI/JSON, a misspelled `Game.Folder` file). `gamefolder.ts`: checks against the game's install folder (ExecutableName, BinariesFolder, the symlink lists). Both shared with the workbench, which imports them.
+  - `notepadpp.ts`: the Notepad++ auto-completion file (API names, `System.IO` members, call tips), merged into Notepad++'s own on the user's PC by `nucleus setup notepad++` (`src/setup-npp.ts`). Never ship Notepad++'s own file.
   - `templates.ts`, `zip.ts`, `pkg.ts`, `hub.ts`: New Handler templates, .nc packages, agent-kit install, hub.splitscreen.me client.
 - `src/extension.ts`, `src/commands.ts`, `src/tryit.ts`: VS Code glue (`tryit.ts` is the Try it panel).
 - `src/sandbox.ts`: runs `core/sim.ts` for Node hosts inside a `vm` context. `scripts/build.mjs` bundles `src/sim-sandbox-entry.ts` into a string (`__SIM_SANDBOX__`) for it. Never call `simulate()` directly from Node code: handler code would get full Node access. `src/test/sim.test.ts` tries the known escapes.
+- `src/pkgfiles.ts`: the files in `<Name>/` next to `<Name>.js` on disk, for the package checks (extension, CLI, LSP). `src/gamefolder-node.ts`: reads a game's install folder from disk (extension and `nucleus lsp`). `src/gamefolders.ts`: VS Code's *Link the Game's Folder…*, its problems, fixes and completion (`splitscreenme.gameFolders`).
+- `src/dap.ts`: the Debug Adapter (DAP) over `core/debug.ts` (no `vscode` import; `nucleus dap` serves it on stdio for other editors); `src/debugvscode.ts` registers it inline for VS Code's Run and Debug (`"type": "nucleus"`).
 - `src/cli.ts`: the `nucleus` CLI (`nucleus-lint` is an alias of `nucleus lint`).
 - `src/hubcache.ts`: every Hub read goes through it. The list comes from the testbench's daily index (`data` branch, `hub-index.json`), revalidated hourly by ETag; the Hub API only as a fallback; packages once per version. Keep it that way: don't add direct Hub API calls.
 - `src/lsp.ts`: `nucleus lsp`, a Language Server (stdio, Content-Length framed JSON-RPC, no dependencies) for other editors. [PORTING.md](PORTING.md) explains the split and has the config for each editor.
 - `src/mcp.ts`: `nucleus mcp`, the same tools as an MCP server (stdio JSON-RPC). The extension registers it for VS Code's agents. `src/simformat.ts` is the simulation text shared by both.
 - `src/test/`: tests. `vscode-mock.ts` stands in for the `vscode` module, via an esbuild alias in `scripts/build.mjs`.
+- `scripts/issue-bots.mjs`: the issue bots (`doc-review.yml`, `report-details.yml` call it). `src/test/bots.test.ts` checks them on real issue bodies and against the forms in `.github/ISSUE_TEMPLATE/`; rename a form field and that test fails. The details checksum must match the workbench's (`playground/src/checksum.ts` there; both test the same block).
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
 - `plugin/`: the Claude Code plugin (`.claude-plugin/plugin.json`, `skills/nucleus-handler/`). `.claude-plugin/marketplace.json` at the root publishes it.
 

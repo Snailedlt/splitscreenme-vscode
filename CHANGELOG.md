@@ -12,6 +12,26 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## 0.5.0 (beta) · 2026-11-08
+
+### ✨ New
+
+- **Debug a handler with VS Code's own debugger.** Press F5 in a handler (or add a "Nucleus handler" launch configuration): set breakpoints in the margin, conditional ones too, step with F10 / F11 / Shift+F11, even step back, and see the variables, `Context`, `Player`, the options set so far and what Nucleus would have done, with hover values and the Debug Console. It runs the way Nucleus does (simulated); `players`, `keyboard` and `resolution` in launch.json pick the setup.
+- **Notepad++ support.** `nucleus setup notepad++` adds every handler API name and the `System.IO` members handlers use to Notepad++'s suggestions, with parameters as call tips, and a Run menu entry that checks the open handler. Notepad++'s own words stay, and `--remove` puts everything back. It needs Node.js for now (a standalone download is planned).
+- **Check a handler against the game on your PC.** *Nucleus: Link the Game's Folder…* points a handler at the game's install folder; then `ExecutableName`, `BinariesFolder`, the symlink and copy lists and more are checked against the real files, with fixes ("did you mean ShooterGame-Win64-Shipping.exe?"), and those lists suggest the game's own files as you type. Only names and sizes are read. Suggested by messenils.
+- **Checks for the files next to your handler.** The files in `<Name>/` beside `<Name>.js` are checked as they'd go into the .nc: names Windows can't install, two files that overwrite each other, broken INI or JSON, very large files, and a file the handler uses through `Game.Folder` that's probably misspelled ("did you mean Config.json?"). In the Problems panel, `nucleus lint` and `nucleus lsp`; `splitscreenme.lint.packageChecks` turns them off.
+- **Hub handlers with all their files.** *Browse Handlers on the Hub › Open handler source* now lays the package out the way Nucleus installs it (`<GameName>.js` and `<GameName>/`), says how many other files it has, and offers **Open as Folder** and **Copy into Workspace**.
+- **An outline of your handler.** The Outline view, breadcrumbs and *Go to Symbol* (Ctrl+Shift+O) list the handler's settings grouped by object (Game, Game.ProtoInput, Game.Hook…) with their values, the callbacks with what they set inside, and your own functions and variables. In other editors through `nucleus lsp` too.
+- **Every Hub handler.** *Browse Handlers on the Hub* and `nucleus hub search` now see all of them (about 900), not only the 600 with the most stars.
+- **Other editors: debugging and game-folder checks.** `nucleus dap` brings the debugger to editors with DAP support (Neovim, Helix, Zed, JetBrains, Emacs), and `nucleus lsp` now checks a handler against the game's install folder (the `gameFolders` setting) and shows package problems on the files themselves. PORTING.md has the setup.
+- **Other editors see every handler.** `nucleus lsp` now checks all handlers in the folder you open, not only the open files, and checks again when a file changes on disk. Tried in Neovim.
+
+### 🙏 Thanks
+
+- **messenils** for the idea of checking a handler against the game's own files.
+
+---
+
 ## 0.4.0 (beta) · 2026-11-07
 
 **The biggest update yet.** Checks that catch settings which quietly do nothing, docs for 150 more API members (and a way to help check them), the same tools in any editor with LSP support, and a first look at stepping through a handler line by line. The workbench got its biggest update too: see its What's new.

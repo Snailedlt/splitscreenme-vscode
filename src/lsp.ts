@@ -6,9 +6,16 @@
 // (src/sandbox.ts). Logs go to stderr; stdout carries only protocol messages.
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
-import { CodeActionEntry, CompletionEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
+import { checkPackage } from './core/pkgcheck';
+import { forgetPackageFiles, packageFilePath, packageFilesFor } from './pkgfiles';
+import fs from 'node:fs';
+import { checkAgainstFolder, folderLists, pickerOptions } from './core/gamefolder';
+import { folderAt } from './gamefolder-node';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { publishedNow } from './published';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { formatSimulation } from './simformat';
@@ -23,10 +30,12 @@ export interface LspSettings {
   detection: 'auto' | 'always' | 'off';
   /** Extra paths that always count as handlers, e.g. ["**\/my-handlers/*.js"]. */
   handlerGlobs: string[];
-  lint: { enable: boolean; rules: Partial<Record<RuleId, Severity | 'off'>>; compareWithHub: boolean };
+  lint: { enable: boolean; rules: Partial<Record<RuleId, Severity | 'off'>>; compareWithHub: boolean; /** Check every handler in the workspace folders, opened or not (default true). */ workspace: boolean };
   completion: { enable: boolean };
+  /** The game's install folder per handler file name, e.g. { "MyGame.js": "C:\\Games\\MyGame" }: checks against the real files. */
+  gameFolders: Record<string, string>;
 }
-const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true }, completion: { enable: true } };
+const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {} };
 
 export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
@@ -110,6 +119,10 @@ export class Server {
   private snippets = true;
   private shutdown = false;
   private nextId = 1;
+  private roots: string[] = [];
+  private canWatch = false;
+  /** Package files that have problems published, per handler, so they can be cleared. */
+  private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
 
   private notify(method: string, params: unknown) {
@@ -129,7 +142,9 @@ export class Server {
     if (typeof l.enable === 'boolean') d.lint.enable = l.enable;
     if (l.rules && typeof l.rules === 'object') d.lint.rules = l.rules;
     if (typeof l.compareWithHub === 'boolean') d.lint.compareWithHub = l.compareWithHub;
+    if (typeof l.workspace === 'boolean') d.lint.workspace = l.workspace;
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
+    if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
   }
 
   private isHandler(d: Doc): boolean {
@@ -147,16 +162,46 @@ export class Server {
     return lint(d.text, { rules: this.settings.lint.rules, plugins: file ? lintPluginsFor(file) : undefined, published });
   }
 
-  private publish(uri: string) {
-    const d = this.docs.get(uri);
+  private publish(uri: string, closed?: Doc) {
+    const d = closed ?? this.docs.get(uri);
     if (!d) return;
     if (!this.settings.lint.enable || !this.isHandler(d)) {
       this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       return;
     }
     const lines = linesOf(d);
-    const diagnostics = this.lintDoc(d, () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
-    this.notify('textDocument/publishDiagnostics', { uri, version: d.version, diagnostics });
+    const diagnostics = this.lintDoc(d, closed ? undefined : () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
+    // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
+    const file = pathOf(uri);
+    const files = file ? packageFilesFor(file) : undefined;
+    const byFile = new Map<string, unknown[]>();
+    for (const p of files ? checkPackage(d.text, files) : []) {
+      if (p.file) {
+        // On the file itself (the folder next to the handler), as VS Code shows them.
+        const line = Math.max(0, (p.line ?? 1) - 1);
+        const list = byFile.get(p.file) ?? [];
+        list.push({ range: { start: { line, character: 0 }, end: { line, character: p.line ? 1000 : 0 } }, severity: SEVERITY[p.severity], code: 'package', source: 'nucleus', message: `${p.title}. ${p.why}` });
+        byFile.set(p.file, list);
+        continue;
+      }
+      if (p.start === undefined) continue;
+      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: p.end ?? p.start }), severity: SEVERITY[p.severity], code: 'package', codeDescription: { href: RULES_URL }, source: 'nucleus', message: `${p.title}. ${p.why}` });
+    }
+    // The game folder linked to this handler (settings.gameFolders), if any: problems with their fix as data.
+    const folder = this.gameFolderOf(uri);
+    for (const p of folder ? checkAgainstFolder(d.text, folder) : []) {
+      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: Math.max(p.end, p.start) }), severity: SEVERITY[p.severity], code: 'game-folder', source: 'nucleus', message: `${p.title}. ${p.why}`, ...(p.fix ? { data: { fix: p.fix } } : {}) });
+    }
+    this.notify('textDocument/publishDiagnostics', { uri, ...(closed ? {} : { version: d.version }), diagnostics });
+    // Package problems on the files in <Name>/: publish them, and clear the ones that went away.
+    const sent = new Set<string>();
+    for (const [name, list] of byFile) {
+      const fileUri = pathToFileURL(packageFilePath(file!, name)).href;
+      sent.add(fileUri);
+      this.notify('textDocument/publishDiagnostics', { uri: fileUri, diagnostics: list });
+    }
+    for (const old of this.pkgUris.get(uri) ?? []) if (!sent.has(old)) this.notify('textDocument/publishDiagnostics', { uri: old, diagnostics: [] });
+    this.pkgUris.set(uri, sent);
   }
   private schedule(uri: string, delay = 200) {
     clearTimeout(this.timers.get(uri));
@@ -199,12 +244,15 @@ export class Server {
       case 'initialize': {
         this.applySettings(p.initializationOptions);
         this.snippets = p.capabilities?.textDocument?.completion?.completionItem?.snippetSupport !== false;
+        this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
+        this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
         return {
           capabilities: {
             positionEncoding: 'utf-16',
             textDocumentSync: { openClose: true, change: 1 /* full */ },
             hoverProvider: true,
-            completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ','], resolveProvider: false },
+            documentSymbolProvider: true,
+            completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
             documentFormattingProvider: true,
@@ -215,6 +263,13 @@ export class Server {
         };
       }
       case 'initialized':
+        // Every handler in the workspace, opened or not (like VS Code's Lint All Handlers), and on-disk changes.
+        if (this.canWatch) this.request('client/registerCapability', { registrations: [{ id: 'nucleus-files', method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers: [{ globPattern: '**/*' }] } }] });
+        setTimeout(() => this.scanWorkspace(), 0);
+        return undefined;
+      case 'workspace/didChangeWatchedFiles':
+        for (const c of p.changes ?? []) this.fileChanged(String(c.uri), c.type);
+        return undefined;
       case '$/cancelRequest':
       case '$/setTrace':
         return undefined;
@@ -251,11 +306,19 @@ export class Server {
       case 'textDocument/didClose':
         this.docs.delete(p.textDocument.uri);
         clearTimeout(this.timers.get(p.textDocument.uri));
-        this.notify('textDocument/publishDiagnostics', { uri: p.textDocument.uri, diagnostics: [] });
+        // In the workspace: back to the saved file's problems; elsewhere, none.
+        if (!this.fromDisk(p.textDocument.uri)) this.notify('textDocument/publishDiagnostics', { uri: p.textDocument.uri, diagnostics: [] });
         return undefined;
       case 'textDocument/didSave':
         return undefined;
 
+      case 'textDocument/documentSymbol': {
+        if (!this.featuresOn(doc)) return [];
+        const l = linesOf(doc);
+        const KIND = { namespace: 3, property: 7, function: 12, variable: 13 } as const; // LSP SymbolKind
+        const conv = (s: SymbolEntry): unknown => ({ name: s.name, detail: s.detail, kind: KIND[s.kind], range: l.range(s.range), selectionRange: l.range(s.selection), children: (s.children ?? []).map(conv) });
+        return documentSymbols(doc.text).map(conv);
+      }
       case 'textDocument/hover': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);
@@ -265,7 +328,27 @@ export class Server {
       case 'textDocument/completion': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);
-        const items = completionsAt(doc.text, l.offset(p.position));
+        const at = l.offset(p.position);
+        // Inside DirSymlinkExclusions, HardcopyFiles…: the linked game folder's own files and folders.
+        const folder = this.gameFolderOf(doc.uri);
+        const list = folder ? folderLists(doc.text).find((x) => at > x.open && at <= x.close) : undefined;
+        if (folder && list) {
+          const inItem = list.items.find((i) => at >= i.start && at <= i.end);
+          const esc = (v: string) => v.replace(/\\/g, '\\\\');
+          return {
+            isIncomplete: false,
+            items: pickerOptions(doc.text, list, folder)
+              .filter((o) => !o.present)
+              .map((o, i) => ({
+                label: o.label,
+                kind: o.value.includes('.') ? 17 : 19, // File, Folder
+                detail: o.detail ? `${o.detail} · in ${folder.name}` : `in ${folder.name}`,
+                sortText: String(i).padStart(4, '0'),
+                ...(inItem ? { textEdit: { range: l.range({ start: inItem.start, end: inItem.end }), newText: esc(o.value) } } : { insertText: `${list.quote}${esc(o.value)}${list.quote}` }),
+              })),
+          };
+        }
+        const items = completionsAt(doc.text, at);
         return items ? { isIncomplete: false, items: items.map((e) => this.toCompletionItem(l, e)) } : null;
       }
       case 'textDocument/signatureHelp': {
@@ -305,6 +388,85 @@ export class Server {
         return this.executeCommand(p.command, p.arguments ?? []);
     }
     return NOT_FOUND;
+  }
+
+/** Handlers in the workspace folders (skipping node_modules and dot folders), problems published for the closed ones. */
+  private scanWorkspace() {
+    if (!this.settings.lint.enable || !this.settings.lint.workspace) return;
+    let count = 0;
+    let dirs = 0;
+    const walk = (dir: string, depth: number) => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (count >= 2000 || dirs > 3000 || this.shutdown) return; // a whole drive opened: stop early
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          dirs++;
+          if (depth < 8) walk(abs, depth + 1);
+        } else if (e.isFile() && /\.js$/i.test(e.name)) {
+          count++;
+          queue.push(pathToFileURL(abs).href);
+        }
+      }
+    };
+    const queue: string[] = [];
+    for (const r of this.roots) walk(r, 0);
+    // A few files at a time, so requests (hover, completion) are answered in between.
+    const next = () => {
+      for (let i = 0; i < 10 && queue.length && !this.shutdown; i++) this.fromDisk(queue.shift()!);
+      if (queue.length && !this.shutdown) setImmediate(next);
+    };
+    next();
+  }
+  /** Lint a closed file from disk (if it's in the workspace and a handler); true when it published. */
+  private fromDisk(uri: string): boolean {
+    const file = pathOf(uri);
+    if (!file || this.docs.has(uri) || !this.settings.lint.enable || !this.settings.lint.workspace) return false;
+    if (!this.roots.some((r) => file.startsWith(r + path.sep) || file === r)) return false;
+    let text: string;
+    try {
+      if (fs.statSync(file).size > 2 * 1024 * 1024) return false;
+      text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    } catch {
+      return false;
+    }
+    const d: Doc = { uri, text, version: 0, languageId: 'javascript' };
+    if (!this.isHandler(d)) return false;
+    this.publish(uri, d);
+    return true;
+  }
+  /** A file changed on disk: re-check it if it's a closed handler, or the handler whose folder it is in. */
+  private fileChanged(uri: string, type: number) {
+    const file = pathOf(uri);
+    if (!file) return;
+    if (/\.js$/i.test(file) && !this.docs.has(uri)) {
+      if (type === 3) this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
+      else this.fromDisk(uri);
+    }
+    // A file in <Name>/ next to <Name>.js: that handler's package checks.
+    for (let dir = path.dirname(file); dir.length > 1 && dir !== path.dirname(dir); dir = path.dirname(dir)) {
+      const handler = `${dir}.js`;
+      if (handler === file) continue;
+      const hUri = pathToFileURL(handler).href;
+      if (fs.existsSync(handler)) {
+        forgetPackageFiles(handler);
+        if (this.docs.has(hUri)) this.schedule(hUri, 200);
+        else this.fromDisk(hUri);
+        break;
+      }
+    }
+  }
+
+  private gameFolderOf(uri: string) {
+    const file = pathOf(uri);
+    const dir = file ? this.settings.gameFolders[path.basename(file)] : undefined;
+    return dir ? folderAt(dir) : undefined;
   }
 
   private toCompletionItem(l: Lines, e: CompletionEntry) {
@@ -351,6 +513,11 @@ export class Server {
       if (match && !pairs.some(([m]) => m === match)) pairs.push([match, cd]);
     }
     const actions = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    // Game-folder problems carry their fix (the exe's real name, BinariesFolder…) in `data`.
+    for (const cd of p.context?.diagnostics ?? []) {
+      const f = cd?.code === 'game-folder' ? cd.data?.fix : undefined;
+      if (f && typeof f.start === 'number') actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: [{ range: l.range({ start: f.start, end: f.end }), newText: f.text }] } } } as any);
+    }
     if (!only && !actions.some((a) => a.kind === FIX_ALL_KIND)) {
       const all = fixAllCodeAction(doc.text, this.settings.lint.rules);
       if (all) actions.push(toAction(all));

@@ -9,6 +9,7 @@ import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './com
 import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severity, TextEdit } from './lint';
 import { fixAll } from './fix';
 import { formatHandler } from './format';
+import { parseLikeJint } from './jsparse';
 
 /** Where the lint rules are documented (the README table). */
 export const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
@@ -128,7 +129,7 @@ export function completionsAt(text: string, offset: number): CompletionEntry[] |
       kind: 'constant' as const,
       insertText: `${before && !before.endsWith(',') ? ', ' : ''}${hex(m.id)}`,
       filterText: `${m.name} ${hex(m.id)}`,
-      detail: m.hub ? `Blocked by ${m.hub} of 600 Hub handlers` : 'Window message',
+      detail: m.hub ? `Blocked by ${m.hub} of the 600 most-starred Hub handlers` : 'Window message',
       documentation: messageMarkdown(m.id),
       sortText: String(i).padStart(2, '0'),
     }));
@@ -376,3 +377,110 @@ export function globToRegExp(glob: string): RegExp {
 
 /** 0-based line of an offset (re-exported for adapters). */
 export { lineOf };
+
+// ---------------------------------------------------------------------------
+// Outline (document symbols): a map of the handler for VS Code's Outline, breadcrumbs and Go to Symbol, and
+// `textDocument/documentSymbol` in `nucleus lsp` (splitscreenme-vscode#15).
+
+export type SymbolKind = 'namespace' | 'property' | 'function' | 'variable';
+export interface SymbolEntry {
+  name: string;
+  detail?: string;
+  kind: SymbolKind;
+  /** The whole statement, and the part to select (the name). */
+  range: Span;
+  selection: Span;
+  children?: SymbolEntry[];
+}
+
+const shortValue = (s: string) => {
+  const one = s.replace(/\s+/g, ' ').trim();
+  return one.length > 40 ? `${one.slice(0, 39)}…` : one;
+};
+const memberPath = (n: any): string | undefined =>
+  n?.type === 'Identifier' ? n.name : n?.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' ? ((p) => (p ? `${p}.${n.property.name}` : undefined))(memberPath(n.object)) : undefined;
+
+/** The handler's outline: its settings grouped by object (Game, Game.ProtoInput, Game.Hook…), the callbacks
+ *  (Game.Play…) with what they set inside, and its own functions and variables. Works on code that doesn't parse
+ *  yet (a line-based fallback). */
+export function documentSymbols(text: string): SymbolEntry[] {
+  let program: any;
+  try {
+    program = parseLikeJint(text, { ecmaVersion: 'latest', allowReturnOutsideFunction: true, allowHashBang: true }).program;
+  } catch {
+    return outlineByLines(text);
+  }
+  const groups = new Map<string, SymbolEntry>();
+  const out: SymbolEntry[] = [];
+  const group = (name: string, at: Span) => {
+    let g = groups.get(name);
+    if (!g) {
+      g = { name, kind: 'namespace', range: { ...at }, selection: { ...at }, children: [] };
+      groups.set(name, g);
+      out.push(g);
+    }
+    g.range.end = Math.max(g.range.end, at.end);
+    return g;
+  };
+  const inside = (fn: any): SymbolEntry[] => {
+    const kids: SymbolEntry[] = [];
+    const visit = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (node.type === 'AssignmentExpression' && node.operator === '=') {
+        const p = memberPath(node.left);
+        if (p && /^(Context|Player|Game|PlayerList)\b/.test(p)) kids.push({ name: p, detail: `= ${shortValue(text.slice(node.right.start, node.right.end))}`, kind: 'property', range: { start: node.start, end: node.end }, selection: { start: node.left.start, end: node.left.end } });
+      }
+      if (node.type === 'FunctionDeclaration' && node.id) kids.push({ name: node.id.name, kind: 'function', range: { start: node.start, end: node.end }, selection: { start: node.id.start, end: node.id.end }, children: inside(node.body) });
+      if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') if (node !== fn) return;
+      for (const k of Object.keys(node)) {
+        const v = (node as any)[k];
+        if (Array.isArray(v)) v.forEach(visit);
+        else if (v && typeof v === 'object' && typeof v.type === 'string') visit(v);
+      }
+    };
+    visit(fn);
+    return kids;
+  };
+  for (const st of program.body) {
+    if (st.type === 'ExpressionStatement' && st.expression.type === 'AssignmentExpression' && st.expression.operator === '=') {
+      const a = st.expression;
+      const p = memberPath(a.left);
+      if (!p) continue;
+      const span = { start: st.start, end: st.end };
+      const sel = { start: a.left.start, end: a.left.end };
+      if (a.right.type === 'FunctionExpression') {
+        out.push({ name: p, detail: 'callback', kind: 'function', range: span, selection: sel, children: inside(a.right) });
+        continue;
+      }
+      const dot = p.lastIndexOf('.');
+      if (dot < 0) continue;
+      group(p.slice(0, dot), span).children!.push({ name: p.slice(dot + 1), detail: `= ${shortValue(text.slice(a.right.start, a.right.end))}`, kind: 'property', range: span, selection: sel });
+    } else if (st.type === 'FunctionDeclaration' && st.id) {
+      out.push({ name: st.id.name, kind: 'function', range: { start: st.start, end: st.end }, selection: { start: st.id.start, end: st.id.end }, children: inside(st.body) });
+    } else if (st.type === 'VariableDeclaration') {
+      for (const d of st.declarations) {
+        if (d.id.type !== 'Identifier') continue;
+        const fn = d.init && (d.init.type === 'FunctionExpression' || d.init.type === 'ArrowFunctionExpression');
+        out.push({ name: d.id.name, detail: d.init && !fn ? `= ${shortValue(text.slice(d.init.start, d.init.end))}` : undefined, kind: fn ? 'function' : 'variable', range: { start: st.start, end: st.end }, selection: { start: d.id.start, end: d.id.end }, children: fn ? inside(d.init) : undefined });
+      }
+    }
+  }
+  return out;
+}
+
+/** The outline of code that doesn't parse: top-level assignments and functions, line by line. */
+function outlineByLines(text: string): SymbolEntry[] {
+  const out: SymbolEntry[] = [];
+  const re = /^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)[ \t]*=(?!=)[ \t]*(.*)$|^function[ \t]+([A-Za-z_$][\w$]*)/gm;
+  for (let m; (m = re.exec(text)); ) {
+    const end = m.index + m[0].length;
+    if (m[3]) {
+      const s = m.index + m[0].lastIndexOf(m[3]);
+      out.push({ name: m[3], kind: 'function', range: { start: m.index, end }, selection: { start: s, end: s + m[3].length } });
+    } else {
+      const fn = /^function\b/.test(m[2]);
+      out.push({ name: m[1], detail: fn ? 'callback' : `= ${shortValue(m[2].replace(/;\s*$/, ''))}`, kind: fn ? 'function' : 'property', range: { start: m.index, end }, selection: { start: m.index, end: m.index + m[1].length } });
+    }
+  }
+  return out;
+}

@@ -109,3 +109,35 @@ test('valueContextAt: values for enum and boolean options, callbacks and Blocked
   assert.equal(at('Game.ProtoInput.BlockedMessages = |')?.values[0].value, '[0x0008, 0x02a1, 0x02a3];');
   assert.equal(at('Game.MaxPlayers = |'), undefined);
 });
+
+test('valuePicks: true/false, enum and number values, wrong types, computed values left alone', async () => {
+  const { valuePicks, valuePickAt } = await import('../core/complete');
+  const src = 'Game.SymlinkGame = false;\nGame.DPIHandling = Nucleus.DPIHandling.True;\nGame.MaxPlayers = 4;\nGame.KeepSymLinkOnExit = "true";\nGame.HandlerInterval = Context.Width;\nvar x = 3;\nif (a == true) {}\n';
+  const picks = valuePicks(src);
+  const by = (n: string) => picks.find((p) => p.name === n);
+  assert.equal(by('SymlinkGame')?.kind, 'boolean');
+  assert.deepEqual(by('SymlinkGame')?.options.map((o) => [o.value, !!o.current]), [['true', false], ['false', true]]);
+  assert.equal(by('DPIHandling')?.kind, 'enum');
+  assert.ok(by('DPIHandling')?.options.some((o) => o.current && o.value === 'Nucleus.DPIHandling.True'));
+  assert.equal(by('MaxPlayers')?.kind, 'number');
+  assert.equal(by('KeepSymLinkOnExit')?.wrong, 'text in quotes, not true or false');
+  assert.equal(by('HandlerInterval'), undefined, 'computed values are left alone');
+  assert.equal(picks.length, 4, 'no picks for plain variables or comparisons');
+  const at = valuePickAt(src, src.indexOf('false') + 2);
+  assert.equal(at?.name, 'SymlinkGame');
+  assert.equal(src.slice(at!.start, at!.end), 'false');
+  assert.equal(valuePickAt(src, 3), undefined, 'not on the option name');
+});
+
+test('documentSymbols: settings by object, callbacks with what they set, own names; code that does not parse', async () => {
+  const { documentSymbols } = await import('../core/features');
+  const src = 'Game.GameName = "Demo";\nGame.SymlinkGame = true;\nGame.ProtoInput.InjectStartup = true;\nvar width = 960;\nfunction helper(x) { Context.Width = x; }\nGame.Play = function () {\n  Context.StartArguments = "-w " + width;\n  var args = 1;\n};\n';
+  const s = documentSymbols(src);
+  assert.deepEqual(s.map((x) => `${x.kind}:${x.name}`), ['namespace:Game', 'namespace:Game.ProtoInput', 'variable:width', 'function:helper', 'function:Game.Play']);
+  assert.deepEqual(s[0].children!.map((c) => `${c.name} ${c.detail}`), ['GameName = "Demo"', 'SymlinkGame = true']);
+  assert.equal(src.slice(s[0].children![0].selection.start, s[0].children![0].selection.end), 'Game.GameName');
+  assert.deepEqual(s[4].children!.map((c) => c.name), ['Context.StartArguments']);
+  assert.deepEqual(s[3].children!.map((c) => c.name), ['Context.Width']);
+  const broken = documentSymbols('Game.GameName = "Demo";\nGame.Play = function () {\n  Context.\n');
+  assert.deepEqual(broken.map((x) => `${x.kind}:${x.name}`), ['property:Game.GameName', 'function:Game.Play']);
+});

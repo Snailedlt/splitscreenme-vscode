@@ -37,6 +37,9 @@ Positions in core are offsets into the text, counted in UTF-16 code units (what 
 | Value suggestions after `=` (enum values, `true`/`false`, `function () {}`) | `completionsAt()` (via `valueContextAt()`) | same | same |
 | Signature help (overloads, active parameter) | `signatureHelpAt()` | SignatureHelpProvider | `textDocument/signatureHelp` |
 | Format Document | `formatEdits()` (`core/format.ts`) | DocumentFormattingEditProvider | `textDocument/formatting`; a refusal is a `window/showMessage` warning and no edits |
+| Outline, breadcrumbs, Go to Symbol (settings by object, callbacks with what they set, the handler's own names) | `documentSymbols()` | DocumentSymbolProvider | `textDocument/documentSymbol` (hierarchical) |
+| Package checks (the files in `<Name>/`) | `checkPackage()` (`core/pkgcheck.ts`) + `packageFilesFor()` (`src/pkgfiles.ts`) | Problems on the handler and on those files | `publishDiagnostics` for the handler and for each of those files |
+| Checks against the game's install folder | `checkAgainstFolder()` (`core/gamefolder.ts`) + `folderAt()` (`src/gamefolder-node.ts`) | **Link the Game's Folder…**, problems, quick fixes, file suggestions in the lists | the `gameFolders` setting; problems with the fix in `data`, `quickfix` code actions, completion inside the lists |
 | Window-message names after `0x0008` | `inlayHints()` | InlayHintsProvider | `textDocument/inlayHint` |
 | Try it (what each player gets) | `simulateIsolated()` (`src/sandbox.ts`) + `formatSimulation()` (`src/simformat.ts`) | **Nucleus: Try It** panel | `workspace/executeCommand` `nucleus.tryIt`, returns the text |
 | Is this file a handler? | `isHandlerFile()` | `isHandler()` | same, plus the `handlerGlobs` setting |
@@ -59,8 +62,9 @@ Send them as `initializationOptions`, or later as `workspace/didChangeConfigurat
 {
   "detection": "auto",
   "handlerGlobs": ["**/my-handlers/*.js"],
-  "lint": { "enable": true, "rules": { "unknown-member": "error" }, "compareWithHub": true },
-  "completion": { "enable": true }
+  "lint": { "enable": true, "rules": { "unknown-member": "error" }, "compareWithHub": true, "workspace": true },
+  "completion": { "enable": true },
+  "gameFolders": { "MyGame.js": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\MyGame" }
 }
 ```
 
@@ -68,6 +72,8 @@ Send them as `initializationOptions`, or later as `workspace/didChangeConfigurat
 - `handlerGlobs`: paths that always count as handlers (`**` any folders, `*` any name part, matched against the end of the path).
 - `lint.rules`: per-rule severity, `error`, `warning`, `info`, `hint` or `off` (`nucleus rules` lists them).
 - `lint.compareWithHub`: for a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub's version (downloads it once, cached; the problem list updates when it arrives). `false` keeps the server offline.
+- `lint.workspace`: check every handler in the workspace folders, opened or not (default `true`), and re-check files that change on disk (when the client supports watched files).
+- `gameFolders`: the game's install folder per handler file name. The handler is then checked against the real files (`ExecutableName`, `BinariesFolder`, the symlink and copy lists…), each problem's fix comes as a quick fix, and completion inside those lists offers the game's own files. Only names and sizes are read.
 - `completion.enable`: hover, completion, signature help and inlay hints. Turn it off if TypeScript provides them (the `.d.ts` in `types/`).
 
 The same names as the VS Code settings, without the `splitscreenme.` prefix; a `splitscreenme` key is accepted too.
@@ -198,9 +204,28 @@ Settings > Languages & Frameworks > Language Servers > **+**:
 
 Kate allows one server per language; this replaces its JavaScript server for `.js` files.
 
+### Notepad++
+
+No LSP (the NppLspClient plugin is experimental and not in Plugins Admin). Instead `nucleus setup notepad++` merges the API names and call tips into Notepad++'s own `autoCompletion/javascript.xml` (`core/notepadpp.ts`, `src/setup-npp.ts`) and adds a Run-menu entry that runs `nucleus lint`. Tried in Notepad++ 8.9.9.
+
 ### Anything else
 
 Any LSP client: run `node /path/to/nucleus.js lsp` over stdio for JavaScript files. The server advertises what it supports in `initialize`.
+
+## Debugging: `nucleus dap`
+
+`nucleus dap` is a Debug Adapter (DAP, stdio) over the same debugger as VS Code's Run and Debug (`src/dap.ts`): breakpoints (conditional too), step over/into/out, step back, variables (Context, Player, the options set so far, what Nucleus would have done), hover and console evaluation. The handler runs simulated, as Try it runs it. Launch arguments: `program` (the handler), and optionally `players` (default 2), `keyboard` (a player number, `"all"` or `"none"`), `resolution` (`"1920x1080"`), `stopOnEntry`.
+
+Neovim ([nvim-dap](https://github.com/mfussenegger/nvim-dap)):
+
+```lua
+local dap = require('dap')
+dap.adapters.nucleus = { type = 'executable', command = 'node', args = { '/path/to/nucleus.js', 'dap' } }
+dap.configurations.javascript = dap.configurations.javascript or {}
+table.insert(dap.configurations.javascript, { type = 'nucleus', request = 'launch', name = 'Step through the handler', program = '${file}', players = 2 })
+```
+
+Other editors with DAP support (Helix `debugger` in `languages.toml`, Zed, JetBrains, Emacs [dape](https://github.com/svaante/dape)) take the same command and launch arguments.
 
 ## How handler files are detected
 
@@ -222,6 +247,7 @@ Unsaved buffers (no `file:` URI) count when the client calls them `javascript` a
 | **Package** / **Install** | `nucleus package MyGame.js` (a `.nc` for the Hub); to install, copy `MyGame.js` and its `MyGame/` folder into Nucleus' `handlers` folder |
 | **Lint all handlers** | `nucleus lint path/to/handlers` (`--fix` applies the safe fixes) |
 | **Set Up Type Definitions** | Point your TypeScript server at `types/nucleus.d.ts` |
+| **Debugging** (Run and Debug) | `nucleus dap` in an editor with DAP support ([above](#debugging-nucleus-dap)), or `nucleus debug MyGame.js --break 14 --watch Context.PlayerID` in a terminal. |
 | **What's New** | `CHANGELOG.md` |
 | Agent tools for Copilot | `nucleus mcp` for any MCP client (README, "AI agents") |
 

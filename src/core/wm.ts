@@ -71,7 +71,7 @@ export function messageMarkdown(id: number): string {
   const t = blockTarget(id), common = COMMON_MESSAGES.find((m) => m.id === id);
   const head = t.kind === 'ok' ? `**${t.name}** (${hex(id)}, ${id})` : `**${hex(id)}** (${id})`;
   const what = common ? common.meaning : t.kind === 'ok' ? 'A window message Proto Input can block.' : '';
-  const hub = common?.hub ? ` Blocked by ${common.hub} of 600 Hub handlers.` : '';
+  const hub = common?.hub ? ` Blocked by ${common.hub} of the 600 most-starred Hub handlers.` : '';
   const warn = t.kind === 'out' ? 'Past the end of Proto Input\'s message list: blocking it does nothing.' : t.kind === 'other' ? `Not in Proto Input's message list: blocking it switches on the block for ${t.name} (${hex(t.sharedWith)}) instead.` : '';
   return [head, [what, hub].join('').trim(), warn, 'Blocked only with `Game.ProtoInput.MessageFilterHook = true`.'].filter(Boolean).join('\n\n');
 }

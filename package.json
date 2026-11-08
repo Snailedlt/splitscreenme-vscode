@@ -2,7 +2,7 @@
   "name": "splitscreenme-vscode",
   "displayName": "SplitScreen.Me / Nucleus Co-op Handler Tools",
   "description": "IntelliSense, docs, linting and packaging for Nucleus Co-op game handlers (SplitScreen.Me).",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "splitscreenme",
   "license": "MIT",
   "repository": {
@@ -48,7 +48,7 @@
       },
       {
         "command": "splitscreenme.newHandler",
-        "title": "New Handler\u2026",
+        "title": "New Handler…",
         "category": "Nucleus"
       },
       {
@@ -89,7 +89,7 @@
       },
       {
         "command": "splitscreenme.browseHub",
-        "title": "Browse Handlers on the Hub\u2026",
+        "title": "Browse Handlers on the Hub…",
         "category": "Nucleus"
       },
       {
@@ -109,7 +109,17 @@
       },
       {
         "command": "splitscreenme.openDocs",
-        "title": "Open Documentation\u2026",
+        "title": "Open Documentation…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.linkGameFolder",
+        "title": "Link the Game's Folder…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.unlinkGameFolder",
+        "title": "Unlink the Game's Folder",
         "category": "Nucleus"
       }
     ],
@@ -178,7 +188,7 @@
           ],
           "default": "auto",
           "enumDescriptions": [
-            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/\u2026, or live in a \"handlers\" folder.",
+            "JavaScript files that assign Game.GUID/GameName/ExecutableName/Play/…, or live in a \"handlers\" folder.",
             "Treat every JavaScript file as a Nucleus handler.",
             "Disable all handler features."
           ],
@@ -192,12 +202,26 @@
         "splitscreenme.lint.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, \u2026)."
+          "description": "Report problems in handlers (ES5-only syntax, unknown options, type mismatches, Hub install pitfalls, …)."
         },
         "splitscreenme.lint.compareWithHub": {
           "type": "boolean",
           "default": true,
           "description": "For a handler with a Hub.Handler.Id line, compare Game.GUID with the version published on hub.splitscreen.me (guid-changed). Downloads that version once and keeps it in the cache."
+        },
+        "splitscreenme.lint.packageChecks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check the files in a handler's folder (<Name>/ next to <Name>.js) as they'd go into the .nc: names Windows can't install, files that overwrite each other, broken INI/JSON, very large files, and files the handler uses (Game.Folder + \"\\\\x\") that aren't there."
+        },
+        "splitscreenme.gameFolders": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "The game's install folder for each handler (file name → folder), set with **Nucleus: Link the Game's Folder…**. The handler is then checked against the real files (`ExecutableName`, `BinariesFolder`, the symlink and copy lists…), and those lists suggest the game's files. Only names and sizes are read; nothing leaves your PC."
         },
         "splitscreenme.lint.rules": {
           "type": "object",
@@ -469,7 +493,90 @@
           "description": "Nucleus Co-op installation folder (contains NucleusCoop.exe and \"handlers\"). Used by \"Install Handler into Nucleus Co-op\"."
         }
       }
-    }
+    },
+    "breakpoints": [
+      {
+        "language": "javascript"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "nucleus",
+        "label": "Nucleus handler (simulated)",
+        "languages": [
+          "javascript"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The handler to step through.",
+                "default": "${file}"
+              },
+              "players": {
+                "type": "number",
+                "description": "How many players Nucleus sets up (1-16).",
+                "default": 2
+              },
+              "keyboard": {
+                "description": "Who has the keyboard and mouse: a player number, \"all\" (each player their own) or \"none\".",
+                "default": 1,
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      "all",
+                      "none"
+                    ]
+                  }
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "description": "The monitor's size.",
+                "default": "1920x1080",
+                "pattern": "^\\d+x\\d+$"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Pause on the first statement instead of running to a breakpoint.",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "nucleus",
+            "request": "launch",
+            "name": "Step through the handler",
+            "program": "${file}",
+            "players": 2
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Nucleus: step through a handler",
+            "description": "Run the handler the way Nucleus does, simulated, and pause at breakpoints",
+            "body": {
+              "type": "nucleus",
+              "request": "launch",
+              "name": "Step through the handler",
+              "program": "^\"\\${file}\"",
+              "players": 2,
+              "keyboard": 1,
+              "resolution": "1920x1080"
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs",
