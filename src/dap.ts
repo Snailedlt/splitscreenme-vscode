@@ -213,3 +213,41 @@ export class HandlerDebugSession {
     if (stop.reason !== 'step') this.output(text);
   }
 }
+
+/** `nucleus dap`: the adapter on stdin/stdout (Content-Length framed, like DAP clients expect). Resolves on disconnect. */
+export function serveDap(input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout): Promise<number> {
+  return new Promise((resolve) => {
+    const write = (msg: unknown) => {
+      const body = Buffer.from(JSON.stringify(msg), 'utf8');
+      output.write(`Content-Length: ${body.length}\r\n\r\n`);
+      output.write(body);
+    };
+    const session = new HandlerDebugSession(write);
+    let buf = Buffer.alloc(0);
+    input.on('data', (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        const sep = buf.indexOf('\r\n\r\n');
+        if (sep < 0) break;
+        const m = buf.subarray(0, sep).toString('ascii').match(/content-length:\s*(\d+)/i);
+        if (!m) {
+          buf = buf.subarray(sep + 4);
+          continue;
+        }
+        const len = Number(m[1]);
+        if (buf.length < sep + 4 + len) break;
+        let msg: any;
+        try {
+          msg = JSON.parse(buf.subarray(sep + 4, sep + 4 + len).toString('utf8'));
+        } catch {
+          msg = null;
+        }
+        buf = buf.subarray(sep + 4 + len);
+        if (!msg) continue;
+        session.handle(msg);
+        if (msg.command === 'disconnect') return resolve(0);
+      }
+    });
+    input.on('end', () => resolve(0));
+  });
+}

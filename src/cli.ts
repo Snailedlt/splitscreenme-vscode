@@ -16,6 +16,7 @@ import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/temp
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
 import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
 import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
+import { serveDap } from './dap';
 import type { Stop, ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
@@ -64,6 +65,8 @@ Commands:
                               templates, Hub search and verified Hub handlers
   lsp [--stdio]               Run as a Language Server (stdio) for other editors: Neovim, Helix,
                               Zed, Sublime Text, Emacs, JetBrains (LSP4IJ), Kate, ... (PORTING.md)
+  dap                         Run as a Debug Adapter (stdio) for editors with DAP support: nvim-dap,
+                              Helix, Zed, JetBrains, Emacs (dape) (PORTING.md, "Debugging")
 
 Common options:
   --json                      Machine-readable output
@@ -106,7 +109,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'workbench', 'debug'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'workbench', 'debug'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
@@ -146,6 +149,9 @@ async function main(argv: string[]): Promise<number> {
     case 'lsp':
       // Exit when the client says so, even with a Hub lookup or a lint timer still pending.
       return serveLsp().then((code) => process.exit(code));
+    case 'dap':
+      // A Debug Adapter on stdio, for editors with DAP support (nvim-dap, Helix, Zed, JetBrains, Emacs dape).
+      return serveDap().then((code) => process.exit(code));
     case 'workbench':
       return cmdWorkbench(args, json);
   }

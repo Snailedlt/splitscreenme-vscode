@@ -10,7 +10,11 @@ import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, Complet
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
-import { packageFilesFor } from './pkgfiles';
+import { packageFilePath, packageFilesFor } from './pkgfiles';
+import { checkAgainstFolder, folderLists, pickerOptions } from './core/gamefolder';
+import { folderAt } from './gamefolder-node';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { publishedNow } from './published';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { formatSimulation } from './simformat';
@@ -27,8 +31,10 @@ export interface LspSettings {
   handlerGlobs: string[];
   lint: { enable: boolean; rules: Partial<Record<RuleId, Severity | 'off'>>; compareWithHub: boolean };
   completion: { enable: boolean };
+  /** The game's install folder per handler file name, e.g. { "MyGame.js": "C:\\Games\\MyGame" }: checks against the real files. */
+  gameFolders: Record<string, string>;
 }
-const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true }, completion: { enable: true } };
+const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true }, completion: { enable: true }, gameFolders: {} };
 
 export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
@@ -112,6 +118,8 @@ export class Server {
   private snippets = true;
   private shutdown = false;
   private nextId = 1;
+  /** Package files that have problems published, per handler, so they can be cleared. */
+  private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
 
   private notify(method: string, params: unknown) {
@@ -132,6 +140,7 @@ export class Server {
     if (l.rules && typeof l.rules === 'object') d.lint.rules = l.rules;
     if (typeof l.compareWithHub === 'boolean') d.lint.compareWithHub = l.compareWithHub;
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
+    if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
   }
 
   private isHandler(d: Doc): boolean {
@@ -161,11 +170,34 @@ export class Server {
     // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
     const file = pathOf(uri);
     const files = file ? packageFilesFor(file) : undefined;
+    const byFile = new Map<string, unknown[]>();
     for (const p of files ? checkPackage(d.text, files) : []) {
-      if (p.file || p.start === undefined) continue;
+      if (p.file) {
+        // On the file itself (the folder next to the handler), as VS Code shows them.
+        const line = Math.max(0, (p.line ?? 1) - 1);
+        const list = byFile.get(p.file) ?? [];
+        list.push({ range: { start: { line, character: 0 }, end: { line, character: p.line ? 1000 : 0 } }, severity: SEVERITY[p.severity], code: 'package', source: 'nucleus', message: `${p.title}. ${p.why}` });
+        byFile.set(p.file, list);
+        continue;
+      }
+      if (p.start === undefined) continue;
       (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: p.end ?? p.start }), severity: SEVERITY[p.severity], code: 'package', codeDescription: { href: RULES_URL }, source: 'nucleus', message: `${p.title}. ${p.why}` });
     }
+    // The game folder linked to this handler (settings.gameFolders), if any: problems with their fix as data.
+    const folder = this.gameFolderOf(uri);
+    for (const p of folder ? checkAgainstFolder(d.text, folder) : []) {
+      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: Math.max(p.end, p.start) }), severity: SEVERITY[p.severity], code: 'game-folder', source: 'nucleus', message: `${p.title}. ${p.why}`, ...(p.fix ? { data: { fix: p.fix } } : {}) });
+    }
     this.notify('textDocument/publishDiagnostics', { uri, version: d.version, diagnostics });
+    // Package problems on the files in <Name>/: publish them, and clear the ones that went away.
+    const sent = new Set<string>();
+    for (const [name, list] of byFile) {
+      const fileUri = pathToFileURL(packageFilePath(file!, name)).href;
+      sent.add(fileUri);
+      this.notify('textDocument/publishDiagnostics', { uri: fileUri, diagnostics: list });
+    }
+    for (const old of this.pkgUris.get(uri) ?? []) if (!sent.has(old)) this.notify('textDocument/publishDiagnostics', { uri: old, diagnostics: [] });
+    this.pkgUris.set(uri, sent);
   }
   private schedule(uri: string, delay = 200) {
     clearTimeout(this.timers.get(uri));
@@ -214,7 +246,7 @@ export class Server {
             textDocumentSync: { openClose: true, change: 1 /* full */ },
             hoverProvider: true,
             documentSymbolProvider: true,
-            completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ','], resolveProvider: false },
+            completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
             documentFormattingProvider: true,
@@ -282,7 +314,27 @@ export class Server {
       case 'textDocument/completion': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);
-        const items = completionsAt(doc.text, l.offset(p.position));
+        const at = l.offset(p.position);
+        // Inside DirSymlinkExclusions, HardcopyFiles…: the linked game folder's own files and folders.
+        const folder = this.gameFolderOf(doc.uri);
+        const list = folder ? folderLists(doc.text).find((x) => at > x.open && at <= x.close) : undefined;
+        if (folder && list) {
+          const inItem = list.items.find((i) => at >= i.start && at <= i.end);
+          const esc = (v: string) => v.replace(/\\/g, '\\\\');
+          return {
+            isIncomplete: false,
+            items: pickerOptions(doc.text, list, folder)
+              .filter((o) => !o.present)
+              .map((o, i) => ({
+                label: o.label,
+                kind: o.value.includes('.') ? 17 : 19, // File, Folder
+                detail: o.detail ? `${o.detail} · in ${folder.name}` : `in ${folder.name}`,
+                sortText: String(i).padStart(4, '0'),
+                ...(inItem ? { textEdit: { range: l.range({ start: inItem.start, end: inItem.end }), newText: esc(o.value) } } : { insertText: `${list.quote}${esc(o.value)}${list.quote}` }),
+              })),
+          };
+        }
+        const items = completionsAt(doc.text, at);
         return items ? { isIncomplete: false, items: items.map((e) => this.toCompletionItem(l, e)) } : null;
       }
       case 'textDocument/signatureHelp': {
@@ -322,6 +374,12 @@ export class Server {
         return this.executeCommand(p.command, p.arguments ?? []);
     }
     return NOT_FOUND;
+  }
+
+  private gameFolderOf(uri: string) {
+    const file = pathOf(uri);
+    const dir = file ? this.settings.gameFolders[path.basename(file)] : undefined;
+    return dir ? folderAt(dir) : undefined;
   }
 
   private toCompletionItem(l: Lines, e: CompletionEntry) {
@@ -368,6 +426,11 @@ export class Server {
       if (match && !pairs.some(([m]) => m === match)) pairs.push([match, cd]);
     }
     const actions = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    // Game-folder problems carry their fix (the exe's real name, BinariesFolder…) in `data`.
+    for (const cd of p.context?.diagnostics ?? []) {
+      const f = cd?.code === 'game-folder' ? cd.data?.fix : undefined;
+      if (f && typeof f.start === 'number') actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: [{ range: l.range({ start: f.start, end: f.end }), newText: f.text }] } } } as any);
+    }
     if (!only && !actions.some((a) => a.kind === FIX_ALL_KIND)) {
       const all = fixAllCodeAction(doc.text, this.settings.lint.rules);
       if (all) actions.push(toAction(all));

@@ -3,64 +3,12 @@
 // and the like with the real files, with fixes; inside those lists, completion offers the game's own files.
 // Only names and sizes are read; nothing leaves the PC.
 import * as vscode from 'vscode';
-import fs from 'node:fs';
 import path from 'node:path';
-import { checkAgainstFolder, folderLists, folderSummary, MAX_DEPTH, MAX_ENTRIES, pickerOptions, SKIP_DIRS, type FolderFix, type GameFolder } from './core/gamefolder';
+import { checkAgainstFolder, folderLists, folderSummary, pickerOptions, type FolderFix } from './core/gamefolder';
+import { folderAt, forgetFolder, readGameFolder } from './gamefolder-node';
+export { readGameFolder };
 
 const SETTING = 'gameFolders';
-
-/** The folder's files and folders (relative, with "/"), breadth first, within the same limits as the workbench. */
-export function readGameFolder(dir: string): GameFolder {
-  const files: GameFolder['files'] = [];
-  const dirs: string[] = [];
-  let truncated = false;
-  let count = 0;
-  const queue: { abs: string; rel: string; depth: number }[] = [{ abs: dir, rel: '', depth: 0 }];
-  while (queue.length) {
-    const { abs, rel, depth } = queue.shift()!;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(abs, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (++count > MAX_ENTRIES) {
-        truncated = true;
-        break;
-      }
-      const p = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) {
-        if (SKIP_DIRS.has(e.name.toLowerCase())) continue;
-        dirs.push(p);
-        if (depth + 1 < MAX_DEPTH) queue.push({ abs: path.join(abs, e.name), rel: p, depth: depth + 1 });
-        else truncated = true;
-      } else if (e.isFile()) {
-        let size = 0;
-        try {
-          size = fs.statSync(path.join(abs, e.name)).size;
-        } catch {
-          /* unreadable: size 0 */
-        }
-        files.push({ path: p, size });
-      }
-    }
-    if (count > MAX_ENTRIES) break;
-  }
-  files.sort((a, b) => a.path.localeCompare(b.path));
-  dirs.sort((a, b) => a.localeCompare(b));
-  return { name: path.basename(dir), files, dirs, truncated: truncated || undefined };
-}
-
-const cache = new Map<string, { at: number; folder: GameFolder }>();
-function folderAt(dir: string): GameFolder | undefined {
-  const hit = cache.get(dir);
-  if (hit && Date.now() - hit.at < 60_000) return hit.folder;
-  if (!fs.existsSync(dir)) return undefined;
-  const folder = readGameFolder(dir);
-  cache.set(dir, { at: Date.now(), folder });
-  return folder;
-}
 
 const keyOf = (doc: vscode.TextDocument) => path.basename(doc.uri.fsPath);
 /** The game folder linked to this handler (by its file name), if any. */
@@ -109,7 +57,7 @@ export function registerGameFolders(context: vscode.ExtensionContext, isHandler:
       const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, title: `The folder ${keyOf(doc)}'s game is installed in (where its .exe is, or above)`, defaultUri: linkedFolder(doc) ? vscode.Uri.file(linkedFolder(doc)!) : undefined });
       const dir = picked?.[0]?.fsPath;
       if (!dir) return;
-      cache.delete(dir);
+      forgetFolder(dir);
       const folder = folderAt(dir)!;
       await save(doc, dir);
       recheck(doc);

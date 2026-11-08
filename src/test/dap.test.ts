@@ -74,3 +74,40 @@ test('dap: an error stops where it ends the run; unsaved text is debugged as it 
   assert.equal(stopped.body.reason, 'exception');
   assert.equal(req('launch', {}).res.success, false, 'no program, a clear error');
 });
+
+test('dap: `nucleus dap` speaks the protocol on stdio', async () => {
+  const { spawn } = await import('node:child_process');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dap-')), 'Demo.js');
+  fs.writeFileSync(file, HANDLER);
+  const proc = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'dap'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const got: any[] = [];
+  let buf = Buffer.alloc(0);
+  proc.stdout!.on('data', (c: Buffer) => {
+    buf = Buffer.concat([buf, c]);
+    for (;;) {
+      const sep = buf.indexOf('\r\n\r\n');
+      if (sep < 0) return;
+      const len = Number(/Content-Length: (\d+)/i.exec(buf.subarray(0, sep).toString())![1]);
+      if (buf.length < sep + 4 + len) return;
+      got.push(JSON.parse(buf.subarray(sep + 4, sep + 4 + len).toString()));
+      buf = buf.subarray(sep + 4 + len);
+    }
+  });
+  let seq = 1;
+  const send = (command: string, args: unknown = {}) => {
+    const body = Buffer.from(JSON.stringify({ seq: seq++, type: 'request', command, arguments: args }));
+    proc.stdin!.write(`Content-Length: ${body.length}\r\n\r\n`);
+    proc.stdin!.write(body);
+  };
+  send('initialize', { adapterID: 'nucleus' });
+  send('launch', { program: file });
+  send('setBreakpoints', { source: { path: file }, breakpoints: [{ line: 6 }] });
+  send('configurationDone');
+  const deadline = Date.now() + 15000;
+  while (!got.some((m) => m.event === 'stopped') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  const stopped = got.find((m) => m.event === 'stopped');
+  assert.equal(stopped?.body.reason, 'breakpoint', JSON.stringify(got.map((m) => m.command ?? m.event)));
+  send('disconnect');
+  const code = await new Promise((r) => proc.on('exit', r));
+  assert.equal(code, 0);
+});

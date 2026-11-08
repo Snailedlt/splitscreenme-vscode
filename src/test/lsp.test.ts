@@ -65,7 +65,7 @@ before(async () => {
   const init = await request('initialize', { processId: null, rootUri: null, capabilities: { textDocument: { completion: { completionItem: { snippetSupport: true } } } }, initializationOptions: { lint: { compareWithHub: false } } });
   const caps = init.result.capabilities;
   assert.equal(caps.textDocumentSync.change, 1);
-  assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',']);
+  assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',', '"']);
   assert.ok(caps.hoverProvider && caps.documentFormattingProvider && caps.inlayHintProvider && caps.signatureHelpProvider);
   assert.ok(caps.executeCommandProvider.commands.includes('nucleus.tryIt'));
   notify('initialized', {});
@@ -205,4 +205,35 @@ test('snippets become plain text for clients without snippet support', () => {
   assert.equal(snippetToPlain('Width = ${1:0};'), 'Width = 0;');
   assert.equal(snippetToPlain('GetFolder($1)'), 'GetFolder()');
   assert.equal(snippetToPlain('function () {\n\t$0\n}'), 'function () {\n\t\n}');
+});
+
+test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-pkg-'));
+  const js = path.join(dir, 'Pkg.js');
+  fs.mkdirSync(path.join(dir, 'Pkg'));
+  fs.writeFileSync(path.join(dir, 'Pkg', 'Config.json'), '{ bad');
+  const game = path.join(dir, 'game');
+  fs.mkdirSync(path.join(game, 'Binaries', 'Win64'), { recursive: true });
+  fs.writeFileSync(path.join(game, 'Binaries', 'Win64', 'Shooter-Win64-Shipping.exe'), 'x');
+  fs.writeFileSync(path.join(game, 'readme.txt'), 'x');
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { gameFolders: { 'Pkg.js': game } } } });
+  const text = 'Game.GUID = "Pkg";\nGame.GameName = "Pkg";\nGame.ExecutableName = "Shooter-Win64-Shiping.exe";\nGame.FileSymlinkExclusions = [""];\n';
+  const uri = pathToFileURL(js).href;
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const own = (await diagnosticsFor(uri, 1)).params.diagnostics;
+  const exe = own.find((d: any) => d.code === 'game-folder' && /executable/i.test(d.message));
+  assert.ok(exe, JSON.stringify(own.map((d: any) => d.message)));
+  assert.equal(exe.data.fix.text, 'Shooter-Win64-Shipping.exe');
+  const fileDiags = (await diagnosticsFor(pathToFileURL(path.join(dir, 'Pkg', 'Config.json')).href)).params.diagnostics;
+  assert.match(fileDiags[0].message, /Not valid JSON/);
+
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: exe.range, context: { diagnostics: [exe] } })).result;
+  const fix = actions.find((a: any) => a.title === exe.data.fix.title);
+  assert.equal(fix.edit.changes[uri][0].newText, 'Shooter-Win64-Shipping.exe');
+
+  const list = (await request('textDocument/completion', { textDocument: { uri }, position: { line: 3, character: 32 } })).result;
+  assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
 });
