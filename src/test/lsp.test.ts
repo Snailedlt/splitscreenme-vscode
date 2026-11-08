@@ -146,6 +146,15 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   assert.ok(symbols.some((s: any) => s.name === 'Game.Play' && s.kind === 12), 'the callbacks');
   assert.ok(symbols.every((s: any) => s.range && s.selectionRange));
 
+  // Go to definition and references: the handler's own function.
+  const defUri = 'file:///tmp/Def.js';
+  notify('textDocument/didOpen', { textDocument: { uri: defUri, languageId: 'javascript', version: 1, text: HEADER + 'function helper() {}\nGame.Play = function () {\n  helper();\n};\n' } });
+  const hl = HEADER.split('\n').length - 1;
+  const def = (await request('textDocument/definition', { textDocument: { uri: defUri }, position: { line: hl + 2, character: 3 } })).result;
+  assert.deepEqual(def, { uri: defUri, range: { start: { line: hl, character: 9 }, end: { line: hl, character: 15 } } });
+  const refs = (await request('textDocument/references', { textDocument: { uri: defUri }, position: { line: hl + 2, character: 3 }, context: { includeDeclaration: true } })).result;
+  assert.deepEqual(refs.map((r: any) => r.range.start.line), [hl, hl + 2]);
+
   // A request on a file that isn't open, or garbage params, doesn't crash the server.
   assert.equal((await request('textDocument/hover', { textDocument: { uri: 'file:///nope.js' }, position: { line: 0, character: 0 } })).result, null);
   assert.ok((await request('textDocument/hover', {})).result === null);

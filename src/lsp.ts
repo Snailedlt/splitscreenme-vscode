@@ -6,6 +6,7 @@
 // (src/sandbox.ts). Logs go to stderr; stdout carries only protocol messages.
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
+import { definitionAt, referencesAt } from './core/definition';
 import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -252,6 +253,8 @@ export class Server {
             textDocumentSync: { openClose: true, change: 1 /* full */ },
             hoverProvider: true,
             documentSymbolProvider: true,
+            definitionProvider: true,
+            referencesProvider: true,
             completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
@@ -312,6 +315,20 @@ export class Server {
       case 'textDocument/didSave':
         return undefined;
 
+      case 'textDocument/definition': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const d = definitionAt(doc.text, l.offset(p.position));
+        return d ? { uri: doc.uri, range: l.range(d) } : null;
+      }
+      case 'textDocument/references': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const at = l.offset(p.position);
+        const refs = referencesAt(doc.text, at);
+        const decl = definitionAt(doc.text, at);
+        return refs.filter((r) => p.context?.includeDeclaration !== false || !decl || r.start !== decl.start).map((r) => ({ uri: doc.uri, range: l.range(r) }));
+      }
       case 'textDocument/documentSymbol': {
         if (!this.featuresOn(doc)) return [];
         const l = linesOf(doc);

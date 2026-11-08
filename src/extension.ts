@@ -3,6 +3,7 @@ import { registerWhatsNew } from './whatsnew';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
+import { definitionAt } from './core/definition';
 import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -147,6 +148,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ','),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     // Outline, breadcrumbs and Go to Symbol (Ctrl+Shift+O): the settings by object, the callbacks, the handler's own names.
+    // Go to definition: the handler's own functions and variables, `Game.X` to where it's set, and
+    // `Context.Options["key"]` to its `Game.AddOption` (VS Code's JavaScript support adds the rest).
+    vscode.languages.registerDefinitionProvider(SELECTOR, {
+      provideDefinition: (d, pos) => {
+        if (!featuresOn(d)) return undefined;
+        const r = definitionAt(d.getText(), d.offsetAt(pos));
+        return r ? new vscode.Location(d.uri, new vscode.Range(d.positionAt(r.start), d.positionAt(r.end))) : undefined;
+      },
+    }),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, { provideDocumentSymbols: (d) => (featuresOn(d) ? documentSymbols(d.getText()).map((s) => toVsSymbol(d, s)) : []) }, { label: 'Nucleus handler' }),
     // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
     vscode.languages.registerInlayHintsProvider(SELECTOR, {

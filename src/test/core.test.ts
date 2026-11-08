@@ -164,3 +164,21 @@ test('JavaScript built-ins: generated from TypeScript\'s lib.es5.d.ts, current, 
   assert.ok(lint('Game.GUID = "x";\nvar n = Math.flor(2.5);\n').some((d) => d.rule === 'unknown-member' && /flor/.test(d.message)), 'a misspelled Math method');
   assert.ok(!lint('Game.GUID = "x";\nvar n = Math.floor(2.5) + Math.PI;\n').some((d) => d.rule === 'unknown-member'));
 });
+
+test('go to definition and references: own functions and variables (Jint scopes), Game.X, Context.Options keys', () => {
+  const { definitionAt, referencesAt } = require('../core/definition');
+  const t = 'Game.AddOption("Mode", "How to play", "mode", ["A", "B"], "A");\nvar folder = "x";\nfunction helper(a) { var b = a + folder; return b; }\nGame.Play = function () {\n  var folder = Context.Width;\n  var m = Context.Options["mode"];\n  helper(folder);\n  Game.Play;\n};\n';
+  const word = (r: any) => (r ? t.slice(r.start, r.end) : r);
+  const line = (r: any) => t.slice(0, r.start).split('\n').length;
+  const at = (s: string, plus = 0) => t.indexOf(s) + plus;
+  assert.equal(line(definitionAt(t, at('helper(folder)'))), 3, 'a function declaration');
+  assert.equal(line(definitionAt(t, at('helper(folder)', 8))), 5, 'the inner var, not the outer one');
+  assert.equal(line(definitionAt(t, at('a + folder', 5))), 2, 'the outer var, from another function');
+  assert.equal(word(definitionAt(t, at('Options["mode', 10))), 'mode', 'Context.Options["mode"] -> the AddOption key');
+  assert.equal(line(definitionAt(t, at('Options["mode', 10))), 1);
+  assert.equal(line(definitionAt(t, at('Game.Play;', 6))), 4, 'Game.Play -> where it is set');
+  assert.equal(definitionAt(t, at('Context.Width', 2)), undefined, 'API names have no definition in the handler');
+  assert.deepEqual(referencesAt(t, at('helper(folder)', 8)).map(line), [5, 7]);
+  // While typing (doesn't parse): still the declaration.
+  assert.equal(line(definitionAt('function go() {}\nGame.Play = function () {\n  go(\n', 45)), 1);
+});

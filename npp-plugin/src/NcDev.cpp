@@ -1155,6 +1155,53 @@ static void cmdTryIt() {
     newTab("Try it: " + utf8(name) + " (simulated: what Nucleus would set up for each player; nothing on this PC is touched)\n\n" + (r.isStr() ? r.str() : json::stringify(r)));
   });
 }
+static void jumpTo(HWND h, const Value& range) {
+  sptr_t s = sciPos(h, range["start"]), e = sciPos(h, range["end"]);
+  sci(h, SCI_GOTOPOS, s);
+  sci(h, SCI_SETSEL, s, e);
+  sci(h, SCI_SCROLLCARET);
+}
+/** The handler's own function or variable, `Game.X` where it's set, `Context.Options["key"]` its AddOption. */
+static void cmdDefinition() {
+  HWND h = curSci();
+  Doc* d = active();
+  if (!d) return needHandler();
+  std::string uri = d->uri;
+  lsp::request("textDocument/definition", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, sci(h, SCI_GETCURRENTPOS))}}), [=](const Value& r) {
+    const Value& loc = r.isArr() ? r[(size_t)0] : r;
+    if (!loc.isObj() || loc["uri"].str() != uri) {
+      status(L"Nucleus: no definition in this handler (for Nucleus' own names: Show docs here)");
+      return;
+    }
+    jumpTo(h, loc["range"]);
+  });
+}
+/** Every use of the variable or function at the caret, in a list to jump from. */
+static void cmdReferences() {
+  HWND h = curSci();
+  Doc* d = active();
+  if (!d) return needHandler();
+  lsp::request("textDocument/references", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, sci(h, SCI_GETCURRENTPOS))}, {"context", Value(Object{{"includeDeclaration", true}})}}), [=](const Value& r) {
+    if (!r.size()) {
+      status(L"Nucleus: no uses of a handler variable or function here");
+      return;
+    }
+    std::vector<std::wstring> items;
+    for (auto& loc : r.arr()) {
+      sptr_t line = loc["range"]["start"]["line"].num();
+      sptr_t len = sci(h, SCI_LINELENGTH, line);
+      std::string text(len + 1, '\0');
+      sci(h, SCI_GETLINE, line, (sptr_t)&text[0]);
+      text.resize(strnlen(text.c_str(), len));
+      while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+      size_t first = text.find_first_not_of(" \t");
+      text = first == std::string::npos ? "" : text.substr(first, 80);
+      items.push_back(L"Line " + std::to_wstring(line + 1) + L":\t" + wide(text));
+    }
+    int i = pickAtCaret(h, items);
+    if (i >= 0) jumpTo(h, r[(size_t)i]["range"]);
+  });
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -1233,8 +1280,11 @@ static void cmdAbout() {
 }
 
 static ShortcutKey altEnter{false, true, false, VK_RETURN};
+static ShortcutKey altF12{false, true, false, VK_F12};
 static FuncItem funcs[] = {
     {L"Quick fix on this line", cmdQuickFix, 0, false, &altEnter},
+    {L"Go to definition", cmdDefinition, 0, false, &altF12},
+    {L"Find references", cmdReferences, 0, false, nullptr},
     {L"Fix all", cmdFixAll, 0, false, nullptr},
     {L"Show docs here", cmdDocs, 0, false, nullptr},
     {L"Suggest here", cmdSuggest, 0, false, nullptr},
@@ -1249,7 +1299,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 6, UPDATE_INDEX = 12;
+static const int PANEL_INDEX = 8, UPDATE_INDEX = 14;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)
