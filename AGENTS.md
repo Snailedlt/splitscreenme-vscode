@@ -14,6 +14,7 @@ The tools serve experienced developers, handler authors, Nucleus Co-op experts a
 - **Keyboard first for experienced users.** Everything is reachable from the keyboard and the command palette; no wizard is ever required.
 - **The first-run choice only sets defaults.** "Guide me" turns on the visual editor, tips and guided help; "I write code" starts compact. Every part can be switched in Settings.
 - **The tool teaches.** Our community is small and won't write many guides, so the explanations live in the tool: plain-language docs on every option, "why" in every problem, examples from real Hub handlers, help that starts from the symptom ("my game pauses when it loses focus").
+- **Desktop first.** Most people write handlers on a desktop or laptop: design and test for that first (mouse, keyboard, a wide screen). Phones only need to work (nothing broken, cut off or untappable) for quick checks and testing on the go; don't build phone-only features or let phone layouts drive a design.
 - **The check for every new feature:** does it add anything on screen for someone who didn't ask for it? If so, put it behind a hover, tap or key, or a setting.
 
 ## Commands
