@@ -101,3 +101,27 @@ test('rename: every use of the handler\'s own name, and refusals', () => {
   assert.equal(renameTargetAt(t, t.indexOf('GUID') + 1), undefined, 'Nucleus names are not ours to rename');
   assert.ok(visibleNames(t, t.indexOf('copyCfg(1')).some((n) => n.name === 'here'));
 });
+
+test('types of expressions: literals, string concatenation, call results, list items, numbers', () => {
+  const members = (code: string) => {
+    const t = `Game.Play = function () {\n  ${code}\n};\n`;
+    const i = t.indexOf('|');
+    return labels(completionsAt(t.slice(0, i) + t.slice(i + 1), i));
+  };
+  assert.ok(members('"a,b".|').includes('split'), 'a string literal');
+  assert.ok(members('var f = Context.UserProfileConfigPath + "\\\\x.ini";\n  f.|').includes('replace'), 'a concatenation');
+  assert.ok(members('Context.UserProfileConfigPath.replace("a", "b").|').includes('toLowerCase'), 'a call result');
+  assert.ok(members('var parts = "a,b".split(",");\n  parts.|').includes('join'), 'split gives a list');
+  assert.ok(members('var parts = "a,b".split(",");\n  parts[0].|').includes('trim'), 'an item of that list');
+  assert.ok(members('var n = Context.PlayerID;\n  n.|').includes('toFixed'), 'a number');
+  const t = 'Game.Play = function () {\n  var x = "a,b".split(",");\n};\n';
+  assert.match(hoverAt(t, t.indexOf('split') + 1)!.markdown, /String\.split/);
+  const p = 'Game.Play = function () {\n  "x".replace(\n};\n';
+  assert.match(signatureHelpAt(p, p.indexOf('replace(') + 8)!.signatures[0].label, /String\.replace/);
+});
+
+test('Context.Options hover lists the keys the handler adds', () => {
+  const t = H.replace('@', 'var l = Context.Options["lang"];');
+  const h = hoverAt(t, t.indexOf('Options[') + 2)!;
+  assert.match(h.markdown, /This handler adds:\*\*\n- `"lang"`: Language \(`English`, `French`\)\n- `"mode"`: Window mode/);
+});

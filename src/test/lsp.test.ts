@@ -320,4 +320,6 @@ test('lsp: rename the handler\'s own names; suggestions for them only when typin
   assert.ok(typed.items.some((i: any) => i.label === 'savePath' && i.kind === 6));
   const space = (await request('textDocument/completion', { textDocument: doc, position: { line: 5, character: 9 }, context: { triggerKind: 2, triggerCharacter: ' ' } })).result;
   assert.equal(space, null);
+  const hl = (await request('textDocument/documentHighlight', { textDocument: doc, position: { line: 5, character: 12 } })).result;
+  assert.deepEqual(hl.map((h: any) => [h.range.start.line, h.kind]), [[3, 3], [5, 2]]);
 });

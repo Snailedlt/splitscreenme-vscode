@@ -34,6 +34,7 @@ test('a minimal valid handler has no diagnostics', () => {
 Game.KillMutex = ["Mutex"];
 Game.Hook.ForceFocus = true;
 Game.DPIHandling = Nucleus.DPIHandling.InvScaled;
+Game.AddOption("Window mode", "", "mode", ["Windowed", "Borderless"]);
 Game.Play = function () {
   var ini = Context.GetFolder(Nucleus.Folder.InstancedGameFolder) + "\\\\config.ini";
   Context.ModifySaveFile(ini, ini, Nucleus.SaveType.INI, [
@@ -687,4 +688,17 @@ test('names Nucleus itself gets wrong: misspelled options, readme names that do 
   }
   // The spellings Nucleus reads are fine.
   assert.deepEqual(only(`${HEADER}Game.ProtoInput.WindowActvateAppFilter = true;\nGame.ProtoInput.TranslateXAccelration = 1;\n`, 'unknown-member'), []);
+});
+
+test('Context.Options["key"]: a key no Game.AddOption adds (a typo), with a fix; quiet when keys are computed', () => {
+  const code = `${HEADER}Game.AddOption("Language", "", "lang", ["English", "French"]);\nGame.Play = function () {\n  var a = Context.Options["lang"];\n  var b = Context.Options["Lang"];\n  var c = Context.Options["lnag"];\n};\n`;
+  const d = only(code, 'unknown-member');
+  assert.equal(d.length, 2);
+  assert.match(d[0].message, /No `Game.AddOption` in this handler adds the key `Lang`.*Did you mean `lang`/);
+  assert.equal(d[0].fixes?.[0].edits[0].text, '"lang"');
+  assert.equal(d[1].fixes?.[0].edits[0].text, '"lang"');
+  const dyn = `${HEADER}var k = "lang";\nGame.AddOption("Language", "", k, ["English"]);\nGame.Play = function () {\n  var a = Context.Options["lang"];\n};\n`;
+  assert.deepEqual(only(dyn, 'unknown-member'), [], 'a key in a variable: can not tell');
+  const none = `${HEADER}Game.Play = function () {\n  var a = Context.Options["fps"];\n};\n`;
+  assert.match(only(none, 'unknown-member')[0].message, /Add the option with/);
 });

@@ -257,6 +257,7 @@ export class Server {
             definitionProvider: true,
             referencesProvider: true,
             renameProvider: { prepareProvider: true },
+            documentHighlightProvider: true,
             completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
@@ -330,6 +331,14 @@ export class Server {
         const refs = referencesAt(doc.text, at);
         const decl = definitionAt(doc.text, at);
         return refs.filter((r) => p.context?.includeDeclaration !== false || !decl || r.start !== decl.start).map((r) => ({ uri: doc.uri, range: l.range(r) }));
+      }
+      case 'textDocument/documentHighlight': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const at = l.offset(p.position);
+        const decl = definitionAt(doc.text, at);
+        // 3 = write (the declaration), 2 = read
+        return referencesAt(doc.text, at).map((r) => ({ range: l.range(r), kind: decl && r.start === decl.start ? 3 : 2 }));
       }
       case 'textDocument/prepareRename': {
         if (!this.featuresOn(doc)) return null;

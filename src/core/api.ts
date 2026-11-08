@@ -100,7 +100,7 @@ export const DOCS_URL = 'https://www.splitscreen.me/docs/handler-api';
 
 /** What a resolved expression refers to. */
 export type Resolved =
-  | { kind: 'object'; type: string } // an ApiObject (Game, Context, GameHook, ...)
+  | { kind: 'object'; type: string; of?: string } // an ApiObject (Game, Context, GameHook, ...); `of`: an Array's element type
   | { kind: 'list'; of: string } // PlayerList
   | { kind: 'nucleus' } // the Nucleus namespace
   | { kind: 'enum'; name: string } // Nucleus.Folder
@@ -119,6 +119,31 @@ export function objectTypeOf(ts: string | undefined): string | undefined {
 export function objectOf(type: string): ApiObject | undefined {
   return api.objects[type] ?? JS_OBJECTS[type];
 }
+/** The object a value of TypeScript type `ts` is (`string` -> String, `number` -> Number, `string[]` -> an Array of
+ *  strings, an API object by name), for the members of an expression's result. */
+export function valueTypeOf(ts: string | undefined): Resolved | undefined {
+  if (!ts) return undefined;
+  const t = ts.replace(/\s*\|\s*(null|undefined)\b/g, '').trim();
+  if (t === 'string') return { kind: 'object', type: 'String' };
+  if (t === 'number') return { kind: 'object', type: 'Number' };
+  const arr = /^(.+)\[\]$/.exec(t) ?? /^Array<(.+)>$/.exec(t);
+  if (arr) return { kind: 'object', type: 'Array', of: arr[1] };
+  if (/^RegExp(Match|Exec)Array$/.test(t)) return { kind: 'object', type: 'Array', of: 'string' };
+  if (api.objects[t]) return { kind: 'object', type: t };
+  return undefined;
+}
+/** What a field or property's value is, when it's a string, number or list (for `.` after it). */
+function valueObject(m: Member): Resolved | undefined {
+  if (m.kind === 'method' || m.kind === 'object') return undefined;
+  const v = valueTypeOf(m.ts ?? m.type);
+  return v && v.kind === 'object' && (v.type === 'String' || v.type === 'Number' || v.type === 'Array') ? v : undefined;
+}
+/** What calling `base` gives back: its return type (the first overload's). */
+export function resolveCall(base: Resolved): Resolved | undefined {
+  if (base.kind !== 'member' || base.member.kind !== 'method') return undefined;
+  return valueTypeOf(base.member.overloads?.[0]?.returns);
+}
+
 /** A field or property that holds a string: its value has JavaScript's string methods. */
 export const isStringMember = (m: Member) => m.kind !== 'method' && m.kind !== 'object' && (m.type === 'string' || m.ts === 'string');
 
@@ -166,6 +191,8 @@ export function resolveMember(base: Resolved, name: string): StepResult {
       const ref = base.member.ref;
       if (base.member.kind === 'object' && ref && api.objects[ref]) return resolveMember({ kind: 'object', type: ref }, name);
       if (isStringMember(base.member)) return resolveMember({ kind: 'object', type: 'String' }, name);
+      const v = valueObject(base.member);
+      if (v) return resolveMember(v, name);
       return { resolved: { kind: 'opaque' } };
     }
     case 'list':
@@ -201,6 +228,12 @@ export function resolveMember(base: Resolved, name: string): StepResult {
 /** Element type when indexing (`PlayerList[i]`). */
 export function resolveIndex(base: Resolved): Resolved {
   if (base.kind === 'list') return { kind: 'object', type: base.of };
+  if (base.kind === 'object' && base.type === 'Array' && base.of) return valueTypeOf(base.of) ?? { kind: 'opaque' };
+  if (base.kind === 'object' && base.type === 'String') return { kind: 'object', type: 'String' };
+  if (base.kind === 'member') {
+    const v = valueObject(base.member);
+    if (v) return resolveIndex(v);
+  }
   return { kind: 'opaque' };
 }
 
@@ -216,6 +249,10 @@ export function membersOf(base: Resolved): { name: string; member?: Member; enum
         return membersOf({ kind: 'object', type: base.member.ref });
       }
       if (isStringMember(base.member)) return membersOf({ kind: 'object', type: 'String' });
+      {
+        const v = valueObject(base.member);
+        if (v) return membersOf(v);
+      }
       return [];
     case 'list':
       return [{ name: 'Count', detail: 'number' }];

@@ -79,8 +79,15 @@ export function hoverAt(text: string, offset: number, opts: FeatureOptions = {})
   const word = text.slice(r.start, r.end);
   const res = r.resolved;
   switch (res.kind) {
-    case 'member':
-      return { markdown: memberMarkdown(res.owner, res.name, res.member), range };
+    case 'member': {
+      let md = memberMarkdown(res.owner, res.name, res.member);
+      // Context.Options: the keys this handler adds.
+      if (res.owner === 'Context' && res.name === 'Options') {
+        const opts = addedOptions(text, offset);
+        if (opts.length) md += '\n\n**This handler adds:**\n' + opts.map((o) => `- \`"${o.key}"\`${o.name ? `: ${o.name}` : ''}${o.values ? ` (${o.values.map((v) => `\`${v}\``).join(', ')})` : ''}`).join('\n');
+      }
+      return { markdown: md, range };
+    }
     case 'enum': {
       const e = api.enums[res.name];
       return { markdown: '```ts\nenum Nucleus.' + res.name + '\n```\n\n' + (e.doc ?? '') + '\n\n' + Object.entries(e.values).map(([k, v]) => `- \`${k}\` = ${v}`).join('\n'), range };

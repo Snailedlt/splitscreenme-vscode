@@ -1,6 +1,6 @@
 // Text-based expression resolution for completion, hover and signature help.
 // Works on incomplete code (while typing), so it scans text instead of parsing.
-import { Resolved, resolveGlobal, resolveIndex, resolveMember, api, Member } from './api';
+import { Resolved, resolveCall, resolveGlobal, resolveIndex, resolveMember, api, Member } from './api';
 
 const ID = /[A-Za-z_$][\w$]*/y;
 
@@ -19,6 +19,30 @@ export function chainEndingAt(text: string, end: number): Chain | undefined {
   };
   for (;;) {
     skipWs();
+    // A string literal starts the chain: `"a,b".split(",")`.
+    if (text[i - 1] === '"' || text[i - 1] === "'") {
+      const q = text[i - 1];
+      let j = i - 2;
+      while (j >= 0 && text[j] !== '\n' && !(text[j] === q && text[j - 1] !== '\\')) j--;
+      if (j < 0 || text[j] !== q) return undefined;
+      segs.unshift('$string');
+      return segs;
+    }
+    // A call: `.replace("a", "b").` -> what it returns; the callee comes before the `(`.
+    if (text[i - 1] === ')') {
+      let depth = 0;
+      let j = i - 1;
+      for (; j >= 0; j--) {
+        if (text[j] === ')') depth++;
+        else if (text[j] === '(' && --depth === 0) break;
+      }
+      if (j < 0) return undefined;
+      segs.unshift('()');
+      i = j;
+      skipWs();
+      if (!/[\w$]/.test(text[i - 1] ?? '')) return undefined; // `(a + b).`: not followed
+      continue;
+    }
     if (text[i - 1] === ']') {
       // balanced [...] backwards
       let depth = 0;
@@ -32,6 +56,9 @@ export function chainEndingAt(text: string, end: number): Chain | undefined {
       const lit = inner.match(/^(["'])([A-Za-z_$][\w$]*)\1$/);
       segs.unshift(lit ? lit[2] : '[]');
       i = j;
+      skipWs();
+      if (/[\w$\])]/.test(text[i - 1] ?? '')) continue; // `PlayerList[i].`: what's indexed comes before the `[`
+      return undefined; // an array literal `[1, 2].`: not followed
     } else {
       let j = i;
       while (j > 0 && /[\w$]/.test(text[j - 1])) j--;
@@ -57,13 +84,30 @@ function parseForwardChain(src: string): Chain | undefined {
   const segs: string[] = [];
   let i = 0;
   ID.lastIndex = 0;
-  const first = ID.exec(src);
-  if (!first) return undefined;
-  segs.push(first[0]);
-  i = ID.lastIndex;
+  const lit = /^(["'])(?:[^\\\n]|\\.)*?\1/.exec(src);
+  const first = lit ? undefined : ID.exec(src);
+  if (lit) {
+    segs.push('$string');
+    i = lit[0].length;
+  } else {
+    if (!first) return undefined;
+    segs.push(first[0]);
+    i = ID.lastIndex;
+  }
   while (i < src.length) {
     while (/\s/.test(src[i])) i++;
-    if (src[i] === '.') {
+    if (i >= src.length) break;
+    if (src[i] === '(') {
+      let depth = 0;
+      let j = i;
+      for (; j < src.length; j++) {
+        if (src[j] === '(') depth++;
+        else if (src[j] === ')' && --depth === 0) break;
+      }
+      if (j >= src.length) return undefined;
+      segs.push('()');
+      i = j + 1;
+    } else if (src[i] === '.') {
       i++;
       while (/\s/.test(src[i])) i++;
       ID.lastIndex = i;
@@ -89,8 +133,10 @@ export function findAliases(text: string): Map<string, Chain | null> {
   while ((m = re.exec(text))) {
     const name = m[1];
     if (name === 'var' || name === 'let' || name === 'const') continue;
-    // A string (`var args = "-w " + Context.Width;`): JavaScript's string methods (core/jsbuiltins.ts).
-    const chain = /^\s*["']/.test(m[2]) ? ['$string'] : /^\s*\[/.test(m[2]) ? ['$array'] : parseForwardChain(m[2]);
+    // A chain (`Context.UserProfileConfigPath.split("\\")`), else by its look: a string (`"-w " + Context.Width`,
+    // `path + "\\x.ini"`: JavaScript's string methods, core/jsbuiltins.ts), a list or a number.
+    const rhs = m[2].replace(/\s*\/\/.*$/, '').replace(/[\s;]+$/, '');
+    const chain = parseForwardChain(rhs) ?? (/^\s*["']/.test(rhs) || /\+\s*["']|["']\s*\+/.test(rhs) ? ['$string'] : /^\s*\[/.test(rhs) ? ['$array'] : /^\s*-?\d/.test(rhs) && !/["']/.test(rhs) ? ['$number'] : undefined);
     const prev = map.get(name);
     if (prev === undefined) map.set(name, chain ?? null);
     else if (prev && chain && prev.join('.') !== chain.join('.')) map.set(name, null);
@@ -108,10 +154,11 @@ export function resolveChain(chain: Chain, aliases: Map<string, Chain | null>, d
   else if (alias === null) return undefined; // user variable we can't follow
   else if (head === '$string') cur = { kind: 'object', type: 'String' };
   else if (head === '$array') cur = { kind: 'object', type: 'Array' };
+  else if (head === '$number') cur = { kind: 'object', type: 'Number' };
   else cur = resolveGlobal(head);
   for (const seg of rest) {
     if (!cur) return undefined;
-    cur = seg === '[]' ? resolveIndex(cur) : resolveMember(cur, seg).resolved;
+    cur = seg === '[]' ? resolveIndex(cur) : seg === '()' ? resolveCall(cur) : resolveMember(cur, seg).resolved;
   }
   return cur;
 }

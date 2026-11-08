@@ -361,7 +361,22 @@ class Analyzer {
     private published?: LintOptions['published'],
   ) {}
 
+  /** The keys the handler's `Game.AddOption` calls add; undefined when a key isn't written out (can't tell). */
+  private addedKeys?: Set<string>;
+
   run() {
+    {
+      const keys = new Set<string>();
+      let dynamic = false;
+      visit(this.program, (x) => {
+        if (x.type === 'CallExpression' && x.callee.type === 'MemberExpression' && !x.callee.computed && x.callee.property.name === 'AddOption' && x.callee.object.type === 'Identifier' && x.callee.object.name === 'Game') {
+          const k = x.arguments[2];
+          if (k?.type === 'Literal' && typeof k.value === 'string') keys.add(k.value);
+          else dynamic = true;
+        }
+      });
+      if (!dynamic) this.addedKeys = keys;
+    }
     this.collectBindings();
     this.walk(this.program, { fnDepth: 0, inTypeof: false, topLevelStatement: false, strict: hasUseStrict(this.program.body) });
     this.checkRequired();
@@ -517,6 +532,7 @@ class Analyzer {
       case 'MemberExpression':
         this.checkMissingBuiltin(n, ctx);
         this.checkMember(n, ctx);
+        this.checkOptionKey(n);
         break;
       case 'AssignmentExpression':
         this.checkAssignment(n, ctx);
@@ -903,6 +919,25 @@ class Analyzer {
     }
     this.moveFix = { title: playFn ? 'Move the code that uses it into Game.Play' : 'Move the code that uses it into a new Game.Play', edits, preferred: true };
     return this.moveFix;
+  }
+
+  /** `Context.Options["key"]` for a key no `Game.AddOption` in the handler adds: usually a typo in the key. */
+  private checkOptionKey(n: Node) {
+    if (!this.addedKeys || !n.computed || n.property.type !== 'Literal' || typeof n.property.value !== 'string') return;
+    const o = n.object;
+    if (o.type !== 'MemberExpression' || o.computed || o.property.name !== 'Options' || o.object.type !== 'Identifier' || o.object.name !== 'Context') return;
+    const key: string = n.property.value;
+    if (this.addedKeys.has(key)) return;
+    const keys = [...this.addedKeys];
+    const s = keys.length ? suggest(key, keys) ?? keys.find((k) => k.toLowerCase() === key.toLowerCase()) : undefined;
+    const q = n.property.raw[0];
+    this.report({
+      rule: 'unknown-member',
+      message: `No \`Game.AddOption\` in this handler adds the key \`${key}\`, so Nucleus has no value for it.${s ? ` Did you mean \`${s}\`?` : keys.length ? ` The keys it adds: ${keys.map((k) => `\`${k}\``).join(', ')}.` : ' Add the option with `Game.AddOption(name, description, key, values)` first.'}`,
+      start: n.property.start,
+      end: n.property.end,
+      fixes: s ? [{ title: `Change to "${s}"`, edits: [{ start: n.property.start, end: n.property.end, text: q + s + q }], preferred: true }] : undefined,
+    });
   }
 
   private checkMember(n: Node, ctx: Ctx) {
