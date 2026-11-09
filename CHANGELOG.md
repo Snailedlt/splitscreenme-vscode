@@ -9,10 +9,10 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - 🙏 Thanks: one line per person who tested, reported a bug or contributed to this release, e.g. "- **Horah** for reporting …". When it came through GitHub (an issue, a pull request, a review), link their profile: "- **[name](https://github.com/name)** for …". Credit them inline too ("Reported by Horah.").
 - One line per change: a **short summary** in bold (the update note and the Discord post show only that), then one or two plain sentences.
 - A screenshot (or other media) for big, visible changes, folded away in a `<details><summary>Screenshot</summary>` block indented under its line, with a blank line before and after the image and the closing `  </details>`; the image line: `  ![What it shows](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/docs/images/changelog/<version>-<name>.png)` (≈1000 px wide, docs/images/changelog/).
-- At release: rename "## Unreleased" to "## <version> (beta) · <yyyy-mm-dd>". A `---` line separates releases.
+- At release: rename "## Unreleased" to "## <version> · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
-## 0.6.0 (beta) · 2026-11-09
+## 0.6.0 · 2026-11-09
 
 ### ✨ New
 

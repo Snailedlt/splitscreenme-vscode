@@ -1,8 +1,8 @@
 // Release notes from CHANGELOG.md, for the GitHub release and for a Discord post.
-//   node scripts/release-notes.mjs [version] [--discord [--json]] [--tag vX.Y.Z-beta.N]
+//   node scripts/release-notes.mjs [version] [--discord [--json]] [--tag vX.Y.Z]
 // --discord --json prints the Discord webhook payload (a rich embed) instead of the text.
 // version defaults to package.json's. The section is "## <version>" (anything after the number,
-// like "(beta)", is fine). Each bullet starts with a **short summary**, then the details: the
+// like the "(beta)" older sections have, is fine). Each bullet starts with a **short summary**, then the details: the
 // GitHub notes show everything; the Discord post is a heading, up to three highlights and the link
 // (the extension and the workbench show what's new themselves).
 // Exits 1 when the version has no section: every release needs its notes written first.
@@ -54,7 +54,7 @@ export function discordPayload(body, tag, now = new Date()) {
     embeds: [
       {
         author: { name: 'VS Code extension', url: repo, icon_url: 'https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/media/icon.png' },
-        title: `🧩 SplitScreen.Me for VS Code v${version}${/-beta/.test(tag) ? ' (beta)' : ''}`,
+        title: `🧩 SplitScreen.Me for VS Code v${version}`,
         url,
         description,
         color: 0x007acc, // VS Code blue
@@ -69,7 +69,7 @@ export function discordPayload(body, tag, now = new Date()) {
 /** The short Discord post: a heading, up to three highlights, the link, the thanks. */
 export function discordText(body, tag) {
   const { items, version, thanks } = highlights(body, tag);
-  const lines = [`**v${version}${/-beta/.test(tag) ? ' (beta)' : ''} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
+  const lines = [`**v${version} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
   lines.push('', `<${repo}/releases/tag/${tag}>`);
   if (thanks.length) lines.push(`Thanks ${thanks.join(', ')} 🙏`);
   return lines.join('\n');
@@ -95,9 +95,9 @@ function main() {
     return i >= 0 ? args[i + 1] : undefined;
   };
   const version = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--tag') ?? JSON.parse(fs.readFileSync(new URL('package.json', root), 'utf8')).version;
-  // Release tags are vX.Y.Z-beta.N (scripts/release-version.mjs); without --tag the links would point at a tag that doesn't exist.
+  // Release tags are vX.Y.Z (scripts/release-version.mjs); without --tag the links would point at a tag that doesn't exist.
   if (!flag('--tag') && args.includes('--discord')) {
-    console.error('--discord needs --tag vX.Y.Z-beta.N (the release workflow passes it; release-version.mjs prints the next one).');
+    console.error('--discord needs --tag vX.Y.Z (the release workflow passes it; release-version.mjs prints the next one).');
     process.exit(1);
   }
   const tag = flag('--tag') ?? `v${version}`;

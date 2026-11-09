@@ -6,7 +6,7 @@ import fs from 'node:fs';
 
 const KEY = 'splitscreenme.lastVersion';
 
-/** The bold summaries of a version's CHANGELOG.md section ("## 0.2.0 (beta)"). */
+/** The bold summaries of a version's CHANGELOG.md section ("## 0.6.0 · 2026-11-09"; older ones say "(beta)"). */
 export function highlights(changelog: string, version: string): string[] {
   const parts = changelog.split(/^## /m);
   const section = parts.find((p) => p.startsWith(version + ' ') || p.startsWith(version + '\n'));

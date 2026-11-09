@@ -75,7 +75,7 @@ function swapIn(tmp: string, dest: string) {
   fs.renameSync(tmp, dest);
 }
 
-/** "0.5.0" from "v0.5.0-beta.1"; compares x.y.z only. */
+/** "0.6.0" from "v0.6.0" (or an old tag like "v0.5.0-beta.1"); compares x.y.z only. */
 export function versionOf(tag: string): string {
   return /(\d+\.\d+\.\d+)/.exec(tag)?.[1] ?? '0.0.0';
 }
@@ -98,7 +98,7 @@ interface UpdateCache {
   latest?: Latest;
 }
 
-/** The newest release with ncdev in it, pre-releases included (the tools are in beta). At most once a day unless `force`.
+/** The newest release with ncdev in it, old pre-release tags (v0.x.y-beta.N) included. At most once a day unless `force`.
  *  null: GitHub answered but no release has ncdev yet; undefined: GitHub couldn't be reached (and nothing is known). */
 export async function latestRelease(force = false, fetchImpl: typeof fetch = fetch, dir = cacheDir(), now = Date.now()): Promise<Latest | null | undefined> {
   const file = path.join(dir, 'update.json');

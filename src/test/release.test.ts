@@ -23,7 +23,7 @@ const LOG = `# Changelog
 
 ---
 
-## 1.2.0 (beta) · 2026-01-02
+## 1.2.0 · 2026-01-02
 
 ### ✨ New
 
@@ -49,17 +49,18 @@ const LOG = `# Changelog
 - **Old.** Details.
 `;
 
-test('release-version: the next beta, and plain reasons to stop', async () => {
+test('release-version: package.json\'s version as a plain tag, and plain reasons to stop', async () => {
   const { releaseTag } = await load('release-version.mjs');
-  const base = { pkg: '1.2.0', tags: ['v1.1.0-beta.1', 'v1.2.0-beta.1', 'v1.2.0-beta.3'], changelog: LOG };
-  assert.deepEqual(releaseTag(base), { tag: 'v1.2.0-beta.4' }, 'the highest beta + 1');
-  assert.deepEqual(releaseTag({ ...base, tags: [] }), { tag: 'v1.2.0-beta.1' });
+  const base = { pkg: '1.2.0', tags: ['v1.0.0-beta.1', 'v1.1.0'], changelog: LOG };
+  assert.deepEqual(releaseTag(base), { tag: 'v1.2.0' }, 'empty: package.json\'s version');
   assert.deepEqual(releaseTag({ ...base, requested: ' v1.2.0 ' }), { tag: 'v1.2.0' });
   assert.equal(releaseTag({ ...base, requested: '1.2.0' }).error.title, 'Bad version');
-  assert.equal(releaseTag({ ...base, requested: 'v1.3.0-beta.1' }).error.title, 'Version mismatch');
-  assert.equal(releaseTag({ ...base, requested: 'v1.2.0-beta.3' }).error.title, 'Already released');
-  assert.deepEqual(releaseTag({ ...base, pushed: 'v1.2.0-beta.3' }), { tag: 'v1.2.0-beta.3' }, 'the tag the workflow ran for');
-  assert.equal(releaseTag({ ...base, pkg: '1.3.0', requested: 'v1.3.0-beta.1' }).error.title, 'No release notes');
+  assert.equal(releaseTag({ ...base, requested: 'v1.2.0-beta.1' }).error.title, 'Bad version', 'no -beta tags any more');
+  assert.equal(releaseTag({ ...base, requested: 'v1.3.0' }).error.title, 'Version mismatch');
+  assert.equal(releaseTag({ ...base, tags: ['v1.2.0'] }).error.title, 'Already released');
+  assert.match(releaseTag({ ...base, tags: ['v1.2.0'] }).error.msg, /Bump package\.json/);
+  assert.deepEqual(releaseTag({ ...base, tags: ['v1.2.0'], pushed: 'v1.2.0' }), { tag: 'v1.2.0' }, 'the tag the workflow ran for');
+  assert.equal(releaseTag({ ...base, pkg: '1.3.0' }).error.title, 'No release notes');
   assert.match(releaseTag({ ...base, pkg: '1.3.0' }).error.msg, /Rename "## Unreleased"/);
 });
 
@@ -70,15 +71,15 @@ test('release-notes: the section, the GitHub notes and the Discord posts', async
   assert.equal(section(LOG, '1.2'), undefined, 'a whole version only');
   assert.equal(section(LOG, '9.9.9'), undefined);
   assert.match(section(LOG, '1.1.0'), /^- \*\*Old\.\*\*/);
-  const gh = githubNotes(body, 'v1.2.0-beta.2');
-  assert.ok(gh.startsWith(body) && gh.includes('splitscreenme-vscode-v1.2.0-beta.2.vsix'));
+  const gh = githubNotes(body, 'v1.2.0');
+  assert.ok(gh.startsWith(body) && gh.includes('splitscreenme-vscode-v1.2.0.vsix'));
   assert.equal(
-    discordText(body, 'v1.2.0-beta.2'),
-    '**v1.2.0 (beta) is out** 🛠️\n• First\n• Second\n• Third\n\n<https://github.com/Snailedlt/splitscreenme-vscode/releases/tag/v1.2.0-beta.2>\nThanks Ann, Bob 🙏',
+    discordText(body, 'v1.2.0'),
+    '**v1.2.0 is out** 🛠️\n• First\n• Second\n• Third\n\n<https://github.com/Snailedlt/splitscreenme-vscode/releases/tag/v1.2.0>\nThanks Ann, Bob 🙏',
   );
-  const p = discordPayload(body, 'v1.2.0-beta.2', new Date('2026-01-02T00:00:00Z'));
+  const p = discordPayload(body, 'v1.2.0', new Date('2026-01-02T00:00:00Z'));
   const e = p.embeds[0];
-  assert.equal(e.title, '🧩 SplitScreen.Me for VS Code v1.2.0 (beta)');
+  assert.equal(e.title, '🧩 SplitScreen.Me for VS Code v1.2.0');
   assert.match(e.description, /^• First\n• Second\n• Third\n• Fourth\n• Fifth\n…and 1 more in the release notes\n\n\[Release notes\]/);
   assert.deepEqual(e.fields, [{ name: 'Thanks', value: 'Ann, Bob 🙏' }]);
   assert.equal(e.timestamp, '2026-01-02T00:00:00.000Z');

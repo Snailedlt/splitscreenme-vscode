@@ -1,6 +1,7 @@
 // Which tag a release gets, checked before anything is built, with messages that say what to do.
-//   node scripts/release-version.mjs [vX.Y.Z-beta.N]
-// Empty: the next beta of package.json's version (v0.2.0-beta.1, then -beta.2, ...).
+//   node scripts/release-version.mjs [vX.Y.Z]
+// Empty: package.json's version (v0.6.0). Plain semantic versions: 0.x already says the tools are in development, so
+// there are no -beta tags any more (the old v0.2.0-beta.1 … v0.5.0-beta.1 stay as they are).
 // Prints the tag; with GITHUB_OUTPUT set, also writes tag=... there.
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -14,15 +15,12 @@ export function releaseTag({ pkg, tags, requested = '', pushed = '', changelog }
   const fail = (title, msg) => ({ error: { title, msg } });
   pushed = pushed.trim();
   let tag = pushed || requested.trim();
-  if (!tag) {
-    const n = Math.max(0, ...tags.map((t) => t.match(new RegExp(`^v${pkg.replace(/\./g, '\\.')}-beta\\.(\\d+)$`))?.[1]).filter(Boolean).map(Number));
-    tag = `v${pkg}-beta.${n + 1}`;
-  }
-  if (!/^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(tag)) return fail('Bad version', `"${tag}" should look like v${pkg}-beta.1 (or leave the field empty for the next beta).`);
-  const base = tag.slice(1).replace(/-.*$/, '');
-  if (base !== pkg) return fail('Version mismatch', `${tag} is for ${base}, but package.json says ${pkg}. Bump package.json (and plugin/.claude-plugin/plugin.json) first, or use v${pkg}-beta.N.`);
-  if (!pushed && tags.includes(tag)) return fail('Already released', `${tag} exists. Leave the version empty to get the next beta, or bump package.json for a new version.`);
-  if (!new RegExp(`^## ${pkg.replace(/\./g, '\\.')}(\\s|$)`, 'm').test(changelog)) return fail('No release notes', `CHANGELOG.md has no "## ${pkg} (beta) · <date>" section. Rename "## Unreleased" to it first.`);
+  if (!tag) tag = `v${pkg}`;
+  if (!/^v\d+\.\d+\.\d+$/.test(tag)) return fail('Bad version', `"${tag}" should look like v${pkg} (or leave the field empty for package.json's version).`);
+  const base = tag.slice(1);
+  if (base !== pkg) return fail('Version mismatch', `${tag} is for ${base}, but package.json says ${pkg}. Bump package.json (and plugin/.claude-plugin/plugin.json) first.`);
+  if (!pushed && tags.includes(tag)) return fail('Already released', `${tag} exists. Bump package.json (and plugin/.claude-plugin/plugin.json) for a new version: a patch (0.6.1) for fixes, a minor (0.7.0) for new features.`);
+  if (!new RegExp(`^## ${pkg.replace(/\./g, '\\.')}(\\s|$)`, 'm').test(changelog)) return fail('No release notes', `CHANGELOG.md has no "## ${pkg} · <date>" section. Rename "## Unreleased" to it first.`);
   return { tag };
 }
 

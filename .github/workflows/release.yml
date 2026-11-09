@@ -1,16 +1,16 @@
 name: Release
-run-name: Release ${{ inputs.version || github.ref_name || 'next beta' }}
+run-name: Release ${{ inputs.version || github.ref_name || 'package.json version' }}
 # Builds the .vsix, nucleus.js, ncdev.exe (the standalone tool with the Notepad++ plugin inside, #18/#19) and
 # the offline workbench, and publishes them as a GitHub release with
-# that version's CHANGELOG.md section as the notes. Run it by hand (leave the version empty for the
-# next beta), or push a tag like v0.2.0-beta.1. The run's summary has the links and the Discord post.
+# that version's CHANGELOG.md section as the notes. Run it by hand (leave the version empty for
+# package.json's version), or push a tag like v0.6.0. The run's summary has the links and the Discord post.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag. Leave empty for the next beta of package.json''s version (e.g. v0.2.0-beta.2).'
+        description: 'Version tag. Leave empty for package.json''s version (e.g. v0.6.0).'
         required: false
         default: ''
 

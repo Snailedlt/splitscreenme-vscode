@@ -35,7 +35,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The .vsix you installed (e.g. v0.1.0-beta.1), or "workbench".
+      description: The .vsix you installed (e.g. v0.6.0), or "workbench".
   - type: textarea
     id: context
     attributes:

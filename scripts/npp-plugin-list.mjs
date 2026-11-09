@@ -5,7 +5,7 @@
 // - each zip holds NcDev.dll at its root, named like the folder (folder-name);
 // - "id" is the SHA-256 of the zip exactly as uploaded to the release.
 //
-//   node scripts/npp-plugin-list.mjs --tag v0.6.0-beta.1 [--x64 NcDev.zip] [--x86 NcDev-x86.zip] [--json]
+//   node scripts/npp-plugin-list.mjs --tag v0.6.0 [--x64 NcDev.zip] [--x86 NcDev-x86.zip] [--json]
 //
 // Prints the two entries (src/pl.x64.json and src/pl.x86.json in nppPluginList) to paste into a pull request there.
 // It lists nothing by itself.
