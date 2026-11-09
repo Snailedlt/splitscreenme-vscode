@@ -299,7 +299,8 @@ async function browseHub(context: vscode.ExtensionContext) {
   // Laid out the way a Hub install puts it (AGENTS.md): <GameName>.js, and the contents of every top-level folder merged
   // into <GameName>/ (Game.Folder). Other files at the package root are dropped by the install, so they're left out here.
   const handlerText = Buffer.from(js.data).toString('utf8');
-  const game = gameFolderName(handlerText).replace(/\\/g, '') || 'handler';
+  // Never "." or ".." (the workspace itself or its parent would be overwritten below): a safe single folder name.
+  const game = toHandlerFileName(gameFolderName(handlerText));
   const dir = vscode.Uri.joinPath(context.globalStorageUri, 'hub', `${pick.h._id}-v${pick.h.currentVersion}`);
   const handlerUri = vscode.Uri.joinPath(dir, `${game}.js`);
   await vscode.workspace.fs.writeFile(handlerUri, js.data);

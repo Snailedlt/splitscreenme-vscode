@@ -2023,7 +2023,10 @@ static void cmdHub() {
   if (folder.empty()) return;
   std::wstring name;
   for (wchar_t c : st.title)
-    if (!wcschr(L"\\/:*?\"<>|", c)) name += c;
+    if (c >= 32 && !wcschr(L"\\/:*?\"<>|", c)) name += c;
+  // Never "." or ".." (the chosen folder itself or its parent) and no trailing dots or spaces (as core's safeFileName).
+  while (!name.empty() && (name.back() == L'.' || name.back() == L' ')) name.pop_back();
+  while (!name.empty() && name.front() == L' ') name.erase(0, 1);
   std::wstring out = folder + L"\\" + (name.empty() ? L"handler" : name);
   status(L"Nucleus: downloading " + st.title + L"…");
   Value r;
@@ -2259,6 +2262,9 @@ static LRESULT CALLBACK msgProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
     }
     case WM_LSP_DIED:
       logLine("! the tool exited");
+      // The old server's read end goes first: start() below makes a new one, and closing that instead would kill
+      // the new server's reader at once (and every restart after it).
+      if (lsp::outRead) CloseHandle(lsp::outRead), lsp::outRead = nullptr;
       if (lsp::running) {
         CloseHandle(lsp::proc);
         CloseHandle(lsp::inWrite);
@@ -2269,7 +2275,6 @@ static LRESULT CALLBACK msgProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
         if (lsp::restarts++ < 3 && currentDoc()) lsp::start();  // crashed: start again, a few times at most
         else status(L"Nucleus: the handler tools stopped");
       }
-      CloseHandle(lsp::outRead);
       return 0;
     case WM_DOWNLOADED: {
       auto* err = (std::wstring*)l;

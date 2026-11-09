@@ -79,6 +79,12 @@ test('templates lint clean and are ES5', () => {
   }
   assert.equal(toGuid('Halo: Reach!'), 'Halo Reach');
   assert.equal(toHandlerFileName('Halo: Reach?'), 'Halo Reach');
+  // Never the folder itself, its parent, a path or a Windows device name (a Hub title or GameName is anyone's text).
+  for (const bad of ['.', '..', '...', ' .. ', '', '//', '..\\..']) assert.equal(toHandlerFileName(bad), 'handler', JSON.stringify(bad));
+  assert.equal(toHandlerFileName('Game.'), 'Game');
+  assert.equal(toHandlerFileName('CON'), '_CON');
+  assert.equal(toHandlerFileName('nul.txt'), '_nul.txt');
+  assert.equal(toHandlerFileName('a/../b'), 'a..b');
 });
 
 test('zip round trip with directory entries (Nucleus package layout)', () => {

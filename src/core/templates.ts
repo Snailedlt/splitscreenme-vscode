@@ -23,9 +23,17 @@ export function toGuid(name: string): string {
   return name.replace(/[^A-Za-z0-9 ]/g, '').replace(/\s+/g, ' ').trim() || 'MyGame';
 }
 
-/** Nucleus names the installed handler file after GameName with these characters removed. */
+/** A name that is safe as one file or folder name on Windows and everywhere else: no path separators or characters
+ *  Windows forbids, no control characters, no trailing dots or spaces, never "." or ".." (which would point at the
+ *  folder itself or its parent) and never a reserved device name (CON, NUL, COM1…). Empty or unusable: the fallback. */
+export function safeFileName(name: string, fallback = 'handler'): string {
+  const s = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().replace(/[. ]+$/, '');
+  if (!s || /^\.+$/.test(s)) return fallback;
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(s) ? `_${s}` : s;
+}
+/** Nucleus names the installed handler file after GameName with Windows' forbidden characters removed; made safe here too. */
 export function toHandlerFileName(gameName: string): string {
-  return gameName.replace(/[\\/:*?"<>|]/g, '').trim() || 'handler';
+  return safeFileName(gameName);
 }
 
 const q = (s: string) => JSON.stringify(s);

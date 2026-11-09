@@ -27,8 +27,14 @@ declare const __SIM_SANDBOX__: string; // the bundled src/sim-sandbox-entry.ts, 
 export const SIM_TIMEOUT_MS = 2000;
 
 let context: vm.Context | undefined;
-function getContext(): vm.Context {
-  if (context) return context;
+let contextFor: string | undefined;
+/** The simulator's context, kept only for runs of the same handler text (Test all runs one handler many times).
+ *  Handler code can change the context's own built-ins (`Array.prototype.push = …`), so another handler, or the
+ *  next version of this one, always gets a fresh context: one run can never change what the next one sees. */
+function getContext(src: string): vm.Context {
+  if (context && contextFor === src) return context;
+  context = undefined;
+  contextFor = src;
   // A context whose global object has no host-side object behind it.
   const dontContextify = (vm as any).constants?.DONT_CONTEXTIFY;
   const ctx = dontContextify !== undefined ? vm.createContext(dontContextify) : vm.createContext(Object.create(null));
@@ -37,7 +43,7 @@ function getContext(): vm.Context {
 }
 
 export function simulateIsolated(src: string, opts: SimOptions, timeoutMs = SIM_TIMEOUT_MS): SimResult {
-  const ctx = getContext();
+  const ctx = getContext(String(src));
   const g = vm.runInContext('globalThis', ctx);
   g.__src = String(src);
   g.__opts = JSON.stringify(opts);
@@ -67,7 +73,7 @@ export const TRACE_TIMEOUT_MS = 6000;
 /** core/debug.ts traceHandler() in the same isolated context as simulateIsolated(). A run that
  *  doesn't finish in time gives what it recorded until then, with `error` saying so. */
 export function traceIsolated(src: string, opts: TraceOptions, timeoutMs = TRACE_TIMEOUT_MS): Trace {
-  const ctx = getContext();
+  const ctx = getContext(String(src));
   const g = vm.runInContext('globalThis', ctx);
   g.__src = String(src);
   g.__opts = JSON.stringify(opts);

@@ -256,3 +256,13 @@ test('Game.Folder is the Hub install folder: handlers\\<GameName> without / : * 
   assert.equal(hubFolderName('Game.GUID = "x";\nGame.GameName = "Halo: The Master Chief Collection";\n'), 'Halo The Master Chief Collection');
   assert.equal(hubFolderName('Game.GUID = "x";\n'), 'MyHandler');
 });
+
+test('sandbox: one handler changing the built-ins never changes the next handler\'s run', () => {
+  const clean = HEADER + 'Game.AddOption("Mode", "", "mode", ["A", "B"]);\nGame.AddOption("Size", "", "size", ["S", "L"]);\n';
+  const before = simulateIsolated(clean, OPTS);
+  assert.ok(before.options.length >= 2);
+  simulateIsolated(HEADER + 'Array.prototype.push = function () { return 0; };\nString.prototype.replace = function () { return "x"; };\n', OPTS);
+  const after = simulateIsolated(clean, OPTS);
+  assert.deepEqual(after.options, before.options);
+  assert.equal(after.loaded, true);
+});
