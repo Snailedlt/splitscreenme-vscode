@@ -22,7 +22,12 @@ const common = {
 const simSandbox = (
   await esbuild.build({ ...common, entryPoints: ['src/sim-sandbox-entry.ts'], format: 'iife', platform: 'neutral', alias: { 'eslint/universal': './src/core/eslint-stub.ts' }, mainFields: ['module', 'main'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
 ).outputFiles[0].text;
-common.define = { __SIM_SANDBOX__: JSON.stringify(simSandbox), __VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version) };
+// The worker thread that owns that sandbox (src/simworker.ts), also a string: started with `eval: true`,
+// so the standalone ncdev (one file) can run it. The simulator reaches it as workerData.
+const simWorker = (
+  await esbuild.build({ ...common, entryPoints: ['src/sim-worker-entry.ts'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
+).outputFiles[0].text;
+common.define = { __SIM_SANDBOX__: JSON.stringify(simSandbox), __SIM_WORKER__: JSON.stringify(simWorker), __VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version) };
 
 const builds = [
   { ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', external: ['vscode'] },
