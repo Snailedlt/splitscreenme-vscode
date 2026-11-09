@@ -16,8 +16,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Generated skill files are committed
-        run: git diff --exit-code -- plugin/
+      # The skill's bundle (scripts/nucleus.js, 2.6 MB) is committed only with a release, so the history doesn't
+      # grow by a bundle per change; the Release workflow checks it then. Its API reference is checked here.
+      - name: Generated skill reference is committed
+        run: git diff --exit-code -- plugin/ ':!plugin/skills/nucleus-handler/scripts/nucleus.js'
       - run: npx vsce package --no-dependencies -o splitscreenme-vscode.vsix
       - uses: actions/upload-artifact@v4
         with:

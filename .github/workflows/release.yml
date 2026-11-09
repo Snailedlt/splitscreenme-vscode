@@ -41,7 +41,7 @@ jobs:
         run: node scripts/release-notes.mjs --tag "${{ steps.version.outputs.tag }}" > release-notes.md
       - run: npm run typecheck
       - run: npm test
-      - name: The skill's generated files are committed (npm run build, then commit plugin/)
+      - name: The skill's generated files are committed (the release commit includes the rebuilt scripts/nucleus.js)
         run: git diff --exit-code -- plugin/
       - name: Build the offline workbench (workbench.html)
         run: |
