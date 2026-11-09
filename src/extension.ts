@@ -4,6 +4,7 @@ import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lin
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
 import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
+import { ruleOverrides } from './settings';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
 import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
@@ -211,9 +212,6 @@ export function deactivate() {}
 // ---------------------------------------------------------------------------
 // Diagnostics
 
-function ruleOverrides(): Partial<Record<RuleId, Severity | 'off'>> {
-  return config().get('lint.rules', {});
-}
 
 const SEVERITY: Record<Severity, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,

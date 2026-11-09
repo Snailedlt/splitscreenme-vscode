@@ -15,6 +15,9 @@ import { renderHandler, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { EVERY_KEYBOARD } from './core/sim';
+
+/** MCP protocol versions this server speaks, newest first. */
+const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 import { formatSimulation } from './simformat';
 
 declare const __VERSION__: string;
@@ -117,9 +120,11 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true },
     run: (a) => {
       const { text, file } = readSource(a);
-      const players = a.players ?? 2;
-      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : (a.keyboardPlayer ?? 1) - 1;
-      const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
+      // The schema's limits, enforced (a client may send anything): 1-16 players, a sensible screen.
+      const int = (v: unknown, def: number, min: number, max: number) => (Number.isFinite(Number(v ?? def)) ? Math.min(max, Math.max(min, Math.round(Number(v ?? def)))) : def);
+      const players = int(a.players, 2, 1, 16);
+      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : int(a.keyboardPlayer, 1, 0, players) - 1;
+      const r = simulateIsolated(text, { players, width: int(a.width, 1920, 320, 16384), height: int(a.height, 1080, 200, 16384), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
       return { text: formatSimulation(r, kb), data: r };
     },
   },
@@ -232,7 +237,8 @@ export async function handle(msg: any): Promise<unknown | undefined> {
   switch (method) {
     case 'initialize':
       return reply({
-        protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : '2025-06-18',
+        // The client's version when we speak it, else our newest (the client then decides whether to go on).
+        protocolVersion: PROTOCOL_VERSIONS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSIONS[0],
         capabilities: { tools: {}, prompts: {} },
         serverInfo: { name: 'nucleus', title: 'Nucleus Co-op handler tools', version: VERSION },
         instructions:

@@ -43,6 +43,16 @@ test('mcp: simulate runs isolated', async () => {
   assert.equal(escape.result.structuredContent.result.players[0].startArguments, 'undefined undefined');
 });
 
+test('mcp: simulate keeps to its limits; initialize answers a version it speaks', async () => {
+  for (const [players, want] of [[0, 1], [5000, 16], [-3, 1]] as const) {
+    const r = await call('nucleus_simulate', { source: HEADER, players });
+    assert.equal(r.result.structuredContent.result.playerCount, want, `players ${players}`);
+  }
+  const init = async (v: string) => ((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: v } })) as any).result.protocolVersion;
+  assert.equal(await init('2025-03-26'), '2025-03-26');
+  assert.equal(await init('1999-01-01'), '2025-06-18');
+});
+
 test('mcp: over stdio', () => {
   const cli = path.join(__dirname, '..', 'dist', 'cli.js');
   const input = [

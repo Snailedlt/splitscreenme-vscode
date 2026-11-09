@@ -10,6 +10,7 @@ import { hubHandlers, hubPackage } from './hubcache';
 import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
 import { gameFolderName } from './core/pkgcheck';
+import { ruleOverrides } from './settings';
 import { installHandler as installFiles, InstallError } from './install';
 import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleus, testInNucleus } from './nucleusrun';
 
@@ -123,7 +124,8 @@ async function isDir(p: string) {
 
 /** Refuse to ship a handler Nucleus won't load, unless the user insists. */
 async function confirmNoErrors(text: string, action: string): Promise<boolean> {
-  const errors = lint(text).filter((d) => d.severity === 'error');
+  // With the user's rule settings: a rule they turned down or off doesn't block Package or Install.
+  const errors = lint(text, { rules: ruleOverrides() }).filter((d) => d.severity === 'error');
   if (!errors.length) return true;
   const choice = await vscode.window.showWarningMessage(
     `This handler has ${errors.length} error(s), e.g. "${errors[0].message}". ${action} anyway?`,

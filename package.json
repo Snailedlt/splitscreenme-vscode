@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SplitScreen-Me/splitscreenme-vscode"
+    "url": "https://github.com/Snailedlt/splitscreenme-vscode"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -297,7 +297,7 @@
         "splitscreenme.lint.rules": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Override the severity of individual rules, e.g. `{ \"deprecated\": \"off\", \"unknown-member\": \"error\" }`. See the [rule list](https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules).",
+          "markdownDescription": "Override the severity of individual rules, e.g. `{ \"deprecated\": \"off\", \"unknown-member\": \"error\" }`. See the [rule list](https://github.com/Snailedlt/splitscreenme-vscode#lint-rules).",
           "properties": {
             "syntax-error": {
               "type": "string",

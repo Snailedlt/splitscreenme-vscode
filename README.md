@@ -130,7 +130,7 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
 ### Claude Code
 
 ```
-/plugin marketplace add SplitScreen-Me/splitscreenme-vscode
+/plugin marketplace add Snailedlt/splitscreenme-vscode
 /plugin install nucleus-coop@splitscreenme
 ```
 

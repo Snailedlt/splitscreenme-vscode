@@ -967,6 +967,17 @@ static void applyEdits(HWND h, const Value& edits) {
   std::vector<std::pair<Range, std::string>> list;
   for (auto& e : edits.arr()) list.push_back({{sciPos(h, e["range"]["start"]), sciPos(h, e["range"]["end"])}, e["newText"].str()});
   std::sort(list.begin(), list.end(), [](auto& a, auto& b) { return a.first.start > b.first.start; });
+  // The server writes new lines as \n; a CRLF (or CR) document gets its own line ending, never a mix.
+  int eol = (int)sci(h, SCI_GETEOLMODE);
+  if (eol != SC_EOL_LF)
+    for (auto& [r, text] : list) {
+      std::string t;
+      for (size_t i = 0; i < text.size(); i++) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') continue;  // already \r\n: one ending
+        t += text[i] == '\n' ? (eol == SC_EOL_CRLF ? "\r\n" : "\r") : std::string(1, text[i]);
+      }
+      text = t;
+    }
   sci(h, SCI_BEGINUNDOACTION);
   for (auto& [r, text] : list) {
     sci(h, SCI_SETTARGETRANGE, r.start, r.end);
