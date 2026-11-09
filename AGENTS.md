@@ -112,6 +112,8 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 
 - TypeScript strict; keep `src/core` free of `vscode` imports.
 - New editor features go in `src/core/features.ts` first (plain data, offsets), then into every adapter: `src/extension.ts` and `src/lsp.ts` (PORTING.md), and the Notepad++ plugin if it needs to show something new.
+- **Links live for ever.** Links the tools print or put in docs (the workbench's `#docs-<name>`, `?ref=`, release and Hub links, README anchors, command and setting ids people bind keys to) keep working after any redesign: readable and generic, never internal ids. When one changes, the old one leads to the new place (the workbench's `MOVED_LINKS`; an alias for a command or setting, marked deprecated, pointing at the new one) and says so once. A removed thing gets a note saying what replaced it, not a dead end.
+- **Code in docs is laid out neatly**, as prettier would (`core/pretty.ts`: `prettyCode` for examples, `prettySignature` for overloads), at 60 columns, so it reads well in a hover.
 - **Every code block is syntax highlighted**, wherever it shows: hovers, hints, suggestion docs, the Docs/Try it panels, the workbench (`codehl.ts`: `hlCode`/`hlHtml`, `modeFor` by file type), the start page. Fenced Markdown gets a language (```` ```js ````/```` ```ts ````) so editors colour it; HTML we render ourselves colours it (`docspanel.ts` `highlightCode`). Inline code that is clearly code is coloured too.
 - Handler code you generate (templates, snippets, skill docs) must be ES5 and lint-clean. Tests lint the templates and every `js` block in the skill docs.
 - The skill docs must only name real API members. A test resolves every `Game.*`/`Context.*` path mentioned in them.
