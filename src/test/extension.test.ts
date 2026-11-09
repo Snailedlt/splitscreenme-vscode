@@ -25,6 +25,9 @@ test('registers all commands declared in package.json', () => {
   const declared = pkg.contributes.commands.map((c: any) => c.command).sort();
   const registered = m.__registered.commands.map((c: any) => c.id).sort();
   assert.deepEqual(registered, declared);
+  // VS Code refuses a second registration of an id, and the whole extension then fails to activate.
+  assert.deepEqual(registered.filter((id: string, i: number) => registered.indexOf(id) !== i), [], 'a command registered twice');
+  assert.deepEqual(declared.filter((id: string, i: number) => declared.indexOf(id) !== i), [], 'a command declared twice');
 });
 
 test('package.json rule settings match the linter rules', () => {

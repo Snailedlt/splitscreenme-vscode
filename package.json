@@ -142,7 +142,7 @@
         "category": "Nucleus"
       },
       {
-        "command": "splitscreenme.openDocs",
+        "command": "splitscreenme.showDocs",
         "title": "Docs (Every Option and Function)",
         "category": "Nucleus"
       },

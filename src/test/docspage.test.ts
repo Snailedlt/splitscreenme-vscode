@@ -56,7 +56,7 @@ test('Nucleus Docs panel: path, back, search and workbench links; no scripts', (
   assert.ok(!/<script/i.test(html));
   assert.match(html, /command:splitscreenme\.docsBack/);
   assert.match(html, /command:splitscreenme\.docsSearch/);
-  assert.match(html, /href="command:splitscreenme\.openDocs\?%5B%22Context%22%5D">Context<\/a>/, 'the group crumb');
+  assert.match(html, /href="command:splitscreenme\.showDocs\?%5B%22Context%22%5D">Context<\/a>/, 'the group crumb');
   assert.match(html, /<strong aria-current="page">ModifySaveFile<\/strong>/);
   assert.match(html, /\?ref=vscode#docs-Context\.ModifySaveFile/);
   assert.match(fallbackMarkdown('## T\n\n- [`A`](u)\n\n```js\nx < 1\n```'), /<h2>T<\/h2><ul><li><a href="u"><code>A<\/code><\/a><\/li><\/ul><pre><code><span class="tk-variable">x<\/span> &lt; <span class="tk-number">1<\/span><\/code><\/pre>/);

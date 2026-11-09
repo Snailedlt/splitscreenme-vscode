@@ -1,5 +1,5 @@
 // "Nucleus Docs" panel: the handler API's docs beside the editor, offline, opened by clicking an API name in a hover,
-// hint or suggestion (command:splitscreenme.openDocs). The same pages as the workbench's Docs tab (core/docspage.ts):
+// hint or suggestion (command:splitscreenme.showDocs). The same pages as the workbench's Docs tab (core/docspage.ts):
 // the main page, a group (one line per name), one name, a search. A quiet path on top (Docs / Context / name) and a
 // back arrow; Search opens VS Code's quick pick. Scripts are off: every control is a command link.
 import * as vscode from 'vscode';
@@ -8,7 +8,7 @@ import { linkApiNames, workbenchDocsUrl } from './core/features';
 import { allEntries } from './core/lookup';
 import { api } from './core/api';
 
-export const OPEN_DOCS = 'splitscreenme.openDocs';
+export const OPEN_DOCS = 'splitscreenme.showDocs'; // not openDocs: that is "Open Documentation…" (external links)
 const BACK = 'splitscreenme.docsBack';
 const SEARCH = 'splitscreenme.docsSearch';
 
