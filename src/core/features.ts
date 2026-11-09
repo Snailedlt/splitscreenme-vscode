@@ -14,6 +14,8 @@ import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, ownRetu
 import { innerCallFrame } from './complete';
 import { newHandlerSnippet, SNIPPETS } from './snippets';
 import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
+import { lookup } from './lookup';
+import { WORKBENCH_URL } from './sharelink';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
  *  variables: `own: false` leaves those out, so they don't show twice. */
@@ -21,6 +23,8 @@ export interface FeatureOptions {
   own?: boolean;
   /** Asked for (Ctrl+Space), not opened by a typed character: names are offered before any letter is typed. */
   explicit?: boolean;
+  /** Turns API names in the docs into links (to the editor's docs view, or the workbench's `#docs-…`). */
+  docsLink?: (path: string) => string;
 }
 
 /** `Context.Options["…` with the cursor in (or right after `[` before) the key. */
@@ -64,7 +68,46 @@ export interface HoverInfo {
 const notTopLevel = '\n\n_Only available inside callbacks such as `Game.Play`._';
 
 /** The hover at `offset`: an API member's docs, an enum, a global, or a window message in BlockedMessages. */
+/** The API path a name in the docs stands for (`ModifySaveFile` → `Context.ModifySaveFile`), if it's one. */
+export function apiPathOf(raw: string): string | undefined {
+  const t = raw.trim().replace(/\(.*\)$/, '').replace(/;$/, '').replace(/^new\s+/, '');
+  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(t) || /^(true|false|null|undefined|var|function|return)$/.test(t)) return undefined;
+  if (api.globals[t]) return t;
+  // A bare name only when it's written like Nucleus' own (PascalCase): `path` or `first` are parameters, not API.
+  if (!t.includes('.') && !/^[A-Z]/.test(t)) return undefined;
+  const r = lookup(t);
+  if (r.kind === 'entries') return r.entries.length === 1 ? r.entries[0].path : t;
+  if (r.kind === 'enum' || r.kind === 'class') return t.startsWith('Nucleus.') ? t : `Nucleus.${t}`;
+  return undefined;
+}
+/** The workbench's docs for a name: `#docs-Context.ModifySaveFile` (`ref` says which tool the visit came from). */
+export function workbenchDocsUrl(path: string, ref: string): string {
+  return `${WORKBENCH_URL}?ref=${encodeURIComponent(ref)}#docs-${encodeURIComponent(path)}`;
+}
+/** API names written as code in Markdown docs (`` `Context.Width` ``) as links; code blocks and links stay as they are. */
+export function linkApiNames(md: string, link: (path: string) => string): string {
+  return md.split(/(```[\s\S]*?```)/).map((part, i) => i % 2 ? part : part.replace(/(\[?)`([^`\n]+)`(\]\()?/g, (m, open, code, close) => {
+    if (open || close) return m; // already a link
+    const path = apiPathOf(code);
+    return path ? `[\`${code}\`](${link(path)})` : m;
+  })).join('');
+}
+
 export function hoverAt(text: string, offset: number, opts: FeatureOptions = {}): HoverInfo | undefined {
+  const h = hoverAtRaw(text, offset, opts);
+  if (!h || !opts.docsLink) return h;
+  // The name itself: its docs one click away (the signature on top is a code block, which can't hold a link).
+  const r = resolveAt(text, offset);
+  const res = r?.resolved;
+  const own = res?.kind === 'member' && res.member.own;
+  const self = !res || own ? undefined
+    : res.kind === 'member' ? apiPathOf(`${ownerLabel(res.owner)}.${res.name}`)
+    : res.kind === 'enum' || res.kind === 'nucleusClass' ? `Nucleus.${res.name}`
+    : res.kind === 'enumValue' ? `Nucleus.${res.enumName}`
+    : apiPathOf(text.slice(r!.start, r!.end));
+  return { ...h, markdown: linkApiNames(h.markdown, opts.docsLink) + (self ? `\n\n[Open in Docs](${opts.docsLink(self)})` : '') };
+}
+function hoverAtRaw(text: string, offset: number, opts: FeatureOptions = {}): HoverInfo | undefined {
   // A number in Game.ProtoInput.BlockedMessages: the window message's name and what it does.
   const msg = blockedItemAt(text, offset);
   if (msg) return { markdown: messageMarkdown(msg.id), range: { start: msg.start, end: msg.end } };
@@ -192,6 +235,11 @@ const lineBounds = (text: string, offset: number) => {
 
 /** Completion items at `offset`, or undefined when there's nothing to offer (let the editor do its own). */
 export function completionsAt(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
+  const list = completionsAtRaw(text, offset, opts);
+  const link = opts.docsLink;
+  return link && list ? list.map((c) => (c.documentation ? { ...c, documentation: linkApiNames(c.documentation, link) } : c)) : list;
+}
+function completionsAtRaw(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
   // `Context.Options["|"]`: the keys the handler adds with Game.AddOption.
   const key = optionKeyContextAt(text, offset);
   if (key) {
@@ -429,6 +477,13 @@ export interface SignatureHelpInfo {
 
 /** The overloads of the method (or Nucleus class constructor) whose call the cursor is in. */
 export function signatureHelpAt(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
+  const h = signatureHelpAtRaw(text, offset, opts);
+  const link = opts.docsLink;
+  if (!h || !link) return h;
+  const l = (s?: string) => (s === undefined ? s : linkApiNames(s, link));
+  return { ...h, signatures: h.signatures.map((s) => ({ ...s, documentation: l(s.documentation), parameterDocs: s.parameterDocs?.map(l) })) };
+}
+function signatureHelpAtRaw(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
   const c = callContextAt(text, offset);
   if (!c || (c.callee.kind === 'member' && c.callee.member.own)) return opts.own === false ? undefined : ownSignatureHelp(text, offset);
   const signatures: SignatureEntry[] = [];

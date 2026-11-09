@@ -3,6 +3,7 @@ import { registerWhatsNew } from './whatsnew';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
+import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
 import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
@@ -191,6 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   registerTryIt(context, isHandler);
+  registerDocsPanel(context);
   registerGameFolders(context, isHandler, SELECTOR, (d) => refresh(d, 0));
   registerDebugger(context, isHandler);
 
@@ -347,7 +349,7 @@ const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
 const toRange = (doc: vscode.TextDocument, s: Span) => new vscode.Range(doc.positionAt(s.start), doc.positionAt(s.end));
 
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
-  const entries = completionsAt(doc.getText(), doc.offsetAt(pos), { own: false });
+  const entries = completionsAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   return entries?.map((e) => {
     const item = new vscode.CompletionItem(e.labelDetail ? { label: e.label, description: e.labelDetail } : e.label, KIND[e.kind]);
     if (e.range) item.range = toRange(doc, e.range);
@@ -365,17 +367,18 @@ function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.Com
 
 function markdown(s: string) {
   const md = new vscode.MarkdownString(s);
-  md.isTrusted = false;
+  // API names link to the Nucleus Docs panel: that one command may run from a link, nothing else.
+  md.isTrusted = { enabledCommands: [OPEN_DOCS] };
   return md;
 }
 
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
-  const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false });
+  const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
 }
 
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {
-  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos), { own: false });
+  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   if (!s) return undefined;
   const help = new vscode.SignatureHelp();
   for (const sig of s.signatures) {

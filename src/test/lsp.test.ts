@@ -119,6 +119,8 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   const hover = (await request('textDocument/hover', { textDocument: doc, position: { line: 3, character: 14 } })).result;
   assert.equal(hover.contents.kind, 'markdown');
   assert.match(hover.contents.value, /Game\.Hook\.ForceFocus: boolean/);
+  // The name's docs in the workbench, one click away (no clientInfo: tagged "lsp").
+  assert.ok(hover.contents.value.includes('[Open in Docs](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=lsp#docs-Game.Hook.ForceFocus)'), hover.contents.value);
 
   const completion = (await request('textDocument/completion', { textDocument: doc, position: { line: 4, character: 12 } })).result;
   const sym = completion.items.find((i: any) => i.label === 'SymlinkGame');

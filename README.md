@@ -18,7 +18,7 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 
 - **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`. After `=`, the values the option takes.
 - **Suggestions that know your handler:** `Context.Options["` suggests the keys your `Game.AddOption` lines add, and `== "` their choices; what your own functions return is understood after a dot.
-- **Hover docs** and **signature help** for every method and its overloads, saying what to pass for each parameter of the most used ones.
+- **Hover docs** and **signature help** for every method and its overloads, saying what to pass for each parameter of the most used ones. API names in them are links to the **Nucleus Docs** panel.
 - **Snippets** for what most handlers do (`iniset`, `replacelines`, `regkey`, `startargs`, `ifoption`, `eachplayer`…), offered where a statement starts; in an empty file, `handler` writes the whole template.
 - **Linting** for the mistakes that make handlers fail, often silently. See [Lint rules](#lint-rules).
 - **Fix all**, deterministic and offline: applies every fix that keeps the handler's behaviour or repairs code Nucleus can't load. It runs as a command, on save, or as `ncdev lint --fix`. Fixes that change behaviour or need your input stay one-click quick fixes. On the 41 engine probes, it takes 11 of the 16 that fail in Jint 2.11.58 to working.
@@ -57,6 +57,7 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 | **Nucleus: Set Up Type Definitions** | Writes `.vscode/nucleus.d.ts` and a `jsconfig.json` (ES5 lib), then hands completion over to the TypeScript service. Add `// @ts-check` to a handler for type errors. |
 | **Nucleus: Fix All Auto-fixable Problems** | Applies every safe fix to the open handler. To run it on save, add `"editor.codeActionsOnSave": { "source.fixAll.nucleus": "explicit" }`. |
 | **Nucleus: Lint All Handlers in Workspace** | Lints every handler in the workspace, not just open files. |
+| **Nucleus: Docs (Every Option and Function)** | Opens **Nucleus Docs** beside the editor: every option and function with its docs, by group or by search (**Nucleus: Search the Docs…**). API names in hovers, parameter hints and suggestions open their page here; *Open in the workbench* shows the same page in the browser. |
 | **Nucleus: Open Documentation…** | Quick links to the handler API, guides, Proto Input, FAQ, Hub and PCGamingWiki. |
 | **Nucleus: Open in the Browser Workbench** | The handler you're editing, in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md) (its visual editor, Lines, Test all), through a share link. |
 

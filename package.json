@@ -140,6 +140,21 @@
         "command": "splitscreenme.unlinkGameFolder",
         "title": "Unlink the Game's Folder",
         "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.openDocs",
+        "title": "Docs (Every Option and Function)",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.docsSearch",
+        "title": "Search the Docs…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.docsBack",
+        "title": "Docs: Back",
+        "category": "Nucleus"
       }
     ],
     "keybindings": [
@@ -191,6 +206,10 @@
         {
           "command": "splitscreenme.setupAgents",
           "when": "!isWeb"
+        },
+        {
+          "command": "splitscreenme.docsBack",
+          "when": "false"
         }
       ]
     },

@@ -9,7 +9,7 @@ import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lin
 import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/definition';
 import { workbenchLinkFor } from './workbenchlink';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, workbenchDocsUrl } from './core/features';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
@@ -129,6 +129,7 @@ export class Server {
   private settings: LspSettings = structuredClone(DEFAULTS);
   private timers = new Map<string, NodeJS.Timeout>();
   private snippets = true;
+  private docsLink?: (path: string) => string;
   private shutdown = false;
   private nextId = 1;
   private roots: string[] = [];
@@ -263,6 +264,10 @@ export class Server {
       case 'initialize': {
         this.applySettings(p.initializationOptions);
         this.snippets = p.capabilities?.textDocument?.completion?.completionItem?.snippetSupport !== false;
+        // API names in hovers, hints and suggestion docs link to the workbench's docs (#docs-…), tagged with the
+        // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
+        const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
+        this.docsLink = (path: string) => workbenchDocsUrl(path, ref);
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
         this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
         return {
@@ -382,7 +387,7 @@ export class Server {
       case 'textDocument/hover': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);
-        const h = hoverAt(doc.text, l.offset(p.position));
+        const h = hoverAt(doc.text, l.offset(p.position), { docsLink: this.docsLink });
         return h ? { contents: { kind: 'markdown', value: h.markdown }, range: l.range(h.range) } : null;
       }
       case 'textDocument/completion': {
@@ -408,12 +413,12 @@ export class Server {
               })),
           };
         }
-        const items = completionsAt(doc.text, at, { explicit: p.context?.triggerKind !== 2 });
+        const items = completionsAt(doc.text, at, { explicit: p.context?.triggerKind !== 2, docsLink: this.docsLink });
         return items ? { isIncomplete: false, items: items.map((e) => this.toCompletionItem(l, e)) } : null;
       }
       case 'textDocument/signatureHelp': {
         if (!this.featuresOn(doc)) return null;
-        const s = signatureHelpAt(doc.text, linesOf(doc).offset(p.position));
+        const s = signatureHelpAt(doc.text, linesOf(doc).offset(p.position), { docsLink: this.docsLink });
         if (!s) return null;
         return {
           signatures: s.signatures.map((x) => ({ label: x.label, documentation: x.documentation === undefined ? undefined : { kind: 'markdown', value: x.documentation }, parameters: x.parameters.map((label, i) => ({ label, ...(x.parameterDocs?.[i] ? { documentation: { kind: 'markdown', value: x.parameterDocs[i] } } : {}) })) })),
