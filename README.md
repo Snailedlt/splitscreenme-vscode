@@ -1,6 +1,6 @@
 # SplitScreen.Me / Nucleus Co-op Handler Tools for VS Code
 
-Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
+Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side. In VS Code, [Notepad++](#notepad), [any editor with LSP](#other-editors), on the [command line](#the-command-line-tool-ncdev) and in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md): one engine, the same checks everywhere.
 
 > **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=vscode-readme-md**
 
@@ -16,19 +16,25 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 
 *Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md). Testing it? See [TESTING.md](TESTING.md).*
 
-- **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`.
-- **Hover docs** and **signature help** for every `Context` method and its overloads.
+- **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`. After `=`, the values the option takes.
+- **Suggestions that know your handler:** `Context.Options["` suggests the keys your `Game.AddOption` lines add, and `== "` their choices; what your own functions return is understood after a dot.
+- **Hover docs** and **signature help** for every method and its overloads, saying what to pass for each parameter of the most used ones.
+- **Snippets** for what most handlers do (`iniset`, `replacelines`, `regkey`, `startargs`, `ifoption`, `eachplayer`…), offered where a statement starts; in an empty file, `handler` writes the whole template.
 - **Linting** for the mistakes that make handlers fail, often silently. See [Lint rules](#lint-rules).
 - **Fix all**, deterministic and offline: applies every fix that keeps the handler's behaviour or repairs code Nucleus can't load. It runs as a command, on save, or as `ncdev lint --fix`. Fixes that change behaviour or need your input stay one-click quick fixes. On the 41 engine probes, it takes 11 of the 16 that fail in Jint 2.11.58 to working.
-- **Format Document** (Shift+Alt+F): indentation and spacing only. No line moves (Nucleus runs handlers line by line), and the tokens and comments are checked to be exactly the same afterwards, so formatting never changes what the handler does. Also `nucleus format`.
+- **Format Document** (Shift+Alt+F, also a selection, and as you type): indentation, spacing, double quotes and semicolons (both [configurable](#settings)). No line moves (Nucleus runs handlers line by line), and the result is checked to parse to exactly the same program, so formatting never changes what the handler does. Also `ncdev format`.
 - **Quick fixes**: did-you-mean for typos, `"true"` → `true`, template string → concatenation, wrap a value in an array, add missing required options, and more.
 - **New Handler** wizard that generates a handler which passes the linter, with optional Proto Input, Goldberg, INI resolution and user-option sections.
 - **Package for the Hub**: builds a `.nc` package laid out the way Nucleus' installer expects.
 - **Install into Nucleus**: copies the handler and its asset folder into your Nucleus `handlers` folder.
+- **Test in Nucleus Co-op** (Windows): the ▷ button above a handler installs it and starts Nucleus with its game selected.
+- **Go to definition** (F12) and the **Outline** of the handler's options, functions and variables.
+- **Checks against the game's folder**: link the game's install folder and `ExecutableName`, `BinariesFolder` and the symlink lists are checked against the real files (only names and sizes are read).
+- **A getting-started guide**: *Help › Welcome › Make a Nucleus Co-op handler* walks from an empty file to the Hub.
 - **Browse the Hub**: search the 600+ handlers on [hub.splitscreen.me](https://hub.splitscreen.me) and open any handler's source, which is handy for seeing how others solved a problem.
 - **Type definitions** (`nucleus.d.ts`), so you can opt into full TypeScript checking with `// @ts-check`.
-- **Snippets** (`nc-…`) for common tasks: INI/XML edits, text-file line replacement, registry edits, copying files from the handler folder, options, Goldberg and Proto Input.
-- **`nucleus-lint` CLI** that runs the same checks in CI.
+- More snippets (`nc-…`) for INI/XML edits, copying files from the handler folder, Goldberg and Proto Input.
+- **The `ncdev` CLI** runs the same checks in CI, and much more: see [below](#the-command-line-tool-ncdev).
 
 The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `GameHookInfo`, `GenericContext`, `ProtoInputOptions`, …) and the [splitscreen.me docs](https://www.splitscreen.me/docs/handler-api), so it reflects what Nucleus really accepts rather than a hand-maintained list.
 
@@ -36,7 +42,7 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 
 1. Install the extension. Until it is on the Marketplace, download the `.vsix` from the [releases](https://github.com/Snailedlt/splitscreenme-vscode/releases) (or run `npm ci && npm run package`), then **Extensions: Install from VSIX…**. Testing it? See [TESTING.md](TESTING.md).
 2. Open the folder where you keep your handlers. Any `.js` file that sets `Game.GUID`, `Game.GameName`, `Game.ExecutableName` or `Game.Play`, or lives in a `handlers` folder, gets handler features. Other JavaScript files are left alone.
-3. Run **Nucleus: New Handler…** from the Command Palette, or type `nc-handler` in an empty `.js` file.
+3. Run **Nucleus: New Handler…** from the Command Palette, or type `handler` in an empty `.js` file. New to handlers? *Help › Welcome › Make a Nucleus Co-op handler* walks you through it.
 
 ### Commands
 
@@ -83,7 +89,7 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
   | Command | What it does |
   | --- | --- |
   | `nucleus lint <file> --json` | Diagnostics and available fixes |
-  | `nucleus format <file> --write` | Indentation and spacing, never the code itself |
+  | `nucleus format <file> --write` | Indentation, spacing, quotes and semicolons; never what the code does |
   | `nucleus api Game.KillMutex` / `nucleus api --search mutex` | The "hover": type, default and docs |
   | `nucleus hub search <game>` / `nucleus hub fetch <id>` | Study how existing handlers solved the same problem |
   | `nucleus new …` / `nucleus install …` / `nucleus package …` | Scaffold a handler / copy it into Nucleus' `handlers` folder / build the `.nc` package |
@@ -235,13 +241,17 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | `splitscreenme.lint.enable` | `true` | Report problems. |
 | `splitscreenme.lint.compareWithHub` | `true` | For a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub version (`guid-changed`); downloads that version once. |
 | `splitscreenme.lint.rules` | `{}` | Per-rule severity: `error`, `warning`, `info`, `hint` or `off`. |
+| `splitscreenme.lint.packageChecks` | `true` | Check the files in the handler's `<Name>/` folder as they'd go into the .nc (Windows names, overwrites, broken INI/JSON, missing files). |
+| `splitscreenme.format.quotes` | `double` | Quotes when formatting: `double` (what the Hub install reads best), `single` or `keep`. A string containing the chosen quote keeps its own. |
+| `splitscreenme.format.semicolons` | `add` | Semicolons when formatting: `add` or `keep`. |
+| `splitscreenme.gameFolders` | `{}` | The game's install folder per handler, set with **Nucleus: Link the Game's Folder…**. |
 | `splitscreenme.completion.enable` | `true` | The extension's completion/hover/signature help. Turned off by **Set Up Type Definitions**, because TypeScript then provides them. |
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
 | `splitscreenme.showWhatsNew` | `true` | After an update, a short note with what's new. **Nucleus: What's New** opens the changelog any time. |
 
 ## Try it
 
-**Nucleus: Try It** and `nucleus simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.
+**Nucleus: Try It** and `ncdev simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.
 
 It also follows Nucleus' session flow: an error in `Game.Play` ends the session (later players are never set up), `Game.OnFinishedSetup` and `Game.OnStop` run with the last player's `Context`, `Game.GamePlayAfterLaunch` makes `Context.StartArguments` irrelevant, and paths (`Context.ExePath`, `GetFolder`, ...) depend on `Game.SymlinkGame`/`HardcopyGame`/`HardlinkGame` and `Game.BinariesFolder` as in Nucleus. Plugin globals listed in the handler folder's `pluginsInfo.txt` record their calls.
 
@@ -253,7 +263,7 @@ node dist/cli.js simulate MyGame.js --players 4 --keyboard none --resolution 256
 
 The exit code is 1 when the handler fails to load or a player's setup fails.
 
-`nucleus debug` runs the handler the same way and stops where you ask: at a line (`--break 14`), at a line for one player (`--break "14 if Context.PlayerID == 1"`) and wherever an error ends a phase. Each stop says where it is (the top of the file, `Game.Play` for player 2 of 4, `Game.OnStop`, ...) and shows the variables, the call stack, any `--watch` values and what the handler did so far; `--step` lists every line it runs. It records the run and reads values without running anything of the handler's, so the result is the same as without it.
+`ncdev debug` runs the handler the same way and stops where you ask: at a line (`--break 14`), at a line for one player (`--break "14 if Context.PlayerID == 1"`) and wherever an error ends a phase. Each stop says where it is (the top of the file, `Game.Play` for player 2 of 4, `Game.OnStop`, ...) and shows the variables, the call stack, any `--watch` values and what the handler did so far; `--step` lists every line it runs. It records the run and reads values without running anything of the handler's, so the result is the same as without it.
 
 ```bash
 node dist/cli.js debug MyGame.js --break "14 if Context.PlayerID == 1" --watch Context.StartArguments
@@ -282,7 +292,7 @@ node dist/cli.js path/to/handlers   # or `ncdev` / `nucleus-lint` once the packa
 
 ## Other editors
 
-`ncdev lsp` is a Language Server with the same features (problems and quick fixes, hover, completion, signature help, Format Document, window-message hints, Try it), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client, and `ncdev dap` brings the debugger. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
+`ncdev lsp` is a Language Server with the same features (problems and quick fixes, hover, completion with your own names and snippets, signature help, go to definition, rename, outline, Format Document, window-message hints, Try it, and *Package*, *Install*, *New handler* and *Test in Nucleus* as code actions and commands), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client, and `ncdev dap` brings the debugger. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
 
 ### Notepad++
 
