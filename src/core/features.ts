@@ -17,6 +17,7 @@ import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
 import { lookup } from './lookup';
 import { prettySignature } from './pretty';
 import { WORKBENCH_URL } from './sharelink';
+import { BOM, withoutBom } from './bom';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
  *  variables: `own: false` leaves those out, so they don't show twice. */
@@ -236,7 +237,7 @@ const lineBounds = (text: string, offset: number) => {
 
 /** Completion items at `offset`, or undefined when there's nothing to offer (let the editor do its own). */
 export function completionsAt(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
-  const list = completionsAtRaw(text, offset, opts);
+  const list = withoutBom(text, offset, (t, o) => completionsAtRaw(t, o, opts));
   const link = opts.docsLink;
   return link && list ? list.map((c) => (c.documentation ? { ...c, documentation: linkApiNames(c.documentation, link) } : c)) : list;
 }
@@ -583,7 +584,7 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
       if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'source.fixAll', edits: [fix.edit], diagnostic: diag });
     }
     if (diag.rule in RULES && diag.rule !== 'syntax-error') {
-      const start = lineStart(text, diag.start);
+      const start = Math.max(lineStart(text, diag.start), text.startsWith(BOM) ? 1 : 0); // after a BOM
       const indent = text.slice(start).match(/^[ \t]*/)![0];
       actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}\n` }], diagnostic: diag });
     }

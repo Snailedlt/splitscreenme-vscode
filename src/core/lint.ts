@@ -2,6 +2,7 @@
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
 import { toGuid } from './templates';
 import { hubScan } from './hubscan';
+import { withoutBom } from './bom';
 import { blockTarget, hex, wmName } from './wm';
 import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
@@ -256,6 +257,10 @@ export const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Sym
 export const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
 
 export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
+  // Nucleus drops a leading BOM (core/bom.ts); so does ESLint, whose positions would be one off.
+  return withoutBom(text, 0, (t) => lintText(t, options));
+}
+function lintText(text: string, options: LintOptions): Diagnostic[] {
   const out: Diagnostic[] = [];
   const comments: acorn.Comment[] = [];
   let program: Node;
