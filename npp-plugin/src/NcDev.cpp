@@ -2480,6 +2480,8 @@ static LRESULT CALLBACK msgProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
       if (toolJobs.empty()) KillTimer(hw, TOOL_TIMER);
       if (!job->res.cancelled && job->done) job->done(job->res);
       else if (toolJobs.empty()) status(L"");  // stopped: nothing is running any more
+      // Whatever the command says about it, the status bar says plainly that it hung and was stopped.
+      if (job->res.timedOut) status(L"Nucleus: stopped after " + std::to_wstring(job->timeoutMs / 1000) + L" s (" + job->what + L" hung). Try again in a moment.");
       return 0;
     }
     case WM_TIMER:
