@@ -83,7 +83,7 @@ Send them as `initializationOptions`, or later as `workspace/didChangeConfigurat
 - `handlerGlobs`: paths that always count as handlers (`**` any folders, `*` any name part, matched against the end of the path).
 - `lint.rules`: per-rule severity, `error`, `warning`, `info`, `hint` or `off` (`nucleus rules` lists them).
 - `lint.compareWithHub`: for a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub's version (downloads it once, cached; the problem list updates when it arrives). `false` keeps the server offline.
-- `lint.workspace`: check every handler in the workspace folders, opened or not (default `true`), and re-check files that change on disk (when the client supports watched files).
+- `lint.workspace`: check every handler in the workspace folders, opened or not (default `true`), and re-check files that change on disk (when the client supports watched files: the server asks to watch `**/*.js` and each handler's `<Name>/` folder, not the whole workspace, and ignores `node_modules` and dot folders).
 - `gameFolders`: the game's install folder per handler file name. The handler is then checked against the real files (`ExecutableName`, `BinariesFolder`, the symlink and copy lists…), each problem's fix comes as a quick fix, and completion inside those lists offers the game's own files. Only names and sizes are read.
 - `completion.enable`: hover, completion, signature help and inlay hints. Turn it off if TypeScript provides them (the `.d.ts` in `types/`).
 

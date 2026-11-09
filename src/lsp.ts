@@ -135,6 +135,11 @@ export class Server {
   private nextId = 1;
   private roots: string[] = [];
   private canWatch = false;
+  private relativeWatch = false;
+  /** <Name>/ folders of the handlers seen so far: their files are watched for the package checks. */
+  private handlerDirs = new Set<string>();
+  private watching: { id: string; key: string } | undefined;
+  private watchTimer: NodeJS.Timeout | undefined;
   /** Package files that have problems published, per handler, so they can be cleared. */
   private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
@@ -190,6 +195,7 @@ export class Server {
       this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       return;
     }
+    this.watchFolderOf(pathOf(uri));
     const lines = linesOf(d);
     const diagnostics = this.lintDoc(d, closed ? undefined : () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
     // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
@@ -289,6 +295,7 @@ export class Server {
         this.docsLink = (path: string) => workbenchDocsUrl(path, ref);
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
         this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
+        this.relativeWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.relativePatternSupport;
         return {
           capabilities: {
             positionEncoding: 'utf-16',
@@ -313,7 +320,7 @@ export class Server {
       }
       case 'initialized':
         // Every handler in the workspace, opened or not (like VS Code's Lint All Handlers), and on-disk changes.
-        if (this.canWatch) this.request('client/registerCapability', { registrations: [{ id: 'nucleus-files', method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers: [{ globPattern: '**/*' }] } }] });
+        this.updateWatchers(0);
         setTimeout(() => this.scanWorkspace(), 0);
         return undefined;
       case 'workspace/didChangeWatchedFiles':
@@ -494,6 +501,39 @@ export class Server {
     return NOT_FOUND;
   }
 
+/** In a folder the workspace scan skips (node_modules, dot folders such as .git), relative to its workspace folder. */
+  private skipped(file: string): boolean {
+    const root = this.roots.find((r) => file.startsWith(r + path.sep));
+    return !!root && path.relative(root, file).split(/[\\/]/).slice(0, -1).some(skipName);
+  }
+
+  /** A handler's <Name>/ folder joins the watched ones. */
+  private watchFolderOf(file: string | undefined) {
+    if (!file || !this.canWatch || !/\.js$/i.test(file) || this.skipped(file)) return;
+    const dir = file.slice(0, -3);
+    if (this.handlerDirs.has(dir) || this.handlerDirs.size >= MAX_WATCHED_FOLDERS) return;
+    this.handlerDirs.add(dir);
+    this.updateWatchers();
+  }
+
+  /** What the client watches for us: handler files (`**\/*.js`) and the <Name>/ folders of known handlers, not
+   *  every file in the workspace (node_modules, .git and build output would flood the server). Re-registered,
+   *  at most every half second, when a handler folder is added. */
+  private updateWatchers(delay = 500) {
+    if (!this.canWatch) return;
+    clearTimeout(this.watchTimer);
+    this.watchTimer = setTimeout(() => {
+      const watchers = watchersFor([...this.handlerDirs].sort(), this.relativeWatch);
+      const key = JSON.stringify(watchers);
+      if (this.watching?.key === key || this.shutdown) return;
+      if (this.watching) this.request('client/unregisterCapability', { unregisterations: [{ id: this.watching.id, method: 'workspace/didChangeWatchedFiles' }] });
+      const id = `nucleus-files-${this.nextId}`;
+      this.request('client/registerCapability', { registrations: [{ id, method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers } }] });
+      this.watching = { id, key };
+    }, delay);
+    this.watchTimer.unref?.();
+  }
+
 /** Handlers in the workspace folders (skipping node_modules and dot folders), problems published for the closed ones. */
   private scanWorkspace() {
     if (!this.settings.lint.enable || !this.settings.lint.workspace) return;
@@ -508,7 +548,7 @@ export class Server {
       }
       for (const e of entries) {
         if (count >= 2000 || dirs > 3000 || this.shutdown) return; // a whole drive opened: stop early
-        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        if (skipName(e.name)) continue;
         const abs = path.join(dir, e.name);
         if (e.isDirectory()) {
           dirs++;
@@ -548,7 +588,7 @@ export class Server {
   /** A file changed on disk: re-check it if it's a closed handler, or the handler whose folder it is in. */
   private fileChanged(uri: string, type: number) {
     const file = pathOf(uri);
-    if (!file) return;
+    if (!file || this.skipped(file)) return;
     if (/\.js$/i.test(file) && !this.docs.has(uri)) {
       if (type === 3) this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       else this.fromDisk(uri);
@@ -728,6 +768,18 @@ export class Server {
   }
 }
 const NOT_FOUND = Symbol('not found');
+
+/** Folders the workspace scan and the file watcher skip. */
+export const skipName = (name: string) => name.startsWith('.') || name === 'node_modules';
+const MAX_WATCHED_FOLDERS = 500;
+
+/** The file watchers to register: every .js file, and each handler's <Name>/ folder. */
+export function watchersFor(handlerDirs: string[], relative: boolean): { globPattern: string | { baseUri: string; pattern: string } }[] {
+  return [
+    { globPattern: '**/*.js' },
+    ...handlerDirs.map((dir) => ({ globPattern: relative ? { baseUri: pathToFileURL(dir).href, pattern: '**/*' } : `${dir.replace(/\\/g, '/')}/**/*` })),
+  ];
+}
 
 function toLspDiagnostic(l: Lines, d: LintDiagnostic) {
   return {
