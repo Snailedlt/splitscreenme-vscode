@@ -435,7 +435,7 @@ git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-www ../split
 npm run generate   # or: node scripts/generate-api.mjs --nucleus <path> --www <path>
 ```
 
-The generator parses the public members of the C# classes exposed to handlers, with their types and defaults. It then merges descriptions from `docs/handler-api.mdx`, `docs/create-handlers.md`, `docs/protoinput.md` and `MasterHandler.js`. A weekly workflow (`.github/workflows/update-api.yml`) does this automatically and opens a PR when anything changes.
+The generator parses the public members of the C# classes exposed to handlers, with their types and defaults. It then merges descriptions from `docs/handler-api.mdx`, `docs/create-handlers.md`, `docs/protoinput.md` and `MasterHandler.js`. The Sync workflow (`.github/workflows/sync-sources.yml`) checks daily and opens (or updates) a PR when Nucleus or its docs changed.
 
 ### Layout
 
