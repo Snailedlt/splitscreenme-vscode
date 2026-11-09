@@ -1,6 +1,7 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
 import { toGuid } from './templates';
+import { hubScan } from './hubscan';
 import { blockTarget, hex, wmName } from './wm';
 import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
@@ -1374,44 +1375,9 @@ class Analyzer {
     }
   }
 
-  /**
-   * Replays DownloadPrompt.ExtractHandler (and the in-app Hub browser and drag & drop, which
-   * do the same) on the raw text: every physical line, comments and function bodies included;
-   * `line.ToLower().StartsWith("game.executablename")` else ("game.gamename"); the value is
-   * `line.Substring(first '"' + 1, last - first - 1)`, which throws with fewer than two '"';
-   * each match overwrites the previous one; it stops after two matches.
-   */
-  private hubScan() {
-    const result: Record<'ExecutableName' | 'GameName', { value: string | null; line: number; offset: number; crash: boolean } | undefined> & { matched: number[] } = {
-      ExecutableName: undefined,
-      GameName: undefined,
-      matched: [],
-    };
-    let found = 0;
-    let offset = 0;
-    const lines = this.text.split(/\r\n|\n|\r/);
-    const ends = this.text.match(/\r\n|\n|\r/g) ?? [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lower = line.toLowerCase();
-      const key = lower.startsWith('game.executablename') ? 'ExecutableName' : lower.startsWith('game.gamename') ? 'GameName' : null;
-      if (key) {
-        const first = line.indexOf('"');
-        const last = line.lastIndexOf('"');
-        const crash = first < 0 || last === first;
-        result[key] = { value: crash ? null : line.slice(first + 1, last), line: i, offset, crash };
-        result.matched.push(i + 1);
-        found++;
-        if (crash || found === 2) break; // a crash ends the install
-      }
-      offset += line.length + (ends[i]?.length ?? 0);
-    }
-    return result;
-  }
-
   private checkHubInstall() {
-    // See hubScan(): what Nucleus reads when installing from the Hub.
-    const scan = this.hubScan();
+    // What Nucleus reads when installing from the Hub (core/hubscan.ts).
+    const scan = hubScan(this.text);
     const reported = new Set<string>();
     const crashed = (['ExecutableName', 'GameName'] as const).find((k) => scan[k]?.crash);
     // When the crashing line is the assignment itself, its own report below (with its fix) says so.
