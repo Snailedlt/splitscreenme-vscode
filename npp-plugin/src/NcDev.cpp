@@ -997,15 +997,29 @@ static std::string plain(const std::string& md, size_t maxLines) {
     // A line that is only a link ("[Handler API docs](https://…)") means nothing in a call tip.
     if (l.size() > 2 && l[0] == '[' && l.back() == ')' && l.find("](") != std::string::npos && l.find("](") == l.find(']')) continue;
     std::string t;
+    bool code = false;
+    auto word = [&](size_t at) { return at < l.size() && (isalnum((unsigned char)l[at]) || l[at] == '_'); };
     for (size_t k = 0; k < l.size(); k++) {
-      if (l[k] == '`' || (l[k] == '*' && k + 1 < l.size() && l[k + 1] == '*')) {
-        if (l[k] == '*') k++;
+      if (l[k] == '`') {
+        code = !code;
         continue;
       }
+      if (!code && l[k] == '*' && k + 1 < l.size() && l[k + 1] == '*') {
+        k++;
+        continue;
+      }
+      // _italic_: an underscore that opens or closes a phrase, never one inside a name (snake_case, __guid, code).
+      if (!code && l[k] == '_' && !(k > 0 && word(k - 1) && word(k + 1)) && !(k > 0 && l[k - 1] == '_') && !(k + 1 < l.size() && l[k + 1] == '_')) continue;
       if (l[k] == '[') {  // [text](url) -> text
         size_t close = l.find("](", k);
         size_t end = close == std::string::npos ? close : l.find(')', close);
         if (end != std::string::npos) {
+          // A feedback link ("Is it wrong? Tell us", a GitHub issue form) needs a click: a call tip can't.
+          if (l.substr(close + 2, end - close - 2).find("/issues/new") != std::string::npos) {
+            while (!t.empty() && t.back() == ' ') t.pop_back();
+            k = end;
+            continue;
+          }
           t += l.substr(k + 1, close - k - 1);
           k = end;
           continue;
@@ -1015,12 +1029,9 @@ static std::string plain(const std::string& md, size_t maxLines) {
       t += l[k];
     }
     while (!t.empty() && t[0] == '#') t.erase(0, 1);
-    // _italic_ and the ⓘ mark (not in every editor font)
-    for (size_t k; (k = t.find("\xE2\x93\x98")) != std::string::npos;) t.erase(k, 3 + (k + 3 < t.size() && t[k + 3] == ' '));
-    if (t.size() > 1 && t.find_first_not_of(' ') != std::string::npos && t[t.find_first_not_of(' ')] == '_' && t.back() == '_') {
-      t.erase(t.find_first_not_of(' '), 1);
-      t.pop_back();
-    }
+    // The ⓘ and ✎ marks: not in every editor font (a box in Notepad++'s default call-tip font).
+    for (const char* mark : {"\xE2\x93\x98", "\xE2\x9C\x8E"})
+      for (size_t k; (k = t.find(mark)) != std::string::npos;) t.erase(k, 3 + (k + 3 < t.size() && t[k + 3] == ' '));
     while (!t.empty() && t[0] == ' ' && t.find_first_not_of(' ') != std::string::npos && out.empty()) t.erase(0, 1);
     if (t.empty() || t.find_first_not_of(" ") == std::string::npos) {
       if (++blank > 1 || out.empty()) continue;
