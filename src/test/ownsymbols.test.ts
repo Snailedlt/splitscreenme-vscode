@@ -38,6 +38,11 @@ test('own names: suggested where they are visible, with keywords and globals; no
   assert.equal(fn.kind, 'function');
   assert.equal(fn.insertText, 'copyCfg($1)');
   assert.match(fn.documentation!, /Copies the config/);
+  // The comment as Markdown, not raw JSDoc: @params become a list.
+  const t = 'Game.Play = function () {\n    /** Joins two.\n     * @param {string} a The first */\n    function join(a, b) { return a + b; }\n    jo\n};';
+  const j = completionsAt(t, t.indexOf('    jo\n') + 6)!.find((c) => c.label === 'join')!;
+  assert.match(j.documentation!, /Joins two\.[\s\S]*- `a`: The first/);
+  assert.doesNotMatch(j.documentation!, /@param/);
   p = at('var x|');
   assert.equal(completionsAt(p.text, p.offset), undefined, 'naming a new variable');
   p = at('var s = "co|";');

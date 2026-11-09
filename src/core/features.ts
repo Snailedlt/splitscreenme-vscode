@@ -111,6 +111,14 @@ export function hoverAt(text: string, offset: number, opts: FeatureOptions = {})
   return opts.own === false ? undefined : ownHover(text, offset);
 }
 
+/** The comment above an own name as Markdown: its text, then the `@param`s as a list (`@returns` as "Returns …"). */
+function ownDocMarkdown(raw: string | undefined): string | undefined {
+  const { text: doc, params } = splitJsDoc(raw);
+  const ps = Object.entries(params).map(([k, v]) => `- \`${k}\`: ${v}`).join('\n');
+  const out = [doc?.replace(/^\s*@returns?\s+(\{[^}]*\}\s*)?/m, 'Returns '), ps].filter(Boolean).join('\n\n');
+  return out || undefined;
+}
+
 /** The handler's own function or variable under the cursor: how it's declared and the comment above it. */
 function ownHover(text: string, offset: number): HoverInfo | undefined {
   let s = offset;
@@ -125,9 +133,8 @@ function ownHover(text: string, offset: number): HoverInfo | undefined {
   if (!n) return undefined;
   const line = text.slice(0, n.start).split('\n').length;
   const returns = n.kind === 'function' ? ownReturnTypes(text).get(n.name) : undefined;
-  const { text: doc, params } = splitJsDoc(n.doc);
-  const ps = Object.entries(params).map(([k, v]) => `- \`${k}\`: ${v}`).join('\n');
-  return { markdown: '```js\n' + n.signature + (returns ? `: ${returns}` : '') + '\n```' + (doc ? '\n\n' + doc.replace(/^\s*@returns?\s+(\{[^}]*\}\s*)?/m, 'Returns ') : '') + (ps ? '\n\n' + ps : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
+  const doc = ownDocMarkdown(n.doc);
+  return { markdown: '```js\n' + n.signature + (returns ? `: ${returns}` : '') + '\n```' + (doc ? '\n\n' + doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +345,7 @@ function identifierCompletions(text: string, offset: number, explicit: boolean):
   for (const n of visibleNames(text, offset)) {
     if (n.name === word && n.start === s) continue; // the name being declared right here
     seen.add(n.name);
-    out.push({ label: n.name, kind: n.kind === 'function' ? 'function' : 'variable', detail: n.signature, documentation: n.doc, range, sortText: `0_${n.name}`, ...(n.kind === 'function' ? { insertText: `${n.name}($1)`, snippet: true, signatureHelp: true } : {}) });
+    out.push({ label: n.name, kind: n.kind === 'function' ? 'function' : 'variable', detail: n.signature, documentation: ownDocMarkdown(n.doc), range, sortText: `0_${n.name}`, ...(n.kind === 'function' ? { insertText: `${n.name}($1)`, snippet: true, signatureHelp: true } : {}) });
   }
   for (const [name, g] of Object.entries(api.globals)) {
     if (g.hidden || seen.has(name)) continue;
