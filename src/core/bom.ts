@@ -1,7 +1,7 @@
 // A leading byte order mark: Nucleus (.NET's File.ReadAllLines, UTF-8) drops it, so the core does too, once, at its
 // entry points (lint, completion; format keeps it in place itself), with offsets still counted in the text as given.
 
-export const BOM = '﻿';
+export const BOM = '\uFEFF';
 
 /** A copy of `v` with every numeric `start`, `end` and `offset` moved by `n` (results of the core features). */
 export function shiftOffsets<T>(v: T, n: number): T {

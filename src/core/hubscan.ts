@@ -39,7 +39,7 @@ export function hubScan(text: string): HubScan {
   const ends = text.match(/\r\n|\n|\r/g) ?? [];
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    const line = i === 0 && raw.startsWith('﻿') ? raw.slice(1) : raw; // ReadAllLines drops the BOM
+    const line = i === 0 && raw.startsWith('\uFEFF') ? raw.slice(1) : raw; // ReadAllLines drops the BOM
     const lower = line.toLowerCase();
     const key = lower.startsWith('game.executablename') ? 'ExecutableName' : lower.startsWith('game.gamename') ? 'GameName' : null;
     if (key) {
