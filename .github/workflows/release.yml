@@ -51,6 +51,8 @@ jobs:
       - name: Package
         run: npx vsce package --no-dependencies -o "splitscreenme-vscode-${{ steps.version.outputs.tag }}.vsix"
       - name: Build ncdev.exe (standalone, with the Notepad++ plugin) and test the Linux build of it
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix osslsigncode >/dev/null
           sh npp-plugin/build.sh
@@ -59,7 +61,8 @@ jobs:
           grep ' ncdev.exe$' dist-sea/SHA256SUMS.txt > SHA256SUMS.txt
           cp dist-sea/ncdev.exe ncdev.exe
           (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
-          sha256sum NcDev.zip NcDev-x86.zip > plugin-sha256.txt
+          # The Plugins Admin entries (nppPluginList); stops the release if a DLL's version or a zip is wrong.
+          node scripts/npp-plugin-list.mjs --tag "$TAG" > npp-plugin-list.txt
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,7 +98,12 @@ jobs:
             echo
             echo "The intro page's download link and the extension's update note pick up the new version by themselves; ncdev update and the Notepad++ plugin see the new ncdev.exe."
             echo
-            echo "Notepad++ plugin for Plugins Admin (nppPluginList, when it changed): \`$(cat plugin-sha256.txt)\`"
+            echo "<details><summary>Notepad++ Plugins Admin entries (for a pull request to notepad-plus-plus/nppPluginList; not listed automatically)</summary>"
+            echo
+            echo '```json'
+            cat npp-plugin-list.txt
+            echo '```'
+            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: What went wrong
         if: failure()

@@ -38,6 +38,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **The Notepad++ plugin says its version.** `NcDev.dll` now carries its version and name (Properties › Details in Windows, and what Notepad++'s Plugins Admin reads), ready for a listing there.
 - **Try it never freezes the editor.** It runs in a background thread: a handler stuck in an endless loop is stopped, a new edit cancels the old run, and Test all shows progress and can be cancelled. The same goes for `ncdev lsp`, `ncdev mcp` and the debugger.
 - **Notepad++ stays responsive while ncdev works.** Hub search and download, Install, Package, Test, Update and the API reference run in the background with a timer in the status bar, and a tool that hangs is stopped.
 - **Lighter on hub.splitscreen.me, and it knows who asks.** Requests at the same time are shared, at most two downloads run at once, retries back off on errors, and when the Hub is down the last list is used for a while. Every request names these devtools, which tool sent it and why (e.g. `vscode-extension hub-browse`), and nothing about you.

@@ -5,6 +5,13 @@
   "version": "0.6.0",
   "publisher": "splitscreenme",
   "license": "MIT",
+  "preview": true,
+  "pricing": "Free",
+  "homepage": "https://github.com/Snailedlt/splitscreenme-vscode",
+  "bugs": {
+    "url": "https://github.com/Snailedlt/splitscreenme-vscode/issues"
+  },
+  "qna": "https://github.com/Snailedlt/splitscreenme-vscode/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/Snailedlt/splitscreenme-vscode"

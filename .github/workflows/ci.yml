@@ -38,6 +38,10 @@ jobs:
       - run: npm ci
       - run: sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix >/dev/null
       - run: npm run build && sh npp-plugin/build.sh
+      - name: The plugin is ready for Notepad++'s Plugins Admin (DLL versions, zips)
+        run: |
+          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
+          node scripts/npp-plugin-list.mjs
       - uses: actions/cache@v4
         with:
           path: .sea-cache
