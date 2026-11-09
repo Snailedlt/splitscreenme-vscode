@@ -267,6 +267,10 @@ function completionsAtRaw(text: string, offset: number, opts: FeatureOptions = {
     while (end < text.length && !/["'\n]/.test(text[end])) end++;
     return o.values.map((v, i) => ({ label: v, kind: 'value' as const, detail: o.name ?? o.key, range: { start: offset - cmp.partial.length, end }, sortText: String(i).padStart(3, '0'), preselect: v === o.default }));
   }
+  // Inside a comment or any other string: nothing (help on request; `// this sets Game.` isn't code). Not even on
+  // Ctrl+Space: editors send "invoked" for every typed letter too. File names in the game folder lists come from
+  // their own providers (gamefolders.ts, lsp.ts).
+  if (codeStateAt(text, offset) !== 'code') return undefined;
   // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
   const list = blockedListAt(text, offset);
   if (list && !blockedItemAt(text, offset)) {

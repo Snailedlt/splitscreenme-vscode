@@ -215,3 +215,17 @@ test('Open in the Browser Workbench: the share link decodes to the handler, as t
   assert.equal(big.withHandler, false);
   assert.equal(big.url, 'https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode');
 });
+
+test('completion: nothing in comments or strings, but the deliberate string suggestions stay', () => {
+  const c = (src: string, explicit = false) => completionsAt(src.replace('|', ''), src.indexOf('|'), { explicit });
+  assert.equal(c('// this sets Game.|'), undefined, 'a line comment');
+  assert.equal(c('// this sets Game.|', true), undefined, 'a line comment, Ctrl+Space');
+  assert.equal(c('/* Game.| */\nGame.GUID = "x";'), undefined, 'a block comment');
+  assert.equal(c('var s = "Game.|";'), undefined, 'a string');
+  assert.equal(c("var s = 'Context.Op|';", true), undefined, 'a string, Ctrl+Space');
+  assert.ok(c('Game.|')!.length > 50, 'code still gets members');
+  assert.ok(c('// note\nGame.|')!.length > 50, 'after a comment');
+  const opts = 'Game.AddOption("Mode", "", "mode", ["Easy", "Hard"]);\n';
+  assert.deepEqual(c(opts + 'if (Context.Options["|"]) {}')!.map((x) => x.label), ['mode'], 'option keys');
+  assert.deepEqual(c(opts + 'if (Context.Options["mode"] == "|') !.map((x) => x.label), ['Easy', 'Hard'], 'option choices');
+});
