@@ -293,7 +293,7 @@ node dist/cli.js path/to/handlers   # or `ncdev` / `nucleus-lint` once the packa
 
 ## Other editors
 
-`ncdev lsp` is a Language Server with the same features (problems and quick fixes, hover, completion with your own names and snippets, signature help, go to definition, rename, outline, Format Document, window-message hints, Try it, and *Package*, *Install*, *New handler* and *Test in Nucleus* as code actions and commands), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client, and `ncdev dap` brings the debugger. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
+Most people are best served by **VS Code**, **[Notepad++](#notepad)** or the **[browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md)**: they're set up in a few clicks and tested before every release. If you already live in another editor, read on.
 
 ### Notepad++
 
@@ -321,6 +321,64 @@ This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALA
 - A **Run › Nucleus: check this handler** entry runs `ncdev lint` on the open file in a console.
 
 `ncdev update` keeps the tool current (the plugin's menu says when there's a new one). `ncdev setup notepad++ --check` says what's installed and `--remove` takes it all out again. Without the standalone `ncdev` (e.g. `node nucleus.js setup notepad++`), the setup adds the Nucleus names and call tips to Notepad++'s own JavaScript suggestions instead (no plugin).
+
+### Your own editor (for experienced developers)
+
+`ncdev lsp` is a Language Server with the same features: problems and quick fixes, hover, completion with your own names and snippets, signature help, go to definition, rename, outline, Format Document, window-message hints, Try it, and *Package*, *Install*, *New handler* and *Test in Nucleus* as code actions and commands. `ncdev dap` brings the debugger. Any editor with an LSP client can use it; most need only a few lines of config.
+
+1. **Get the server.** Windows: `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) (no Node needed; `ncdev update` keeps it current). Anywhere with Node.js 18+: `nucleus.js` from the same release.
+2. **Point your editor's LSP client at it** for JavaScript files, over stdio: `ncdev lsp`, or `node /path/to/nucleus.js lsp`. It only answers for handler files, so your usual JavaScript server keeps working beside it.
+3. **Open a handler.** Problems should show within a second.
+
+| Editor | Setup | Tested |
+| --- | --- | --- |
+| Neovim | 5 lines of Lua ([below](#neovim)) | ✅ (0.9; the 0.11 config is from its docs) |
+| Helix | 6 lines in `languages.toml` ([below](#helix)) | not yet |
+| Sublime Text | the [LSP](https://packagecontrol.io/packages/LSP) package + one client entry ([PORTING.md](PORTING.md#sublime-text-lsp-package-preferences--package-settings--lsp--settings)) | not yet |
+| Emacs 29+ | one `eglot-server-programs` line ([PORTING.md](PORTING.md#emacs-eglot-built-in-since-emacs-29)) | not yet |
+| Kate | one entry in LSP Client settings ([PORTING.md](PORTING.md#kate-settings--configure-kate--lsp-client--user-server-settings)) | not yet |
+| JetBrains IDEs | the [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin, a server added in Settings ([PORTING.md](PORTING.md#jetbrains-ides-lsp4ij)) | not yet |
+| Zed | needs a small Zed extension first ([PORTING.md](PORTING.md#zed-settingsjson)) | not yet |
+
+Tried one that says *not yet*? A line in the [feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml) (it worked, or what didn't) helps the next person.
+
+#### Neovim
+
+```lua
+vim.lsp.config('nucleus', {
+  cmd = { 'ncdev', 'lsp' }, -- or { 'node', '/path/to/nucleus.js', 'lsp' }
+  filetypes = { 'javascript' },
+  root_markers = { 'handlers', '.git' },
+})
+vim.lsp.enable('nucleus')
+```
+
+Before Neovim 0.11:
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'javascript',
+  callback = function()
+    vim.lsp.start({ name = 'nucleus', cmd = { 'ncdev', 'lsp' }, root_dir = vim.fn.getcwd() })
+  end,
+})
+```
+
+#### Helix
+
+In `languages.toml`:
+
+```toml
+[language-server.nucleus]
+command = "ncdev"  # or command = "node", args = ["/path/to/nucleus.js", "lsp"]
+args = ["lsp"]
+
+[[language]]
+name = "javascript"
+language-servers = ["typescript-language-server", "nucleus"]
+```
+
+Settings (which checks to show, the format style, your Nucleus folder), Fix all, Try it and the debugger for each editor are in [PORTING.md](PORTING.md), which also explains how the code is split, for anyone (or any AI agent) building a proper extension for their editor.
 
 ## Development
 

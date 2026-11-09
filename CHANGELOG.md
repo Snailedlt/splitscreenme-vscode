@@ -39,6 +39,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **Set it up in your own editor.** The README has a new section for experienced developers: how to point Neovim, Helix, Sublime Text, Emacs, Kate, JetBrains IDEs or Zed at `ncdev lsp`, how much setup each takes, and which ones we've tested.
 - **Neater code in hovers and docs.** Examples and long signatures are laid out the way prettier would: one parameter, list item or argument per line when they don't fit, a last list hugged by its call, long `+` chains broken after `=`. Short code stays on one line, and what the code does never changes.
 - **JavaScript's own methods in suggestions.** After a string (`Context.StartArguments.`), a list, `Math.` or `JSON.`, suggestions, hover and parameter hints cover JavaScript's built-in methods, only the ones Nucleus's engine has (`replace`, `split`, `indexOf`, `Math.floor`…), with a link to their docs. A misspelled `Math` method is flagged.
 - **Names Nucleus itself gets wrong.** Nucleus misspells two Proto Input options (`WindowActvateAppFilter`, `TranslateXAccelration`), and its readme and Handlers Tool give a few names that don't exist (`Usex360ce`, `IgnoreWindowBordercheck`…). Writing the correct spelling, or the readme's, now explains why it does nothing and offers the name that works.
