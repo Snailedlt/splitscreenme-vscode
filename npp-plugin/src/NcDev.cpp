@@ -1226,9 +1226,19 @@ static void onSelected(HWND h, const char* label) {
 static void onItemHighlighted(HWND, const char* label) {
   auto it = std::find_if(items.begin(), items.end(), [&](const Item& i) { return i.label == label; });
   if (!ourList || it == items.end()) return;
-  std::string doc = plain(it->doc, 1);
-  size_t nl = doc.find('\n');
-  if (nl != std::string::npos) doc = doc.substr(0, nl);
+  // The first line of the docs that says something new (the docs start with the signature, already in detail).
+  std::string all = plain(it->doc, 6), doc;
+  for (size_t i = 0; i <= all.size();) {
+    size_t j = all.find('\n', i);
+    if (j == std::string::npos) j = all.size();
+    std::string line = all.substr(i, j - i);
+    while (!line.empty() && line[0] == ' ') line.erase(0, 1);
+    if (!line.empty() && line != it->detail && line != it->label) {
+      doc = line;
+      break;
+    }
+    i = j + 1;
+  }
   std::string text = it->detail.empty() ? doc : doc.empty() ? it->detail : it->detail + "  —  " + doc;
   if (!text.empty()) status(wide(text));
 }
@@ -2365,6 +2375,8 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* n) {
           d->dirty = true;
           SetTimer(msgWnd, 1, 300, nullptr);
         }
+        // A hover describes the text as it was (a quick fix just changed it).
+        if (tip == TIP_HOVER) sci(from, SCI_CALLTIPCANCEL), tip = TIP_NONE;
       }
       return;
     case SCN_UPDATEUI: {
