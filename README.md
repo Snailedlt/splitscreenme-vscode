@@ -330,17 +330,17 @@ This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALA
 2. **Point your editor's LSP client at it** for JavaScript files, over stdio: `ncdev lsp`, or `node /path/to/nucleus.js lsp`. It only answers for handler files, so your usual JavaScript server keeps working beside it.
 3. **Open a handler.** Problems should show within a second.
 
-| Editor | Setup | Tested |
-| --- | --- | --- |
-| Neovim | 5 lines of Lua ([below](#neovim)) | ✅ (0.9; the 0.11 config is from its docs) |
-| Helix | 6 lines in `languages.toml` ([below](#helix)) | not yet |
-| Sublime Text | the [LSP](https://packagecontrol.io/packages/LSP) package + one client entry ([PORTING.md](PORTING.md#sublime-text-lsp-package-preferences--package-settings--lsp--settings)) | not yet |
-| Emacs 29+ | one `eglot-server-programs` line ([PORTING.md](PORTING.md#emacs-eglot-built-in-since-emacs-29)) | not yet |
-| Kate | one entry in LSP Client settings ([PORTING.md](PORTING.md#kate-settings--configure-kate--lsp-client--user-server-settings)) | not yet |
-| JetBrains IDEs | the [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin, a server added in Settings ([PORTING.md](PORTING.md#jetbrains-ides-lsp4ij)) | not yet |
-| Zed | needs a small Zed extension first ([PORTING.md](PORTING.md#zed-settingsjson)) | not yet |
+| Editor | Setup | Tested by people | Tested by AI |
+| --- | --- | --- | --- |
+| Neovim | 5 lines of Lua ([below](#neovim)) | not yet | ✅ Neovim 0.9 (the 0.11 config is from its docs) |
+| Helix | 6 lines in `languages.toml` ([below](#helix)) | not yet | not yet |
+| Sublime Text | the [LSP](https://packagecontrol.io/packages/LSP) package + one client entry ([PORTING.md](PORTING.md#sublime-text-lsp-package-preferences--package-settings--lsp--settings)) | not yet | not yet |
+| Emacs 29+ | one `eglot-server-programs` line ([PORTING.md](PORTING.md#emacs-eglot-built-in-since-emacs-29)) | not yet | ✅ Emacs 29.3 (eglot) |
+| Kate | one entry in LSP Client settings ([PORTING.md](PORTING.md#kate-settings--configure-kate--lsp-client--user-server-settings)) | not yet | not yet |
+| JetBrains IDEs | the [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin, a server added in Settings ([PORTING.md](PORTING.md#jetbrains-ides-lsp4ij)) | not yet | not yet |
+| Zed | needs a small Zed extension first ([PORTING.md](PORTING.md#zed-settingsjson)) | not yet | not yet |
 
-Tried one that says *not yet*? A line in the [feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml) (it worked, or what didn't) helps the next person.
+*Tested by AI* means an AI agent ran the editor with this setup and checked that problems, hovers and quick fixes come through; *tested by people* means a handler author used it for real. Tried one? A line in the [feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml) (it worked, or what didn't) helps the next person.
 
 #### Neovim
 
