@@ -134,6 +134,12 @@ test('valuePicks: true/false, enum and number values, wrong types, computed valu
   assert.equal(at?.name, 'SymlinkGame');
   assert.equal(src.slice(at!.start, at!.end), 'false');
   assert.equal(valuePickAt(src, 3), undefined, 'not on the option name');
+  // A long handler: the cursor near the end must not re-read the text once per assignment above it.
+  const long = 'var x = 1;\n'.repeat(30000) + 'Game.SymlinkGame = true;\n';
+  const t = Date.now();
+  assert.equal(valuePickAt(long, long.lastIndexOf('true') + 1)?.name, 'SymlinkGame');
+  assert.equal(valuePickAt(long, long.length - 40), undefined);
+  assert.ok(Date.now() - t < 1500, `valuePickAt on 30000 lines took ${Date.now() - t} ms`);
 });
 
 test('documentSymbols: settings by object, callbacks with what they set, own names; code that does not parse', async () => {

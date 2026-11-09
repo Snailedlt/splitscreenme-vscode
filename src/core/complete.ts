@@ -190,7 +190,7 @@ export function memberContextAt(text: string, offset: number): MemberContext | u
 }
 
 /** For hover: resolve the identifier at `offset` (with its chain). */
-export function resolveAt(text: string, offset: number): { resolved: Resolved; start: number; end: number } | undefined {
+export function resolveAt(text: string, offset: number, aliases?: Map<string, Chain | null>): { resolved: Resolved; start: number; end: number } | undefined {
   let s = offset;
   let e = offset;
   while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
@@ -202,7 +202,7 @@ export function resolveAt(text: string, offset: number): { resolved: Resolved; s
   let p = s;
   while (p > 0 && /\s/.test(text[p - 1])) p--;
   if (chain.length === 1 && text[p - 1] === '.') return undefined;
-  const resolved = resolveChain(chain, findAliases(text));
+  const resolved = resolveChain(chain, aliases ?? findAliases(text));
   return resolved ? { resolved, start: s, end: e } : undefined;
 }
 
@@ -320,28 +320,37 @@ const literalKind = (v: string): 'string' | 'number' | 'boolean' | 'enum' | unde
 /** Every pickable value in the text: assignments whose target is an option with true/false, enum or number values,
  *  and whose value is a plain literal (anything computed is left alone). */
 export function valuePicks(text: string): ValuePick[] {
+  return picksIn(text, 0);
+}
+
+/** The picks whose assignment starts at or after `from`. The text's aliases are read once, not once per assignment:
+ *  that made moving the cursor in a long handler quadratic (30000 assignments froze the editor). */
+function picksIn(text: string, from: number): ValuePick[] {
   const out: ValuePick[] = [];
+  let aliases: Map<string, Chain | null> | undefined;
   const re = /([\w$.\]\[]+)[ \t]*=[ \t]*([^;\n=]+?)[ \t]*(?=;|\n|$|\/\/)/g;
+  re.lastIndex = from;
   for (let m; (m = re.exec(text)); ) {
     const before = text[m.index - 1];
     if (before && /[\w$.=!<>]/.test(before)) continue;
-    const pick = pickFor(text, m.index + m[1].length, m.index + m[0].length - m[2].length, m[2]);
+    if (!literalKind(m[2])) continue;
+    const pick = pickFor(text, m.index + m[1].length, m.index + m[0].length - m[2].length, m[2], (aliases ??= findAliases(text)));
     if (pick) out.push(pick);
   }
   return out;
 }
 
-/** The pickable value at (or touching) an offset, if any. */
+/** The pickable value at (or touching) an offset, if any: only the cursor's line is searched. */
 export function valuePickAt(text: string, offset: number): ValuePick | undefined {
   const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
   const lineEnd = text.indexOf('\n', offset) < 0 ? text.length : text.indexOf('\n', offset);
-  return valuePicks(text.slice(0, lineEnd)).find((p) => p.start >= lineStart && offset >= p.start && offset <= p.end);
+  return picksIn(text.slice(0, lineEnd), lineStart).find((p) => offset >= p.start && offset <= p.end);
 }
 
-function pickFor(text: string, targetEnd: number, start: number, value: string): ValuePick | undefined {
+function pickFor(text: string, targetEnd: number, start: number, value: string, aliases?: Map<string, Chain | null>): ValuePick | undefined {
   const lit = literalKind(value);
   if (!lit) return undefined;
-  const r = resolveAt(text, targetEnd);
+  const r = resolveAt(text, targetEnd, aliases);
   if (!r || r.resolved.kind !== 'member') return undefined;
   const { owner, name, member } = r.resolved;
   if (member.kind === 'method' || member.readonly) return undefined;
