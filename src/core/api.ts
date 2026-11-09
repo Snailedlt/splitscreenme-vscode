@@ -2,6 +2,7 @@
 import raw from '../../data/nucleus-api.json';
 import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS, JS_OBJECTS, isJsBuiltin, mdnUrl } from './jsbuiltins';
 import { DOTNET_OBJECTS } from './dotnet';
+import { prettyCode, prettySignature } from './pretty';
 
 export type SimpleType =
   | 'string'
@@ -373,7 +374,8 @@ export const docReviewUrl = (path: string) =>
 
 export function memberMarkdown(owner: string, name: string, m: Member): string {
   const parts: string[] = [];
-  parts.push('```ts\n' + memberSignature(owner, name, m).join('\n') + '\n```');
+  // Each overload laid out as prettier would (one parameter per line when it's long), the example too.
+  parts.push('```ts\n' + memberSignature(owner, name, m).map((x) => prettySignature(x)).join('\n') + '\n```');
   if (m.deprecated) parts.push(`**${m.deprecated}**`);
   if (m.doc) parts.push(m.doc);
   if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_${m.docCheckedBy ? '' : ` [Is it wrong? Tell us](${docReviewUrl(`${ownerLabel(owner)}.${name}`)})`}`);
@@ -386,7 +388,7 @@ export function memberMarkdown(owner: string, name: string, m: Member): string {
   if (m.category) meta.push(`Category: ${m.category}`);
   if (m.required) meta.push('**Required**');
   if (meta.length) parts.push(meta.join(' · '));
-  if (m.example) parts.push('```js\n' + m.example + '\n```');
+  if (m.example) parts.push('```js\n' + prettyCode(m.example) + '\n```');
   parts.push(isJsBuiltin(owner) ? `[MDN: ${owner ? `${owner}.` : ''}${name}](${mdnUrl(owner, name)})` : `[Handler API docs](${DOCS_URL})`);
   return parts.join('\n\n');
 }

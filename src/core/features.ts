@@ -15,6 +15,7 @@ import { innerCallFrame } from './complete';
 import { newHandlerSnippet, SNIPPETS } from './snippets';
 import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
 import { lookup } from './lookup';
+import { prettySignature } from './pretty';
 import { WORKBENCH_URL } from './sharelink';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
@@ -177,7 +178,7 @@ function ownHover(text: string, offset: number): HoverInfo | undefined {
   const line = text.slice(0, n.start).split('\n').length;
   const returns = n.kind === 'function' ? ownReturnTypes(text).get(n.name) : undefined;
   const doc = ownDocMarkdown(n.doc);
-  return { markdown: '```js\n' + n.signature + (returns ? `: ${returns}` : '') + '\n```' + (doc ? '\n\n' + doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
+  return { markdown: '```js\n' + prettySignature(n.signature + (returns ? `: ${returns}` : '')) + '\n```' + (doc ? '\n\n' + doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
 }
 
 // ---------------------------------------------------------------------------

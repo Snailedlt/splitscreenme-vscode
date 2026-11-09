@@ -61,7 +61,7 @@ test('Nucleus Docs panel: path, back, search and workbench links; no scripts', (
   assert.match(html, /\?ref=vscode#docs-Context\.ModifySaveFile/);
   assert.match(fallbackMarkdown('## T\n\n- [`A`](u)\n\n```js\nx < 1\n```'), /<h2>T<\/h2><ul><li><a href="u"><code>A<\/code><\/a><\/li><\/ul><pre><code><span class="tk-variable">x<\/span> &lt; <span class="tk-number">1<\/span><\/code><\/pre>/);
   // Every code block is coloured: the signature on top of a name's page included.
-  assert.match(html, /<pre><code><span class="tk-variable">Context<\/span>\.<span class="tk-function">ModifySaveFile<\/span>\(<span class="tk-variable">installSavePath<\/span>: <span class="tk-type">string<\/span>/);
+  assert.match(html, /<pre><code><span class="tk-variable">Context<\/span>\.<span class="tk-function">ModifySaveFile<\/span>\(\n  <span class="tk-variable">installSavePath<\/span>: <span class="tk-type">string<\/span>/);
 });
 
 test('Nucleus Docs panel: code colours (keywords, strings, numbers, comments, types, calls, members)', () => {
