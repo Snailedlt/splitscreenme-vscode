@@ -38,6 +38,29 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 
 The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `GameHookInfo`, `GenericContext`, `ProtoInputOptions`, …) and the [splitscreen.me docs](https://www.splitscreen.me/docs/handler-api), so it reflects what Nucleus really accepts rather than a hand-maintained list.
 
+## Every editor, side by side
+
+One engine runs underneath all of them, so the checks, suggestions and docs are the same; what differs is what each editor can show.
+
+| | VS Code | [Notepad++](#notepad) | [Browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md) | [Other editors (LSP)](#your-own-editor-for-experienced-developers) |
+|---|:-:|:-:|:-:|:-:|
+| Problems as you type, with the why | ✅ | ✅ | ✅ | ✅ |
+| Quick fixes and Fix all | ✅ | ✅ Alt+Enter | ✅ | ✅ |
+| Suggestions, snippets, the New Handler template | ✅ | ✅ | ✅ | ✅ |
+| Hover docs and parameter hints | ✅ | ✅ | ✅ | ✅ |
+| Docs for every option and function | ✅ panel | ✅ API reference | ✅ Docs tab | ✅ links to the workbench |
+| Format (never moves a line) | ✅ | ✅ | ✅ | ✅ |
+| Go to definition, references, rename | ✅ | ✅ | ✅ | ✅ |
+| Outline | ✅ | ✅ panel | — | ✅ |
+| Try it (what Nucleus does per player) | ✅ | ✅ | ✅ | ✅ command |
+| Debugger (step through, per player) | ✅ | — | ✅ | ✅ `ncdev dap` |
+| Visual editor (Form, Blocks, Lines) | — | — | ✅ | — |
+| Checks against the game's folder | ✅ | ✅ | ✅ | ✅ |
+| Browse and open Hub handlers | ✅ | ✅ | ✅ | `ncdev hub` |
+| Package as `.nc` for the Hub | ✅ | ✅ | ✅ | ✅ command |
+| Install and Test in Nucleus Co-op (Windows) | ✅ | ✅ | — (a browser can't) | ✅ command |
+| Install needed | the extension | `ncdev setup notepad++` | nothing | `ncdev` |
+
 ## Getting started
 
 1. Install the extension. Until it is on the Marketplace, download the `.vsix` from the [releases](https://github.com/Snailedlt/splitscreenme-vscode/releases) (or run `npm ci && npm run package`), then **Extensions: Install from VSIX…**. Testing it? See [TESTING.md](TESTING.md).
