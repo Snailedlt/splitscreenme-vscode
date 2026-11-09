@@ -3,6 +3,7 @@
 import { toGuid } from './templates';
 import { hubScan } from './hubscan';
 import { withoutBom } from './bom';
+import { eolOf, withEol } from './eol';
 import { blockTarget, hex, wmName } from './wm';
 import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
@@ -258,7 +259,11 @@ export const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'r
 
 export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   // Nucleus drops a leading BOM (core/bom.ts); so does ESLint, whose positions would be one off.
-  return withoutBom(text, 0, (t) => lintText(t, options));
+  const out = withoutBom(text, 0, (t) => lintText(t, options));
+  // Fixes are written with \n: in a CRLF file they insert CRLF, so no line ends up mixed.
+  const eol = eolOf(text);
+  if (eol === '\n') return out;
+  return out.map((d) => (d.fixes ? { ...d, fixes: d.fixes.map((f) => ({ ...f, edits: f.edits.map((e) => ({ ...e, text: withEol(e.text, eol) })) })) } : d));
 }
 function lintText(text: string, options: LintOptions): Diagnostic[] {
   const out: Diagnostic[] = [];

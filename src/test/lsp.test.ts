@@ -364,3 +364,27 @@ test('lsp: Package, Install and New handler, as commands and source actions', as
   assert.ok(fsx.existsSync(path.join(nucleus, 'handlers', 'My Game.js')));
   notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: '' } } });
 });
+
+test('lsp: quick fixes in a CRLF document insert CRLF (no mixed line endings)', async () => {
+  const uri = 'file:///tmp/nucleus-lsp-test/handlers/Crlf.js';
+  const text = 'Game.GameName = "Crlf";\r\nGame.ExecutableName = "a.exe";\r\nGame.Hook.ForceFocuss = true;\r\nGame.KillMutex = "M";\r\n';
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const { params } = await diagnosticsFor(uri, 1);
+  assert.ok(params.diagnostics.some((d: any) => d.code === 'missing-required'), 'Game.GUID missing');
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const off = (p: { line: number; character: number }) => starts[p.line] + p.character;
+  let applied = 0;
+  for (const d of params.diagnostics) {
+    const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: d.range, context: { diagnostics: [d] } })).result;
+    for (const a of actions) {
+      const edits = [...(a.edit?.changes?.[uri] ?? [])].sort((x: any, y: any) => off(y.range.start) - off(x.range.start));
+      let t = text;
+      for (const e of edits) t = t.slice(0, off(e.range.start)) + e.newText + t.slice(off(e.range.end));
+      assert.ok(!/(?<!\r)\n|\r(?!\n)/.test(t), `${a.title}: ${JSON.stringify(t)}`);
+      applied++;
+    }
+  }
+  assert.ok(applied >= 4, `${applied} quick fixes tried`);
+  notify('textDocument/didClose', { textDocument: { uri } });
+});

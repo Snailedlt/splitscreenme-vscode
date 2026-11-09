@@ -18,6 +18,7 @@ import { lookup } from './lookup';
 import { prettySignature } from './pretty';
 import { WORKBENCH_URL } from './sharelink';
 import { BOM, withoutBom } from './bom';
+import { eolOf } from './eol';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
  *  variables: `own: false` leaves those out, so they don't show twice. */
@@ -577,6 +578,7 @@ export function fixAllCodeAction(text: string, rules?: RuleOverrides): CodeActio
  *  problem is auto-fixable) and "Disable <rule> for this line". */
 export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: RuleOverrides): CodeActionEntry[] {
   const actions: CodeActionEntry[] = [];
+  const eol = eolOf(text);
   for (const diag of diagnostics) {
     for (const fix of diag.fixes ?? []) actions.push({ title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: fix.preferred, diagnostic: diag });
     if (!actions.some((a) => a.kind === 'source.fixAll') && diag.fixes?.some((f) => f.preferred)) {
@@ -586,7 +588,7 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
     if (diag.rule in RULES && diag.rule !== 'syntax-error') {
       const start = Math.max(lineStart(text, diag.start), text.startsWith(BOM) ? 1 : 0); // after a BOM
       const indent = text.slice(start).match(/^[ \t]*/)![0];
-      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}\n` }], diagnostic: diag });
+      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}${eol}` }], diagnostic: diag });
     }
   }
   return actions;
