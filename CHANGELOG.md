@@ -47,6 +47,15 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **Names Nucleus itself gets wrong.** Nucleus misspells two Proto Input options (`WindowActvateAppFilter`, `TranslateXAccelration`), and its readme and Handlers Tool give a few names that don't exist (`Usex360ce`, `IgnoreWindowBordercheck`…). Writing the correct spelling, or the readme's, now explains why it does nothing and offers the name that works.
 - **A fix for an exe that isn't there.** With the game's folder linked, a wrong `Game.ExecutableName` now offers the one exe it most likely means (e.g. Unreal's `…-Shipping.exe`), not only for near spellings.
 
+
+### 🐛 Fixed
+
+- **`ncdev lint` no longer stops on a wrong value type.** A value of the wrong type (`Game.MaxPlayers = "4"`) made the command line crash, and VS Code showed it as an error instead of a warning.
+- **Browse the Hub can't copy over your workspace.** A Hub handler whose game name was `.` or `..` could make *Copy into Workspace* write over the workspace folder (or the one above it).
+- **Try it runs can't affect each other.** A handler that changed JavaScript's own functions could change what later Try it runs showed, until VS Code restarted.
+- **Package and Install follow your rule settings.** A rule you turned down or off no longer blocks them.
+- **Examples in the docs mean what they say.** Laying out an example could drop parentheses it needed (`(a + b) * c`); such examples now stay as written.
+- **The rule link in each problem works.** It pointed at an empty repository.
 ---
 
 ## 0.5.0 (beta) · 2026-11-08
