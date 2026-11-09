@@ -67,7 +67,8 @@ One engine runs underneath all of them, so the checks, suggestions and docs are 
 | Checks against the game's folder | ✅ | ✅ | ✅ | ✅ |
 | Browse and open Hub handlers | ✅ | ✅ | ✅ | `ncdev hub` |
 | Package as `.nc` for the Hub | ✅ | ✅ | ✅ | ✅ command |
-| Install and Test in Nucleus Co-op (Windows) | ✅ | ✅ | — (a browser can't) | ✅ command |
+| Install into Nucleus Co-op (Windows) | ✅ | ✅ | ✅ Chrome, Edge | ✅ command |
+| Test in Nucleus Co-op (starts it) | ✅ | ✅ | — (a browser can't) | ✅ command |
 | Install needed | the extension | `ncdev setup notepad++` | nothing | `ncdev` |
 
 ## Getting started
