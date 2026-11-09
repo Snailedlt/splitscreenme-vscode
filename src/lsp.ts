@@ -20,7 +20,9 @@ import { folderAt } from './gamefolder-node';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { publishedNow } from './published';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { setHubTool } from './hubcache';
+import { pluginsFor } from './sandbox';
+import { simWorker, isCancelled } from './simworker';
 import { formatSimulation } from './simformat';
 import { buildPackage } from './core/pkg';
 import { installHandler } from './install';
@@ -134,6 +136,11 @@ export class Server {
   private nextId = 1;
   private roots: string[] = [];
   private canWatch = false;
+  private relativeWatch = false;
+  /** <Name>/ folders of the handlers seen so far: their files are watched for the package checks. */
+  private handlerDirs = new Set<string>();
+  private watching: { id: string; key: string } | undefined;
+  private watchTimer: NodeJS.Timeout | undefined;
   /** Package files that have problems published, per handler, so they can be cleared. */
   private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
@@ -189,6 +196,7 @@ export class Server {
       this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       return;
     }
+    this.watchFolderOf(pathOf(uri));
     const lines = linesOf(d);
     const diagnostics = this.lintDoc(d, closed ? undefined : () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
     // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
@@ -238,19 +246,37 @@ export class Server {
     );
   }
 
-  /** Handle one message; returns the response for requests (undefined for notifications). */
-  handle(msg: any): unknown | undefined {
+  /** Requests still being answered (Try it runs in the simulator's worker), by id, so $/cancelRequest can stop them. */
+  private running = new Map<string | number, AbortController>();
+  private current: AbortSignal | undefined; // the signal of the request being dispatched
+
+  /** Handle one message; returns the response for requests (undefined for notifications), or a promise of it
+   *  for the few requests answered off the main thread. */
+  handle(msg: any): unknown | Promise<unknown> | undefined {
     const { id, method, params } = msg ?? {};
     if (method === undefined) return undefined; // a response to one of our requests (applyEdit)
     const isRequest = id !== undefined && id !== null;
-    try {
-      const result = this.dispatch(method, params ?? {});
+    const failed = (e: any) => {
+      if (isCancelled(e)) return isRequest ? { jsonrpc: '2.0', id, error: { code: -32800, message: 'Request cancelled' } } : undefined;
+      this.log(`${method} failed: ${e?.stack ?? e}`);
+      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+    };
+    const answer = (result: unknown) => {
       if (!isRequest) return undefined;
       if (result === NOT_FOUND) return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
       return { jsonrpc: '2.0', id, result: result ?? null };
+    };
+    const ac = isRequest ? new AbortController() : undefined;
+    this.current = ac?.signal;
+    try {
+      const result = this.dispatch(method, params ?? {});
+      if (!(result instanceof Promise)) return answer(result);
+      this.running.set(id, ac!);
+      return result.then(answer, failed).finally(() => this.running.delete(id));
     } catch (e: any) {
-      this.log(`${method} failed: ${e?.stack ?? e}`);
-      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+      return failed(e);
+    } finally {
+      this.current = undefined;
     }
   }
 
@@ -268,8 +294,11 @@ export class Server {
         // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
         const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
         this.docsLink = (path: string) => workbenchDocsUrl(path, ref);
+        // Hub requests (the guid-changed check) name the server and the editor, not the person.
+        setHubTool(p.clientInfo?.name ? `ncdev-lsp/${ref}` : 'ncdev-lsp');
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
         this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
+        this.relativeWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.relativePatternSupport;
         return {
           capabilities: {
             positionEncoding: 'utf-16',
@@ -294,13 +323,15 @@ export class Server {
       }
       case 'initialized':
         // Every handler in the workspace, opened or not (like VS Code's Lint All Handlers), and on-disk changes.
-        if (this.canWatch) this.request('client/registerCapability', { registrations: [{ id: 'nucleus-files', method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers: [{ globPattern: '**/*' }] } }] });
+        this.updateWatchers(0);
         setTimeout(() => this.scanWorkspace(), 0);
         return undefined;
       case 'workspace/didChangeWatchedFiles':
         for (const c of p.changes ?? []) this.fileChanged(String(c.uri), c.type);
         return undefined;
       case '$/cancelRequest':
+        this.running.get(p.id)?.abort();
+        return undefined;
       case '$/setTrace':
         return undefined;
       case 'shutdown':
@@ -473,6 +504,39 @@ export class Server {
     return NOT_FOUND;
   }
 
+/** In a folder the workspace scan skips (node_modules, dot folders such as .git), relative to its workspace folder. */
+  private skipped(file: string): boolean {
+    const root = this.roots.find((r) => file.startsWith(r + path.sep));
+    return !!root && path.relative(root, file).split(/[\\/]/).slice(0, -1).some(skipName);
+  }
+
+  /** A handler's <Name>/ folder joins the watched ones. */
+  private watchFolderOf(file: string | undefined) {
+    if (!file || !this.canWatch || !/\.js$/i.test(file) || this.skipped(file)) return;
+    const dir = file.slice(0, -3);
+    if (this.handlerDirs.has(dir) || this.handlerDirs.size >= MAX_WATCHED_FOLDERS) return;
+    this.handlerDirs.add(dir);
+    this.updateWatchers();
+  }
+
+  /** What the client watches for us: handler files (`**\/*.js`) and the <Name>/ folders of known handlers, not
+   *  every file in the workspace (node_modules, .git and build output would flood the server). Re-registered,
+   *  at most every half second, when a handler folder is added. */
+  private updateWatchers(delay = 500) {
+    if (!this.canWatch) return;
+    clearTimeout(this.watchTimer);
+    this.watchTimer = setTimeout(() => {
+      const watchers = watchersFor([...this.handlerDirs].sort(), this.relativeWatch);
+      const key = JSON.stringify(watchers);
+      if (this.watching?.key === key || this.shutdown) return;
+      if (this.watching) this.request('client/unregisterCapability', { unregisterations: [{ id: this.watching.id, method: 'workspace/didChangeWatchedFiles' }] });
+      const id = `nucleus-files-${this.nextId}`;
+      this.request('client/registerCapability', { registrations: [{ id, method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers } }] });
+      this.watching = { id, key };
+    }, delay);
+    this.watchTimer.unref?.();
+  }
+
 /** Handlers in the workspace folders (skipping node_modules and dot folders), problems published for the closed ones. */
   private scanWorkspace() {
     if (!this.settings.lint.enable || !this.settings.lint.workspace) return;
@@ -487,7 +551,7 @@ export class Server {
       }
       for (const e of entries) {
         if (count >= 2000 || dirs > 3000 || this.shutdown) return; // a whole drive opened: stop early
-        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        if (skipName(e.name)) continue;
         const abs = path.join(dir, e.name);
         if (e.isDirectory()) {
           dirs++;
@@ -527,7 +591,7 @@ export class Server {
   /** A file changed on disk: re-check it if it's a closed handler, or the handler whose folder it is in. */
   private fileChanged(uri: string, type: number) {
     const file = pathOf(uri);
-    if (!file) return;
+    if (!file || this.skipped(file)) return;
     if (/\.js$/i.test(file) && !this.docs.has(uri)) {
       if (type === 3) this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       else this.fromDisk(uri);
@@ -629,8 +693,10 @@ export class Server {
         // keyboardPlayer: 1-based player, 'none' (or 0) for nobody, 'all' (or -1) for each player their own.
         const kb = a.keyboardPlayer === 'all' || a.keyboardPlayer === -1 ? EVERY_KEYBOARD : a.keyboardPlayer === 'none' || a.keyboardPlayer === 0 ? -1 : Math.min(Math.max(1, Number(a.keyboardPlayer ?? 1)), players) - 1;
         const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
-        const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
-        return formatSimulation(r, kb);
+        // In the simulator's worker: the server keeps answering (completion, hover) while it runs.
+        return simWorker()
+          .simulate(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined }, { signal: this.current })
+          .then((r) => formatSimulation(r, kb));
       }
       case COMMANDS.workbenchLink: {
         // The browser workbench with this handler open (a share link); `ref` says which editor asked.
@@ -708,6 +774,18 @@ export class Server {
 }
 const NOT_FOUND = Symbol('not found');
 
+/** Folders the workspace scan and the file watcher skip. */
+export const skipName = (name: string) => name.startsWith('.') || name === 'node_modules';
+const MAX_WATCHED_FOLDERS = 500;
+
+/** The file watchers to register: every .js file, and each handler's <Name>/ folder. */
+export function watchersFor(handlerDirs: string[], relative: boolean): { globPattern: string | { baseUri: string; pattern: string } }[] {
+  return [
+    { globPattern: '**/*.js' },
+    ...handlerDirs.map((dir) => ({ globPattern: relative ? { baseUri: pathToFileURL(dir).href, pattern: '**/*' } : `${dir.replace(/\\/g, '/')}/**/*` })),
+  ];
+}
+
 function toLspDiagnostic(l: Lines, d: LintDiagnostic) {
   return {
     range: l.range(d),
@@ -762,7 +840,8 @@ export function serve(input: NodeJS.ReadableStream = process.stdin, output: Node
         }
         for (const one of Array.isArray(msg) ? msg : [msg]) {
           const out = server.handle(one);
-          if (out) write(out);
+          if (out instanceof Promise) void out.then((o) => o && write(o));
+          else if (out) write(out);
           if (server.exited) return finish(0);
         }
       }

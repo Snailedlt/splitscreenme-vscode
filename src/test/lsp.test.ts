@@ -188,6 +188,24 @@ test('lsp: Try it returns the simulation text', async () => {
   assert.match(escape, /undefined\/undefined/);
 });
 
+test('lsp: a looping handler in Try it does not block the server, and can be cancelled', async () => {
+  const uri = URI.replace('Test', 'Loop');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { while (true) {} };\n' } });
+  const id = nextId; // the id request() is about to use
+  const looping = request('workspace/executeCommand', { command: 'nucleus.tryIt', arguments: [{ uri }] });
+  // Answered while the handler loops in the simulator's worker.
+  const t0 = Date.now();
+  const hover = await request('textDocument/hover', { textDocument: { uri }, position: { line: 0, character: 2 } });
+  assert.ok(hover.result, 'hover answered');
+  assert.ok(Date.now() - t0 < 1000, `hover took ${Date.now() - t0} ms`);
+  notify('$/cancelRequest', { id });
+  const r = await looping;
+  assert.equal(r.error?.code, -32800, JSON.stringify(r));
+  // And the next run works.
+  const ok = (await request('workspace/executeCommand', { command: 'nucleus.tryIt', arguments: [{ source: HEADER + 'Game.Play = function () { Context.StartArguments = "-ok"; };\n' }] })).result;
+  assert.match(ok, /-ok/);
+});
+
 test('lsp: only handlers get features', async () => {
   const uri = 'file:///tmp/nucleus-lsp-test/app.js';
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: 'var x = { Hook: 1 };\nGame.Hook.ForceFocuss = 1;\n' } });

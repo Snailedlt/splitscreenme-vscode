@@ -283,6 +283,8 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
 | `splitscreenme.showWhatsNew` | `true` | After an update, a short note with what's new. **Nucleus: What's New** opens the changelog any time. |
 
+**What the Hub sees.** The Hub's handler list comes from our daily copy on GitHub, checked at most once an hour; hub.splitscreen.me is asked only when that copy is missing or out of date, and each package is downloaded once per version. Every request says it comes from these devtools, which tool and which feature sent it (`User-Agent: SplitScreenMe-DevTools/0.6.0 (ncdev-cli; hub-search; +https://github.com/Snailedlt/splitscreenme-vscode)` and the same in `X-Requested-With`), and nothing else: no search text, file names, code, user or computer names.
+
 ## Try it
 
 **Nucleus: Try It** and `ncdev simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.

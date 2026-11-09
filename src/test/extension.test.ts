@@ -147,6 +147,10 @@ test('Try it panel: simulates the active handler, no scripts, settings via comma
   assert.match(panel.webview.html, /Player 4/);
   await run('splitscreenme.tryItSet', { keyboardPlayer: 7 }); // out of range: ignored
   assert.match(panel.webview.html, /all 4 players/);
+  // Test all: in the worker, with progress.
+  await run('splitscreenme.tryItTestAll');
+  assert.match(panel.webview.html, /All \d+ combinations work/);
+  assert.match(m.window.__progress.at(-1)!.message!, /^(\d+) of \1$/);
   m.window.activeTextEditor = undefined;
 });
 

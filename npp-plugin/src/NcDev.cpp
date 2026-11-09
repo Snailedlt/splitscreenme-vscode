@@ -18,6 +18,8 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <atomic>
+#include <memory>
 #include <deque>
 #include <functional>
 #include <map>
@@ -220,6 +222,17 @@ static std::string docText(HWND h) {
   if (cp != SC_CP_UTF8) s = utf8(wide(s, CP_ACP));
   return s;
 }
+/** Text from the server (UTF-8) in the document's own encoding: an ANSI document gets ANSI bytes, as docText()
+ *  converts the other way. */
+static std::string toDoc(HWND h, const std::string& text) {
+  if ((int)sci(h, SCI_GETCODEPAGE) == SC_CP_UTF8) return text;
+  std::wstring w = wide(text);
+  if (w.empty()) return "";
+  int n = WideCharToMultiByte(CP_ACP, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+  std::string out(n, '\0');
+  WideCharToMultiByte(CP_ACP, 0, w.c_str(), (int)w.size(), &out[0], n, nullptr, nullptr);
+  return out;
+}
 static Value lspPos(HWND h, sptr_t pos) {
   sptr_t line = sci(h, SCI_LINEFROMPOSITION, pos);
   sptr_t start = sci(h, SCI_POSITIONFROMLINE, line);
@@ -284,36 +297,89 @@ static std::wstring findTool() {
   return L"";
 }
 
-/** Runs the tool with arguments and returns what it prints (stdout and stderr). */
-static std::string runTool(const std::wstring& args, DWORD* exitCode = nullptr, DWORD timeoutMs = 120000) {
+/** The environment for ncdev: Notepad++'s own, plus NCDEV_CLIENT, so its Hub requests say they come from this
+ *  plugin (a tool id, nothing about the person). Only ncdev's processes get it, not Notepad++'s other children. */
+static std::vector<wchar_t> childEnv() {
+  std::vector<wchar_t> env;
+  wchar_t* block = GetEnvironmentStringsW();
+  for (wchar_t* p = block; p && *p; p += wcslen(p) + 1)
+    if (_wcsnicmp(p, L"NCDEV_CLIENT=", 13) != 0) env.insert(env.end(), p, p + wcslen(p) + 1);
+  if (block) FreeEnvironmentStringsW(block);
+  const wchar_t me[] = L"NCDEV_CLIENT=notepadpp-plugin";
+  env.insert(env.end(), me, me + wcslen(me) + 1);
+  env.push_back(0);
+  return env;
+}
+
+struct ToolResult {
+  std::string out;
+  DWORD code = 1;
+  bool started = false, timedOut = false, cancelled = false;
+};
+
+/** Runs the tool and collects what it prints (stdout and stderr), on the calling thread. Reads while it runs and
+ *  stops it (TerminateProcess) after `timeoutMs` or when `cancel` is set; never waits for the pipe to close, which
+ *  a program the tool starts (Nucleus Co-op, for Test) could keep open for ever. */
+static ToolResult execTool(const std::wstring& args, DWORD timeoutMs, const std::atomic<bool>* cancel = nullptr) {
+  ToolResult r;
   std::wstring tool = findTool();
-  if (tool.empty()) return "";
+  if (tool.empty()) return r;
   SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
   HANDLE rd, wr;
-  if (!CreatePipe(&rd, &wr, &sa, 0)) return "";
+  if (!CreatePipe(&rd, &wr, &sa, 0)) return r;
   SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+  HANDLE nulIn = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
   STARTUPINFOW si{sizeof si};
   si.dwFlags = STARTF_USESTDHANDLES;
   si.hStdOutput = wr;
   si.hStdError = wr;
-  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdInput = nulIn;
   PROCESS_INFORMATION pi{};
   std::wstring cmd = tool + L" " + args + (tool.rfind(L"cmd.exe", 0) == 0 ? L"\"" : L"");
-  std::string out;
-  if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-    CloseHandle(wr);
-    wr = nullptr;
+  std::vector<wchar_t> env = childEnv();
+  BOOL ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env.data(), nullptr, &si, &pi);
+  CloseHandle(wr);
+  if (nulIn != INVALID_HANDLE_VALUE) CloseHandle(nulIn);
+  if (ok) {
+    r.started = true;
+    ULONGLONG deadline = GetTickCount64() + timeoutMs;
     char buf[4096];
-    DWORD n;
-    while (ReadFile(rd, buf, sizeof buf, &n, nullptr) && n) out.append(buf, n);
-    WaitForSingleObject(pi.hProcess, timeoutMs);
-    if (exitCode) GetExitCodeProcess(pi.hProcess, exitCode);
+    auto drain = [&] {
+      DWORD avail = 0, n = 0;
+      while (PeekNamedPipe(rd, nullptr, 0, nullptr, &avail, nullptr) && avail && ReadFile(rd, buf, std::min<DWORD>(avail, sizeof buf), &n, nullptr) && n) r.out.append(buf, n);
+    };
+    for (;;) {
+      drain();
+      if (WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0) break;
+      if (cancel && *cancel) {
+        r.cancelled = true;
+        break;
+      }
+      if (GetTickCount64() >= deadline) {
+        r.timedOut = true;
+        break;
+      }
+    }
+    if (r.timedOut || r.cancelled) {
+      TerminateProcess(pi.hProcess, 1);
+      WaitForSingleObject(pi.hProcess, 2000);
+    }
+    drain();
+    GetExitCodeProcess(pi.hProcess, &r.code);
+    if (r.timedOut) r.code = WAIT_TIMEOUT;
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
   }
-  if (wr) CloseHandle(wr);
   CloseHandle(rd);
-  return out;
+  return r;
+}
+
+/** Runs the tool and returns what it prints, on the calling thread: only for quick commands (rules, --version, a
+ *  status check) or from a thread of our own. Anything slow goes through runToolAsync(). */
+static std::string runTool(const std::wstring& args, DWORD* exitCode = nullptr, DWORD timeoutMs = 30000) {
+  ToolResult r = execTool(args, timeoutMs);
+  if (exitCode) *exitCode = r.code;
+  return r.out;
 }
 
 static std::string sha256File(const std::wstring& file) {
@@ -356,7 +422,61 @@ static std::string readFile(const std::wstring& file) {
 #define WM_LSP_DIED (WM_APP + 2)
 #define WM_DOWNLOADED (WM_APP + 3)
 #define WM_UPDATE_INFO (WM_APP + 4)
+#define WM_TOOL_DONE (WM_APP + 5)
+#define TOOL_TIMER 2
 static HWND msgWnd;
+
+// Slow tool commands (hub search and fetch, install, package, test, update) run on a thread of their own, so
+// Notepad++ never freezes: the result comes back to its thread through msgWnd (WM_TOOL_DONE), the status bar says
+// what is running (with the seconds), a command that is already running says so instead of starting twice, and a
+// tool that doesn't finish in time is stopped.
+struct ToolJob {
+  std::wstring what, args;
+  DWORD timeoutMs = 0;
+  ULONGLONG startedAt = 0;
+  std::function<void(const ToolResult&)> done;
+  std::atomic<bool> cancel{false};
+  ToolResult res;
+};
+static std::map<std::wstring, std::shared_ptr<ToolJob>> toolJobs;  // what -> the run, one at a time each
+static std::atomic<int> toolThreads{0};
+
+/** Runs `ncdev <args>` off Notepad++'s thread and calls `done` on it afterwards (not when cancelled). `what` names it
+ *  in the status bar ("downloading Racer"). Another run of the same `what` is refused (false) unless `replace`, which
+ *  stops the old one (a new search replaces the previous). */
+static bool runToolAsync(const std::wstring& what, const std::wstring& args, DWORD timeoutMs, std::function<void(const ToolResult&)> done, bool replace = false) {
+  auto it = toolJobs.find(what);
+  if (it != toolJobs.end()) {
+    if (!replace) {
+      MessageBoxW(npp._nppHandle, (L"Already " + what + L": wait for it to finish (the status bar shows it).").c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+      return false;
+    }
+    it->second->cancel = true;
+    toolJobs.erase(it);
+  }
+  auto job = std::make_shared<ToolJob>();
+  job->what = what;
+  job->args = args;
+  job->timeoutMs = timeoutMs;
+  job->startedAt = GetTickCount64();
+  job->done = std::move(done);
+  toolJobs[what] = job;
+  status(L"Nucleus: " + what + L"…");
+  SetTimer(msgWnd, TOOL_TIMER, 1000, nullptr);
+  toolThreads++;
+  std::thread([job] {
+    job->res = execTool(job->args, job->timeoutMs, &job->cancel);
+    if (!PostMessage(msgWnd, WM_TOOL_DONE, 0, (LPARAM) new std::shared_ptr<ToolJob>(job))) {}
+    toolThreads--;
+  }).detach();
+  return true;
+}
+/** A run's message when it timed out or didn't start. */
+static std::wstring toolFailure(const ToolResult& r, const std::wstring& what) {
+  if (!r.started) return L"Couldn't start ncdev.";
+  if (r.timedOut) return L"ncdev took too long " + what + L" and was stopped. Is this PC online? Try again in a moment.";
+  return L"";
+}
 static bool downloading = false, declined = false;
 
 /** Downloads ncdev.exe from the newest GitHub release that has it, checked against the release's SHA256SUMS.txt. */
@@ -538,7 +658,8 @@ static void start() {
   si.hStdError = nul;
   PROCESS_INFORMATION pi{};
   std::wstring cmd = tool + L" lsp" + (tool.rfind(L"cmd.exe", 0) == 0 ? L"\"" : L"");
-  BOOL ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+  std::vector<wchar_t> env = childEnv();
+  BOOL ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env.data(), nullptr, &si, &pi);
   CloseHandle(inRead);
   CloseHandle(outWrite);
   CloseHandle(nul);
@@ -965,7 +1086,7 @@ static Value docId(Doc* d) { return Value(Object{{"uri", d->uri}}); }
 
 static void applyEdits(HWND h, const Value& edits) {
   std::vector<std::pair<Range, std::string>> list;
-  for (auto& e : edits.arr()) list.push_back({{sciPos(h, e["range"]["start"]), sciPos(h, e["range"]["end"])}, e["newText"].str()});
+  for (auto& e : edits.arr()) list.push_back({{sciPos(h, e["range"]["start"]), sciPos(h, e["range"]["end"])}, toDoc(h, e["newText"].str())});
   std::sort(list.begin(), list.end(), [](auto& a, auto& b) { return a.first.start > b.first.start; });
   // The server writes new lines as \n; a CRLF (or CR) document gets its own line ending, never a mix.
   int eol = (int)sci(h, SCI_GETEOLMODE);
@@ -1123,7 +1244,7 @@ struct Item {
   Value editStart;
 };
 static std::vector<Item> items;
-static int completionId = 0;
+static int completionSeq = 0;  // the newest completion request; older answers are dropped
 static bool ourList = false;
 static bool isWord(int c) { return isalnum(c) || c == '_' || c == '$' || c >= 0x80; }
 static sptr_t wordStart(HWND h, sptr_t pos) {
@@ -1135,8 +1256,9 @@ static void complete(HWND h, bool explicitly) {
   Doc* d = active();
   if (!d) return;
   sptr_t pos = sci(h, SCI_GETCURRENTPOS);
-  int id = lsp::request("textDocument/completion", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, pos)}, {"context", Value(Object{{"triggerKind", explicitly ? 1 : 2}})}}), [=](const Value& r) {
-    if (completionId != lsp::nextId - 1 && false) return;
+  int seq = ++completionSeq;
+  lsp::request("textDocument/completion", Value(Object{{"textDocument", docId(d)}, {"position", lspPos(h, pos)}, {"context", Value(Object{{"triggerKind", explicitly ? 1 : 2}})}}), [=](const Value& r) {
+    if (seq != completionSeq) return;  // typed on: a newer request is on its way, and its answer is the one to show
     const Value& arr = r.isArr() ? r : r["items"];
     sptr_t caret = sci(h, SCI_GETCURRENTPOS);
     if (caret < pos || sci(h, SCI_LINEFROMPOSITION, caret) != sci(h, SCI_LINEFROMPOSITION, pos)) return;
@@ -1193,7 +1315,6 @@ static void complete(HWND h, bool explicitly) {
     sci(h, SCI_AUTOCSHOW, caret - ws, (sptr_t)listText.c_str());
     ourList = true;
   });
-  completionId = id;
 }
 
 static void signatureHelp(HWND h);
@@ -1226,6 +1347,7 @@ static void onSelected(HWND h, const char* label) {
     }
     item.text = out;
   }
+  item.text = toDoc(h, item.text);
   sci(h, SCI_SETTARGETRANGE, start, end);
   sci(h, SCI_REPLACETARGET, item.text.size(), (sptr_t)item.text.c_str());
   // A function: the cursor between its parentheses, with its parameters shown.
@@ -1380,7 +1502,7 @@ static void cmdFormat() {
 static void newTab(const std::string& text) {
   SendMessage(npp._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
   HWND h = curSci();
-  sci(h, SCI_SETTEXT, 0, (sptr_t)text.c_str());
+  sci(h, SCI_SETTEXT, 0, (sptr_t)toDoc(h, text).c_str());  // a new tab is ANSI when Notepad++ is set so
   sci(h, SCI_SETSAVEPOINT);
   sci(h, SCI_GOTOPOS, 0);
 }
@@ -1733,10 +1855,13 @@ static void cmdInstall() {
     if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
     force = true;
   }
-  DWORD code = 1;
-  std::string said = runTool(L"install " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + (force ? L" --force" : L""), &code, 60000);
-  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
-  MessageBoxW(npp._nppHandle, wide(said.empty() ? "Couldn't run ncdev install." : said).c_str(), PLUGIN_NAME, MB_OK | (code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
+  runToolAsync(L"installing " + baseName(d->path), L"install " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + (force ? L" --force" : L""), 60000, [](const ToolResult& r) {
+    std::string said = r.out;
+    while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+    std::wstring why = toolFailure(r, L"to install it");
+    status(r.code == 0 ? L"Nucleus: installed" : L"Nucleus: couldn't install");
+    MessageBoxW(npp._nppHandle, (!why.empty() ? why : wide(said.empty() ? "Couldn't run ncdev install." : said)).c_str(), PLUGIN_NAME, MB_OK | (r.code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
+  });
 }
 
 // Rename: the handler's own variable or function, every use (textDocument/prepareRename, then rename).
@@ -1932,13 +2057,12 @@ struct HubState {
   std::string picked;  // id
   std::wstring title;
 };
-enum { ID_HUBQ = 310, ID_HUBSEARCH, ID_HUBLIST, ID_HUBGET, ID_HUBWEB };
-static void hubFill(HWND d, HubState* st, const std::wstring& words) {
+enum { ID_HUBQ = 310, ID_HUBSEARCH, ID_HUBLIST, ID_HUBGET, ID_HUBWEB, ID_HUBNOTE };
+static HWND hubDlg = nullptr;  // the open Browse the Hub dialog, for searches that answer after it closed
+static void hubShow(HWND d, HubState* st, const ToolResult& res) {
   HWND lv = GetDlgItem(d, ID_HUBLIST);
-  SetCursor(LoadCursor(nullptr, IDC_WAIT));
   Value r;
-  std::string out = runTool(words.empty() ? L"hub search --popular --json" : L"hub search " + quoteArg(words) + L" --json", nullptr, 60000);
-  st->list = json::parse(out, r) && r.isArr() ? r : Value(Array{});
+  st->list = json::parse(res.out, r) && r.isArr() ? r : Value(Array{});
   ListView_DeleteAllItems(lv);
   int i = 0;
   for (auto& h : st->list.arr()) {
@@ -1956,10 +2080,29 @@ static void hubFill(HWND d, HubState* st, const std::wstring& words) {
   }
   if (i) {
     ListView_SetItemState(lv, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
-  } else if (out.empty() || !r.isArr()) status(L"Nucleus: couldn't reach the Hub");
+    status(L"Nucleus: " + std::to_wstring(i) + L" handlers");
+  } else if (!r.isArr()) {
+    std::wstring why = toolFailure(res, L"to reach the Hub");
+    status(L"Nucleus: couldn't reach the Hub");
+    SetDlgItemTextW(d, ID_HUBNOTE, (why.empty() ? L"Couldn't reach the Hub. Is this PC online?" : why).c_str());
+  } else
+    status(L"Nucleus: no handlers found");
   EnableWindow(GetDlgItem(d, ID_HUBGET), i > 0);
   EnableWindow(GetDlgItem(d, ID_HUBWEB), i > 0);
-  SetCursor(LoadCursor(nullptr, IDC_ARROW));
+}
+/** Searches in the background: the dialog (and Notepad++) stay usable; a new search replaces one still running. */
+static void hubFill(HWND d, HubState* st, const std::wstring& words) {
+  ListView_DeleteAllItems(GetDlgItem(d, ID_HUBLIST));
+  EnableWindow(GetDlgItem(d, ID_HUBGET), FALSE);
+  EnableWindow(GetDlgItem(d, ID_HUBWEB), FALSE);
+  SetDlgItemTextW(d, ID_HUBNOTE, words.empty() ? L"Loading the most downloaded…" : L"Searching…");
+  runToolAsync(L"searching the Hub", words.empty() ? L"hub search --popular --json" : L"hub search " + quoteArg(words) + L" --json", 60000,
+               [d, st, words](const ToolResult& res) {
+                 if (hubDlg != d) return;  // closed meanwhile
+                 SetDlgItemTextW(d, ID_HUBNOTE, words.empty() ? L"Most downloaded first." : L"Best matches first.");
+                 hubShow(d, st, res);
+               },
+               true);
 }
 static INT_PTR CALLBACK hubProc(HWND d, UINT m, WPARAM w, LPARAM l) {
   auto* st = (HubState*)GetWindowLongPtrW(d, DWLP_USER);
@@ -1972,6 +2115,7 @@ static INT_PTR CALLBACK hubProc(HWND d, UINT m, WPARAM w, LPARAM l) {
     case WM_INITDIALOG: {
       SetWindowLongPtrW(d, DWLP_USER, l);
       st = (HubState*)l;
+      hubDlg = d;
       ListView_SetExtendedListViewStyle(lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
       const wchar_t* cols[] = {L"Handler", L"Game", L"By", L"Downloads", L""};
       int widths[] = {220, 180, 100, 80, 70};
@@ -2006,14 +2150,22 @@ static INT_PTR CALLBACK hubProc(HWND d, UINT m, WPARAM w, LPARAM l) {
         if (const Value* h = pick()) {
           st->picked = (*h)["id"].str();
           st->title = wide((*h)["title"].str());
+          hubDlg = nullptr;
           EndDialog(d, IDOK);
         }
         return TRUE;
       }
       if (LOWORD(w) == IDCANCEL) {
+        hubDlg = nullptr;
+        auto it = toolJobs.find(L"searching the Hub");
+        if (it != toolJobs.end()) it->second->cancel = true;  // nobody waits for it now
         EndDialog(d, IDCANCEL);
         return TRUE;
       }
+      return FALSE;
+    case WM_DESTROY:
+      if (hubDlg == d) hubDlg = nullptr;
+      return FALSE;
   }
   return FALSE;
 }
@@ -2025,7 +2177,7 @@ static void cmdHub() {
   b.item(0x81, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 130, 6, 226, 13, ID_HUBQ, L"");
   b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 362, 5, 50, 14, ID_HUBSEARCH, L"Search");
   b.itemClass(L"SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 24, 404, 184, ID_HUBLIST);
-  b.item(0x82, SS_LEFT, 8, 216, 180, 9, (WORD)-1, L"Most downloaded first.");
+  b.item(0x82, SS_LEFT, 8, 216, 180, 9, ID_HUBNOTE, L"Most downloaded first.");
   b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 194, 214, 70, 14, ID_HUBWEB, L"Open on the Hub");
   b.item(0x80, BS_DEFPUSHBUTTON | WS_TABSTOP, 268, 214, 90, 14, ID_HUBGET, L"Download and open…");
   b.item(0x80, BS_PUSHBUTTON | WS_TABSTOP, 362, 214, 50, 14, IDCANCEL, L"Close");
@@ -2039,25 +2191,30 @@ static void cmdHub() {
   while (!name.empty() && (name.back() == L'.' || name.back() == L' ')) name.pop_back();
   while (!name.empty() && name.front() == L' ') name.erase(0, 1);
   std::wstring out = folder + L"\\" + (name.empty() ? L"handler" : name);
-  status(L"Nucleus: downloading " + st.title + L"…");
-  Value r;
-  std::string said = runTool(L"hub fetch " + wide(st.picked) + L" --out " + quoteArg(out) + L" --json", nullptr, 180000);
-  if (!json::parse(said, r) || !r.isObj()) {
-    MessageBoxW(npp._nppHandle, (L"Couldn't download it. Is this PC online, and can it reach hub.splitscreen.me?\n\n(" + wide(said.substr(0, 300)) + L")").c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
-    return;
-  }
-  // The handler is the .js at the top of its folder.
-  std::string dir = r["dir"].str();
-  for (auto& f : r["files"].arr()) {
-    std::string p = f.str();
-    std::string rest = p.size() > dir.size() ? p.substr(dir.size() + 1) : p;
-    if (rest.size() > 3 && rest.compare(rest.size() - 3, 3, ".js") == 0 && rest.find_first_of("\\/") == std::string::npos) {
-      SendMessage(npp._nppHandle, NPPM_DOOPEN, 0, (LPARAM)wide(p).c_str());
-      status(L"Nucleus: downloaded " + st.title + L" to " + out);
+  std::wstring title = st.title;
+  // In the background: Notepad++ stays usable while it downloads (the status bar counts the seconds).
+  runToolAsync(L"downloading " + title, L"hub fetch " + quoteArg(wide(st.picked)) + L" --out " + quoteArg(out) + L" --json", 180000, [title, out](const ToolResult& res) {
+    Value r;
+    if (!json::parse(res.out, r) || !r.isObj()) {
+      std::wstring why = toolFailure(res, L"to download it");
+      status(L"Nucleus: couldn't download " + title);
+      MessageBoxW(npp._nppHandle, (why.empty() ? L"Couldn't download it. Is this PC online, and can it reach hub.splitscreen.me?\n\n(" + wide(res.out.substr(0, 300)) + L")" : why).c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
       return;
     }
-  }
-  ShellExecuteW(npp._nppHandle, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // The handler is the .js at the top of its folder.
+    std::string dir = r["dir"].str();
+    for (auto& f : r["files"].arr()) {
+      std::string p = f.str();
+      std::string rest = p.size() > dir.size() ? p.substr(dir.size() + 1) : p;
+      if (rest.size() > 3 && rest.compare(rest.size() - 3, 3, ".js") == 0 && rest.find_first_of("\\/") == std::string::npos) {
+        SendMessage(npp._nppHandle, NPPM_DOOPEN, 0, (LPARAM)wide(p).c_str());
+        status(L"Nucleus: downloaded " + title + L" to " + out);
+        return;
+      }
+    }
+    status(L"Nucleus: downloaded " + title);
+    ShellExecuteW(npp._nppHandle, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  });
 }
 
 // Package as .nc…: handler.js and its <Name>/ folder, ready to upload to the Hub (ncdev package).
@@ -2073,13 +2230,16 @@ static void cmdPackage() {
     std::wstring q = baseName(d->path) + L" has " + std::to_wstring(errors) + (errors == 1 ? L" error" : L" errors") + L", so Nucleus may not load it (see the Problems panel). Package it anyway?";
     if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return;
   }
-  DWORD code = 1;
-  std::string said = runTool(L"package " + quoteArg(d->path) + (errors ? L" --force" : L""), &code, 60000);
-  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
-  if (MessageBoxW(npp._nppHandle, (wide(said.empty() ? "Couldn't run ncdev package." : said) + (code == 0 ? L"\n\nOpen the folder?" : L"")).c_str(), PLUGIN_NAME, (code == 0 ? MB_YESNO | MB_ICONINFORMATION : MB_OK | MB_ICONWARNING)) == IDYES) {
-    std::wstring dir = d->path.substr(0, d->path.find_last_of(L"\\/"));
-    ShellExecuteW(npp._nppHandle, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-  }
+  std::wstring dir = d->path.substr(0, d->path.find_last_of(L"\\/"));
+  runToolAsync(L"packaging " + baseName(d->path), L"package " + quoteArg(d->path) + (errors ? L" --force" : L""), 60000, [dir](const ToolResult& r) {
+    std::string said = r.out;
+    while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+    std::wstring why = toolFailure(r, L"to package it");
+    bool ok = r.code == 0 && why.empty();
+    status(ok ? L"Nucleus: packaged" : L"Nucleus: couldn't package");
+    if (MessageBoxW(npp._nppHandle, (!why.empty() ? why : wide(said.empty() ? "Couldn't run ncdev package." : said) + (ok ? L"\n\nOpen the folder?" : L"")).c_str(), PLUGIN_NAME, (ok ? MB_YESNO | MB_ICONINFORMATION : MB_OK | MB_ICONWARNING)) == IDYES)
+      ShellExecuteW(npp._nppHandle, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  });
 }
 
 // Test in Nucleus Co-op: install, then (re)start Nucleus with the handler's game selected (ncdev test).
@@ -2117,12 +2277,14 @@ static void cmdTestInNucleus() {
     iniSet(L"ncdev", L"debugLogAsked", L"1");
     if (MessageBoxW(npp._nppHandle, L"Turn on Nucleus' debug log? debug-log.txt then says what Nucleus did, step by step: the first thing to read when a test goes wrong.", PLUGIN_NAME, MB_YESNO | MB_ICONQUESTION) == IDYES) flags += L" --debug-log on";
   }
-  status(L"Nucleus: starting Nucleus Co-op…");
-  DWORD code = 1;
-  std::string said = runTool(L"test " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + flags, &code, 60000);
-  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
-  status(code == 0 ? L"Nucleus: Nucleus Co-op started" : L"Nucleus: couldn't start Nucleus Co-op");
-  MessageBoxW(npp._nppHandle, (wide(said.empty() ? "Couldn't run ncdev test." : said) + (code == 0 ? L"\n\nAfterwards: Plugins › Nucleus Co-op handlers › Open Nucleus' debug log." : L"")).c_str(), PLUGIN_NAME, MB_OK | (code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
+  runToolAsync(L"starting Nucleus Co-op", L"test " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + flags, 60000, [](const ToolResult& r) {
+    std::string said = r.out;
+    while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+    std::wstring why = toolFailure(r, L"to start Nucleus Co-op");
+    bool ok = r.code == 0 && why.empty();
+    status(ok ? L"Nucleus: Nucleus Co-op started" : L"Nucleus: couldn't start Nucleus Co-op");
+    MessageBoxW(npp._nppHandle, (!why.empty() ? why : wide(said.empty() ? "Couldn't run ncdev test." : said) + (ok ? L"\n\nAfterwards: Plugins › Nucleus Co-op handlers › Open Nucleus' debug log." : L"")).c_str(), PLUGIN_NAME, MB_OK | (ok ? MB_ICONINFORMATION : MB_ICONWARNING));
+  });
 }
 static void cmdOpenNucleusLog() {
   std::wstring nucleus = nucleusFolder(false);
@@ -2170,18 +2332,22 @@ static void cmdUnlinkFolder() {
 }
 static void cmdReference() {
   if (findTool().empty()) return lsp::start();
-  std::string md = runTool(L"api --markdown");
-  if (!md.empty()) newTab(md);
+  runToolAsync(L"loading the API reference", L"api --markdown", 60000, [](const ToolResult& r) {
+    if (!r.out.empty() && r.code == 0) newTab(r.out);
+    else status(L"Nucleus: couldn't load the API reference");
+  });
 }
 static void cmdUpdate() {
   if (findTool().empty()) return lsp::start();
-  status(L"Nucleus: checking for updates…");
-  std::string out = runTool(L"update --from-notepad++");
-  lsp::stop();  // the tool may have been replaced: start the new one
-  lsp::restarts = 0;
-  for (auto& [b, d] : docs) d.open = false;
-  MessageBoxW(npp._nppHandle, wide(out.empty() ? "Couldn't run ncdev update." : out).c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
-  if (currentDoc()) lsp::start();
+  runToolAsync(L"updating the handler tools", L"update --from-notepad++", 300000, [](const ToolResult& r) {
+    lsp::stop();  // the tool may have been replaced: start the new one
+    lsp::restarts = 0;
+    for (auto& [b, d] : docs) d.open = false;
+    std::wstring why = toolFailure(r, L"to update");
+    status(L"Nucleus: update done");
+    MessageBoxW(npp._nppHandle, (!why.empty() ? why : wide(r.out.empty() ? "Couldn't run ncdev update." : r.out)).c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+    if (currentDoc()) lsp::start();
+  });
 }
 static void cmdAbout() {
   std::wstring tool = findTool();
@@ -2305,8 +2471,27 @@ static LRESULT CALLBACK msgProc(HWND hw, UINT m, WPARAM w, LPARAM l) {
       delete text;
       return 0;
     }
+    case WM_TOOL_DONE: {
+      auto* p = (std::shared_ptr<ToolJob>*)l;
+      std::shared_ptr<ToolJob> job = *p;
+      delete p;
+      auto it = toolJobs.find(job->what);
+      if (it != toolJobs.end() && it->second == job) toolJobs.erase(it);
+      if (toolJobs.empty()) KillTimer(hw, TOOL_TIMER);
+      if (!job->res.cancelled && job->done) job->done(job->res);
+      else if (toolJobs.empty()) status(L"");  // stopped: nothing is running any more
+      return 0;
+    }
     case WM_TIMER:
       KillTimer(hw, w);
+      if (w == TOOL_TIMER) {
+        // What is still running, with the seconds, so a slow download doesn't look like nothing happens.
+        if (toolJobs.empty()) return 0;
+        auto& job = toolJobs.begin()->second;
+        status(L"Nucleus: " + job->what + L"… " + std::to_wstring((GetTickCount64() - job->startedAt) / 1000) + L" s");
+        SetTimer(hw, TOOL_TIMER, 1000, nullptr);
+        return 0;
+      }
       flushChange();
       return 0;
   }
@@ -2356,6 +2541,9 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* n) {
       return;
     case NPPN_SHUTDOWN:
       lsp::stop();
+      // Stop running tools, and let their threads finish before the plugin is unloaded.
+      for (auto& [what, job] : toolJobs) job->cancel = true;
+      for (int i = 0; i < 60 && toolThreads > 0; i++) Sleep(50);
       return;
     case NPPN_BUFFERACTIVATED:
       if (currentDoc()) {

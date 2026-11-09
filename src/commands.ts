@@ -260,9 +260,15 @@ async function installHandler(uri?: vscode.Uri) {
 
 
 async function browseHub(context: vscode.ExtensionContext) {
-  const list = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Loading handlers from hub.splitscreen.me…' }, async () => {
-    return hubHandlers(); // cached for an hour, shared with the CLI and the MCP server
-  });
+  let list: HubHandler[];
+  try {
+    list = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Loading handlers from hub.splitscreen.me…' }, async () => {
+      return hubHandlers({ feature: 'hub-browse' }); // cached for an hour, shared with the CLI and the MCP server
+    });
+  } catch (e) {
+    void vscode.window.showErrorMessage(String((e as Error)?.message ?? e));
+    return;
+  }
   type Item = vscode.QuickPickItem & { h: HubHandler };
   const items: Item[] = list.map((h) => ({
     label: `${h.verified ? '$(verified) ' : ''}${h.title}`,
@@ -292,7 +298,13 @@ async function browseHub(context: vscode.ExtensionContext) {
     vscode.env.openExternal(vscode.Uri.parse(handlerPageUrl(pick.h._id)));
     return;
   }
-  const entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h));
+  let entries: Awaited<ReturnType<typeof hubPackage>>;
+  try {
+    entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h, { feature: 'hub-browse' }));
+  } catch (e) {
+    void vscode.window.showErrorMessage(`Couldn't download ${pick.h.title}: ${(e as Error)?.message ?? e}`);
+    return;
+  }
   const js = entries.find((e) => e.name === 'handler.js') ?? entries.find((e) => e.name.endsWith('.js') && !e.name.includes('/'));
   if (!js?.data) {
     vscode.window.showWarningMessage('The package has no handler.js.');
