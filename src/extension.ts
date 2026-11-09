@@ -146,7 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.workspace.applyEdit(edit.edit);
       vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
     }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ','),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ',', '"', "'"),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     // Outline, breadcrumbs and Go to Symbol (Ctrl+Shift+O): the settings by object, the callbacks, the handler's own names.
     // Go to definition: the handler's own functions and variables, `Game.X` to where it's set, and
