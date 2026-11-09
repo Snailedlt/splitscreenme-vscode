@@ -138,11 +138,17 @@ const closesExpr = (t: Item | undefined) => t?.kind === 'tok' && (t.type.label =
 /** Whether a +/-/++/-- token is a prefix (unary) one, from the token before it. */
 const isPrefix = (prev: Tok | undefined) => !prev || (prev.type.beforeExpr && !closesExpr(prev)) || (!!prev.type.keyword && prev.value !== 'this' && prev.value !== 'true' && prev.value !== 'false' && prev.value !== 'null');
 
+/** A line break, as JavaScript sees them (.NET's ReadLine: the first three). */
+const LINE_BREAK = /\r\n|\r|\n|\u2028|\u2029/g;
+
 export function formatHandler(text: string, options: FormatOptions = {}): FormatResult {
   const bom = text.startsWith('﻿') ? '﻿' : '';
   const src = text.slice(bom.length);
   const eol = (src.match(/\r\n/g)?.length ?? 0) > (src.match(/(?<!\r)\n/g)?.length ?? 0) ? '\r\n' : '\n';
-  const body = src.replace(/\r\n/g, '\n');
+  // Every line break JavaScript and .NET's ReadLine know: \r\n, \n, a lone \r, and (JavaScript's) U+2028/U+2029.
+  // Formatting works on \n; the rare ones are put back exactly where they were, \r\n and \n follow the file's own.
+  const breaks = src.match(LINE_BREAK) ?? [];
+  const body = src.replace(LINE_BREAK, '\n');
   const first = lex(body);
   if (typeof first === 'string') return { ok: false, reason: `The file can't be read as ES5 (${first}), so it isn't formatted. Fix that first (Check lists it).` };
   // Quotes and semicolons first (proven to keep the program the same), then indentation and spacing.
@@ -224,6 +230,9 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
   type Open = { value: string; line: number; isSwitch: boolean; control: boolean };
   const stack: Open[] = [];
   const out: string[] = [];
+  /** The source line each output line comes from (for its line break). */
+  const outLn: number[] = [];
+  const push = (l: string, ln: number) => (out.push(l), outLn.push(ln));
   let blank = 0;
   let prevLast: Tok | undefined; // the last token of the previous line with code
   let parenKeyword: string | undefined;
@@ -232,13 +241,13 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
   let inCase = 0;
   for (let ln = 0; ln < lines.length; ln++) {
     if (raw.has(ln)) {
-      out.push(lines[ln]);
+      push(lines[ln], ln);
       blank = 0;
       continue;
     }
     const its = byLine.get(ln) ?? [];
     if (!its.length) {
-      if ((++blank <= 1 || options.keepBlankLines) && (out.length || options.keepBlankLines)) out.push('');
+      if ((++blank <= 1 || options.keepBlankLines) && (out.length || options.keepBlankLines)) push('', ln);
       continue;
     }
     blank = 0;
@@ -282,7 +291,7 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     }
     // Trailing spaces go, unless they belong to a comment or string that goes on to the next line.
     const runsOn = its[its.length - 1].endLine > ln;
-    out.push(runsOn ? line : line.replace(/[ \t]+$/, ''));
+    push(runsOn ? line : line.replace(/[ \t]+$/, ''), ln);
     // Update the bracket stack with this line's tokens.
     for (const it of its) {
       if (it.kind !== 'tok') continue;
@@ -311,7 +320,7 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     }
     void parenKeyword;
   }
-  if (!options.keepBlankLines) while (out.length && out[out.length - 1] === '') out.pop();
+  if (!options.keepBlankLines) while (out.length && out[out.length - 1] === '') (out.pop(), outLn.pop());
   const formatted = out.join('\n') + '\n';
 
   // The guarantee: the same tokens and comments, in the same order.
@@ -333,7 +342,13 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     return l.items.map((i) => rank.get(i.line) ?? -1).join(',');
   };
   if (typeof again !== 'string' && lineSig(lexed, styled) !== lineSig(again, formatted)) return { ok: false, reason: 'Formatting would have moved code to other lines, so nothing was changed. Please report this handler.' };
-  const code = bom + (eol === '\r\n' ? formatted.replace(/\n/g, '\r\n') : formatted);
+  const breakAfter = (ln: number) => {
+    const b = breaks[ln];
+    return b === '\r' || b === '\u2028' || b === '\u2029' ? b : eol;
+  };
+  const restored = out.length ? out.map((l, i) => l + breakAfter(outLn[i])).join('') : eol;
+  if (restored.replace(LINE_BREAK, '\n') !== formatted) return { ok: false, reason: 'Formatting would have changed the line breaks, so nothing was changed. Please report this handler.' };
+  const code = bom + restored;
   return { ok: true, code, changed: code !== text };
 }
 

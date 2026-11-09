@@ -78,3 +78,22 @@ test('opinionated style: double quotes and semicolons by default, configurable, 
   assert.ok('edits' in e);
   if ('edits' in e) assert.deepEqual(e.edits.map((x) => x.text), ['var b = "y";']);
 });
+
+test('format: a lone \\r and U+2028/U+2029 are line breaks, kept exactly where they are', () => {
+  for (const br of ['\r', '\u2028', '\u2029']) {
+    const src = `var a=1${br}var b=2\n  if(a){${br}b();\n}\n`;
+    const r = formatHandler(src, { indent: '  ' });
+    assert.ok(r.ok, r.ok ? '' : r.reason);
+    assert.equal(r.code, `var a = 1;${br}var b = 2;\nif (a) {${br}  b();\n}\n`, JSON.stringify(br));
+  }
+  const crlf = formatHandler('var a=1\r\nvar b=2\rvar c=3\r\n', {});
+  assert.ok(crlf.ok && crlf.code === 'var a = 1;\r\nvar b = 2;\rvar c = 3;\r\n');
+  const { rangeFormatEdits } = require('../core/features');
+  const t = 'var a=1;\rvar b=2;\nvar c=3;\n';
+  const e = rangeFormatEdits(t, t.indexOf('var b'), t.indexOf('var b'), {});
+  assert.deepEqual(e.edits, [{ start: 9, end: 17, text: 'var b = 2;' }], 'Format Selection after a lone \\r');
+  const { jsRuleDiagnostics } = require('../core/jsrules');
+  const text = 'var a = 1;\rvar b = "\\d";\n';
+  const d = jsRuleDiagnostics(text, ['no-useless-escape']);
+  assert.equal(text.slice(d[0].start, d[0].end)[0], '\\', 'ESLint positions after a lone \\r');
+});

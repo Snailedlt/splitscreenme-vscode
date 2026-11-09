@@ -616,23 +616,30 @@ export function formatEdits(text: string, opts: FormatSettings): { edits: TextEd
 export function rangeFormatEdits(text: string, start: number, end: number, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
   const r = formatHandler(text, { ...formatOptions(opts), keepBlankLines: true });
   if (!r.ok) return { error: r.reason };
-  const crlf = r.code.includes('\r\n');
-  const was = text.split('\n');
-  const now = r.code.split('\n');
-  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
-  const l0 = text.slice(0, start).split('\n').length - 1;
-  const l1 = text.slice(0, Math.max(start, end)).split('\n').length - 1;
-  const edits: TextEdit[] = [];
-  let at = 0;
-  for (let i = 0; i < was.length; i++) {
-    const lineEnd = at + was[i].length;
-    if (i >= l0 && i <= l1) {
-      const strip = (s: string) => (crlf ? s.replace(/\r$/, '') : s);
-      const a = strip(was[i]);
-      const b = strip(now[i]);
-      if (a !== b) edits.push({ start: at, end: at + a.length, text: b });
+  // Lines as JavaScript and Nucleus see them (\r\n, \n, a lone \r, U+2028/U+2029); only their text is compared.
+  const linesOf = (t: string) => {
+    const out: { start: number; text: string }[] = [];
+    let at = 0;
+    for (const m of t.matchAll(/\r\n|[\r\n\u2028\u2029]/g)) {
+      out.push({ start: at, text: t.slice(at, m.index) });
+      at = m.index! + m[0].length;
     }
-    at = lineEnd + 1;
+    out.push({ start: at, text: t.slice(at) });
+    return out;
+  };
+  const was = linesOf(text);
+  const now = linesOf(r.code);
+  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
+  const lineAt = (o: number) => {
+    let i = 0;
+    while (i + 1 < was.length && was[i + 1].start <= o) i++;
+    return i;
+  };
+  const l0 = lineAt(start);
+  const l1 = lineAt(Math.max(start, end));
+  const edits: TextEdit[] = [];
+  for (let i = l0; i <= l1; i++) {
+    if (was[i].text !== now[i].text) edits.push({ start: was[i].start, end: was[i].start + was[i].text.length, text: now[i].text });
   }
   return { edits };
 }
