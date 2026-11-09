@@ -177,6 +177,19 @@ function firstLine(d: any): Doc {
   return d.t === 'group' ? d.c[0] : d;
 }
 
+/** The two parse to the same tree (positions aside). */
+function sameProgram(before: any, text: string): boolean {
+  let after: any;
+  try {
+    after = acorn.parse(text, { ecmaVersion: 5, allowReserved: true });
+  } catch {
+    return false;
+  }
+  const strip = (n: any): any =>
+    Array.isArray(n) ? n.map(strip) : n && typeof n === 'object' ? Object.fromEntries(Object.entries(n).filter(([k]) => k !== 'start' && k !== 'end').map(([k, v]) => [k, strip(v)])) : n;
+  return JSON.stringify(strip(before)) === JSON.stringify(strip(after));
+}
+
 /** Code laid out to `width` columns (prettier's style), or the code as written if it isn't plain enough to reprint. */
 export function prettyCode(code: string, width = 60): string {
   const src = code.trim();
@@ -188,8 +201,10 @@ export function prettyCode(code: string, width = 60): string {
     return code;
   }
   try {
-    const out = program.body.map((st: any) => render(printStatement(st, src), width));
-    return out.join('\n');
+    const out = program.body.map((st: any) => render(printStatement(st, src), width)).join('\n');
+    // The printer adds no parentheses of its own: whatever it can't print faithfully ((a + b) * c, -(a + b), an
+    // immediately called function…) comes back as written, never as different code.
+    return sameProgram(program, out) ? out : code;
   } catch (e) {
     if (e instanceof Unsupported) return code;
     throw e;

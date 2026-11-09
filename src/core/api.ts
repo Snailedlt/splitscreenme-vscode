@@ -98,7 +98,16 @@ export interface ApiModel {
   nucleusClasses: Record<string, NucleusClass>;
 }
 
-export const api = raw as unknown as ApiModel;
+/** The model as objects without a prototype: a name typed in a handler (`toString`, `constructor`, `__proto__`) is
+ *  never mistaken for a member, an enum or a docs page. */
+function bare(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(bare);
+  if (!v || typeof v !== 'object') return v;
+  const o = Object.create(null);
+  for (const [k, x] of Object.entries(v)) o[k] = bare(x);
+  return o;
+}
+export const api = bare(raw) as ApiModel;
 // .NET `System.*`, written by hand (core/dotnet.ts): the generator only reads the Nucleus sources.
 Object.assign(api.objects, DOTNET_OBJECTS);
 if (api.globals.System) api.globals.System = { ...api.globals.System, type: 'System', doc: DOTNET_OBJECTS.System.doc };

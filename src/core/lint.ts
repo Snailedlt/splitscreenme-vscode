@@ -554,7 +554,8 @@ class Analyzer {
   // ---- rules ------------------------------------------------------------------
 
   private report(d: Omit<Diagnostic, 'severity'> & { severity?: Severity }) {
-    this.out.push({ severity: RULES[d.rule].severity, ...d });
+    // A caller may pass `severity: undefined` (meaning "the rule's own"): never let that blank the rule's severity.
+    this.out.push({ ...d, severity: d.severity ?? RULES[d.rule].severity });
   }
 
   private checkEs5(n: Node, ctx: Ctx) {

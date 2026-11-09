@@ -42,3 +42,12 @@ test('pretty: long signatures one parameter per line; short ones and hovers as t
   const e = allEntries(true).find((x) => x.path === 'Context.ModifySaveFile')!;
   assert.match(memberMarkdown(e.owner, e.name, e.member), /```ts\nContext\.ModifySaveFile\(\n  installSavePath/);
 });
+
+test('prettyCode never changes what code means (parentheses it can\'t print come back as written)', () => {
+  for (const src of ['x = (a + b) * c;', 'x = a - (b - c);', 'x = -(a + b);', 'x = - -a;', 'x = !(a && b);', 'x = (a ? b : c).d;', '(function () { a(); })();']) {
+    const out = prettyCode(src);
+    const strip = (n: any): any => (Array.isArray(n) ? n.map(strip) : n && typeof n === 'object' ? Object.fromEntries(Object.entries(n).filter(([k]) => k !== 'start' && k !== 'end').map(([k, v]) => [k, strip(v)])) : n);
+    const tree = (t: string) => JSON.stringify(strip(acorn.parse(t, { ecmaVersion: 5 })));
+    assert.equal(tree(out), tree(src), `${src} → ${out}`);
+  }
+});

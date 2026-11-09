@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apiPathOf, hoverAt, linkApiNames, signatureHelpAt, workbenchDocsUrl } from '../core/features';
 import { docsPage, docsView, docsValue } from '../core/docspage';
+import { lint } from '../core/lint';
 import { fallbackMarkdown, highlightCode, renderDocsPanel, docsCommandLink } from '../docspanel';
 
 const link = (p: string) => `L(${p})`;
@@ -70,4 +71,13 @@ test('Nucleus Docs panel: code colours (keywords, strings, numbers, comments, ty
     assert.ok(h.includes(`<span class="tk-${cls}">${t}</span>`), `${cls}: ${t} in ${h}`);
   assert.match(h, /<span class="tk-string">&quot;.*a\.ini&quot;<\/span>/);
   assert.ok(!highlightCode('a < b').includes('<b'), 'escaped');
+});
+
+test('names from Object.prototype are not API names (no crash, no bogus member)', () => {
+  for (const q of ['toString', 'constructor', '__proto__', 'Nucleus.toString', 'Game.toString', 'hasOwnProperty']) {
+    assert.doesNotThrow(() => docsPage(docsView(q), (v) => `#docs-${v}`), q);
+  }
+  const diags = lint('Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.Play = function () { Context.Constructor = 1; var x = Game.ValueOf; };\n');
+  assert.ok(diags.some((d) => /Constructor/.test(d.message)), 'Context.Constructor is unknown');
+  assert.ok(diags.some((d) => /ValueOf/.test(d.message)), 'Game.ValueOf is unknown');
 });

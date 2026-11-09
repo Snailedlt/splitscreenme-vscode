@@ -720,3 +720,20 @@ test('missing required options: explained, the fix uses what the handler already
   const indented = lint('Game.GUID = "A";\nGame.GameName = "A";\n  Game.ExecutableName = "a.exe";\n');
   assert.ok(indented.some((d) => d.rule === 'hub-install-parse'), 'set, but indented: the Hub install still fails');
 });
+
+test('every diagnostic has a severity (the CLI, VS Code and LSP all need one)', () => {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const dir = path.join(__dirname, '..', 'src', 'test', 'fixtures');
+  const texts = [
+    'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.MaxPlayers = "4";\nGame.SymlinkGame = "true";\nGame.KillMutex = "x";\nGame.Hook.ForceFocus = 1;\nGame.Play = 3;\nContext.Width = 1;\nvar a = `x`;\nGame.Nope = 1;\n',
+    ...(fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dir, f), 'utf8')) : []),
+  ];
+  let n = 0;
+  for (const t of texts)
+    for (const d of lint(t)) {
+      n++;
+      assert.ok(['error', 'warning', 'info', 'hint'].includes(d.severity), `${d.rule}: severity ${String(d.severity)}`);
+    }
+  assert.ok(n > 5, 'the samples should trigger several rules');
+});
