@@ -1,10 +1,28 @@
 // Minimal ZIP reader/writer (no dependencies) for Nucleus handler packages (.nc).
+// The byte work (`zipBytes`, `zipRecords`, `crc32`, `handlerPackageEntries`) uses only Uint8Array and DataView, so
+// the browser workbench shares it (nucleuscoop-handler-testbench playground/src/package.ts); there, compressing is
+// the browser's (CompressionStream) and `node:zlib` is stubbed out. `writeZip` and `readZip` are the Node forms.
 import zlib from 'node:zlib';
 
 export interface ZipEntry {
   /** Forward-slash path. Directories end with '/'. */
   name: string;
   data?: Buffer;
+}
+
+/** A zip entry in bytes only (Buffer is one too): what `zipBytes` writes. */
+export interface ZipBytesEntry {
+  /** Forward-slash path. Directories end with '/'. */
+  name: string;
+  data?: Uint8Array;
+}
+
+/** An entry as it is stored: `body` is still compressed when `method` is 8 (deflate). Directories have no body. */
+export interface ZipRecord {
+  name: string;
+  /** 0: stored, 8: deflate. */
+  method: number;
+  body?: Uint8Array;
 }
 
 const CRC_TABLE = (() => {
@@ -17,7 +35,7 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
-export function crc32(buf: Buffer): number {
+export function crc32(buf: Uint8Array): number {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
@@ -30,107 +48,151 @@ function dosDateTime(d: Date): { time: number; date: number } {
   };
 }
 
-export function writeZip(entries: ZipEntry[], now = new Date()): Buffer {
+function concat(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/**
+ * A zip file of `entries`. With `deflate` (raw deflate), an entry is stored compressed when that makes it smaller;
+ * without, every entry is stored as is.
+ */
+export function zipBytes(entries: ZipBytesEntry[], now = new Date(), deflate?: (raw: Uint8Array) => Uint8Array): Uint8Array {
   const { time, date } = dosDateTime(now);
-  const locals: Buffer[] = [];
-  const centrals: Buffer[] = [];
+  const enc = new TextEncoder();
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
   let offset = 0;
   for (const e of entries) {
-    const name = Buffer.from(e.name, 'utf8');
+    const name = enc.encode(e.name);
     const isDir = e.name.endsWith('/');
-    const raw = isDir ? Buffer.alloc(0) : e.data ?? Buffer.alloc(0);
-    const deflated = raw.length ? zlib.deflateRawSync(raw, { level: 9 }) : raw;
+    const raw = isDir ? new Uint8Array(0) : e.data ?? new Uint8Array(0);
+    const deflated = raw.length && deflate ? deflate(raw) : raw;
     const useDeflate = deflated.length < raw.length;
     const body = useDeflate ? deflated : raw;
     const crc = crc32(raw);
     const method = useDeflate ? 8 : 0;
     const flags = 0x0800; // UTF-8 names
 
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(flags, 6);
-    local.writeUInt16LE(method, 8);
-    local.writeUInt16LE(time, 10);
-    local.writeUInt16LE(date, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(body.length, 18);
-    local.writeUInt32LE(raw.length, 22);
-    local.writeUInt16LE(name.length, 26);
-    local.writeUInt16LE(0, 28);
-    locals.push(local, name, body);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, flags, true);
+    local.setUint16(8, method, true);
+    local.setUint16(10, time, true);
+    local.setUint16(12, date, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, body.length, true);
+    local.setUint32(22, raw.length, true);
+    local.setUint16(26, name.length, true);
+    local.setUint16(28, 0, true);
+    locals.push(new Uint8Array(local.buffer), name, body);
 
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(flags, 8);
-    central.writeUInt16LE(method, 10);
-    central.writeUInt16LE(time, 12);
-    central.writeUInt16LE(date, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(body.length, 20);
-    central.writeUInt32LE(raw.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt16LE(0, 30);
-    central.writeUInt16LE(0, 32);
-    central.writeUInt16LE(0, 34);
-    central.writeUInt16LE(0, 36);
-    central.writeUInt32LE(isDir ? 0x10 : 0x20, 38);
-    central.writeUInt32LE(offset, 42);
-    centrals.push(central, name);
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true);
+    central.setUint16(6, 20, true);
+    central.setUint16(8, flags, true);
+    central.setUint16(10, method, true);
+    central.setUint16(12, time, true);
+    central.setUint16(14, date, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, body.length, true);
+    central.setUint32(24, raw.length, true);
+    central.setUint16(28, name.length, true);
+    central.setUint32(38, isDir ? 0x10 : 0x20, true); // folder or file (MS-DOS attributes)
+    central.setUint32(42, offset, true);
+    centrals.push(new Uint8Array(central.buffer), name);
 
     offset += 30 + name.length + body.length;
   }
-  const cd = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(cd.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
+  const cd = concat(centrals);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, entries.length, true);
+  end.setUint16(10, entries.length, true);
+  end.setUint32(12, cd.length, true);
+  end.setUint32(16, offset, true);
+  return concat([...locals, cd, new Uint8Array(end.buffer)]);
 }
 
-export function readZip(buf: Buffer): ZipEntry[] {
+export function writeZip(entries: ZipBytesEntry[], now = new Date()): Buffer {
+  const z = zipBytes(entries, now, (raw) => zlib.deflateRawSync(raw, { level: 9 }));
+  return Buffer.from(z.buffer, z.byteOffset, z.length);
+}
+
+/** A name with the UTF-8 flag, or that reads as UTF-8, is UTF-8; else each byte is one character (Latin-1). */
+function entryName(bytes: Uint8Array, utf8Flag: boolean): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: !utf8Flag }).decode(bytes);
+  } catch {
+    let s = '';
+    for (const b of bytes) s += String.fromCharCode(b);
+    return s;
+  }
+}
+
+/** The entries of a zip file, in its central directory's order, their bodies still compressed. Throws when it isn't one. */
+export function zipRecords(buf: Uint8Array): ZipRecord[] {
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
+    if (v.getUint32(i, true) === 0x06054b50) {
       eocd = i;
       break;
     }
   }
   if (eocd < 0) throw new Error('Not a zip file');
-  const count = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-  const out: ZipEntry[] = [];
+  const count = v.getUint16(eocd + 10, true);
+  let p = v.getUint32(eocd + 16, true);
+  const out: ZipRecord[] = [];
   for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Corrupt zip central directory');
-    const flags = buf.readUInt16LE(p + 8);
-    const method = buf.readUInt16LE(p + 10);
-    const csize = buf.readUInt32LE(p + 20);
-    const nlen = buf.readUInt16LE(p + 28);
-    const xlen = buf.readUInt16LE(p + 30);
-    const clen = buf.readUInt16LE(p + 32);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.subarray(p + 46, p + 46 + nlen).toString(flags & 0x0800 ? 'utf8' : 'latin1').replace(/\\/g, '/');
+    if (p + 46 > buf.length || v.getUint32(p, true) !== 0x02014b50) throw new Error('Corrupt zip central directory');
+    const flags = v.getUint16(p + 8, true);
+    const method = v.getUint16(p + 10, true);
+    const csize = v.getUint32(p + 20, true);
+    const nlen = v.getUint16(p + 28, true);
+    const xlen = v.getUint16(p + 30, true);
+    const clen = v.getUint16(p + 32, true);
+    const local = v.getUint32(p + 42, true);
+    const name = entryName(buf.subarray(p + 46, p + 46 + nlen), !!(flags & 0x0800)).replace(/\\/g, '/');
     p += 46 + nlen + xlen + clen;
     if (flags & 1) throw new Error(`Encrypted zip entries are not supported (${name})`);
-    const lnlen = buf.readUInt16LE(local + 26);
-    const lxlen = buf.readUInt16LE(local + 28);
-    const start = local + 30 + lnlen + lxlen;
-    const body = buf.subarray(start, start + csize);
     if (name.endsWith('/')) {
-      out.push({ name });
+      out.push({ name, method });
       continue;
     }
-    let data: Buffer;
-    if (method === 0) data = Buffer.from(body);
-    else if (method === 8) data = zlib.inflateRawSync(body);
-    else throw new Error(`Unsupported compression method ${method} (${name})`);
-    out.push({ name, data });
+    const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+    out.push({ name, method, body: buf.subarray(start, start + csize) });
   }
   return out;
+}
+
+export function readZip(buf: Buffer): ZipEntry[] {
+  return zipRecords(buf).map((r) => {
+    if (!r.body) return { name: r.name };
+    if (r.method === 0) return { name: r.name, data: Buffer.from(r.body) };
+    if (r.method === 8) return { name: r.name, data: zlib.inflateRawSync(r.body) };
+    throw new Error(`Unsupported compression method ${r.method} (${r.name})`);
+  });
+}
+
+/**
+ * A package's entries: `handler.js` at the root, then an explicit entry for every folder the files are in (Nucleus
+ * only picks up folders that have one), then the files. `files` are named by their path in the package.
+ */
+export function packageEntries<T extends Uint8Array>(handlerJs: T, files: { name: string; data: T }[]): { name: string; data?: T }[] {
+  const dirs = new Set<string>();
+  for (const f of files) {
+    const parts = f.name.split('/');
+    for (let i = 1; i < parts.length; i++) dirs.add(`${parts.slice(0, i).join('/')}/`);
+  }
+  return [{ name: 'handler.js', data: handlerJs }, ...[...dirs].sort().map((name) => ({ name })), ...files];
 }
 
 /**
@@ -138,16 +200,6 @@ export function readZip(buf: Buffer): ZipEntry[] {
  * the handler's asset folder as a single top-level folder. Nucleus only picks up
  * folders that have explicit directory entries, so those are always written.
  */
-export function handlerPackageEntries(handlerJs: Buffer, folderName: string | undefined, files: { rel: string; data: Buffer }[]): ZipEntry[] {
-  const entries: ZipEntry[] = [{ name: 'handler.js', data: handlerJs }];
-  if (folderName && files.length) {
-    const dirs = new Set<string>([`${folderName}/`]);
-    for (const f of files) {
-      const parts = f.rel.split('/');
-      for (let i = 1; i < parts.length; i++) dirs.add(`${folderName}/${parts.slice(0, i).join('/')}/`);
-    }
-    for (const d of [...dirs].sort()) entries.push({ name: d });
-    for (const f of files) entries.push({ name: `${folderName}/${f.rel}`, data: f.data });
-  }
-  return entries;
+export function handlerPackageEntries<T extends Uint8Array>(handlerJs: T, folderName: string | undefined, files: { rel: string; data: T }[]): { name: string; data?: T }[] {
+  return packageEntries(handlerJs, folderName ? files.map((f) => ({ name: `${folderName}/${f.rel}`, data: f.data })) : []);
 }
