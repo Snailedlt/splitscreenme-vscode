@@ -15,26 +15,56 @@ const SEARCH = 'splitscreenme.docsSearch';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export const docsCommandLink = (value: string) => `command:${OPEN_DOCS}?${encodeURIComponent(JSON.stringify([value]))}`;
 
-/** Markdown → HTML: VS Code's own renderer (the built-in Markdown extension), else a small fallback. */
-async function renderMarkdown(md: string): Promise<string> {
-  try {
-    const html = await vscode.commands.executeCommand<string>('markdown.api.render', md);
-    if (typeof html === 'string') return html;
-  } catch {
-    /* the Markdown extension is off: the fallback */
+/** JavaScript / TypeScript signatures as coloured HTML (VS Code's token colours, by theme; see the panel's CSS):
+ *  keywords, strings, numbers, comments, types after `:`, members after `.` (calls as functions). Exported for tests. */
+export function highlightCode(src: string): string {
+  const KW = /^(var|let|const|function|return|if|else|for|while|do|in|of|new|typeof|instanceof|this|true|false|null|undefined|enum|break|continue|switch|case|default|try|catch|finally|throw|delete|void)$/;
+  const TYPES = /^(string|number|boolean|void|any|object|never|unknown)$/;
+  const re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\b0x[\da-fA-F]+\b|\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)|([\s\S])/g;
+  let out = '';
+  let prev = ''; // the last non-space character before this token
+  let m: RegExpExecArray | null;
+  const span = (cls: string, t: string) => `<span class="tk-${cls}">${esc(t)}</span>`;
+  while ((m = re.exec(src))) {
+    const [t, comment, str, num, word] = m;
+    if (comment) out += span('comment', t);
+    else if (str) out += span('string', t);
+    else if (num) out += span('number', t);
+    else if (word) {
+      const next = src.slice(re.lastIndex).match(/^\s*(\S)/)?.[1];
+      if (KW.test(word)) out += span('keyword', word);
+      else if (TYPES.test(word) || (prev === ':' && /^[A-Z]/.test(word)) || (prev === '.' && /^Nucleus\.$/.test(src.slice(Math.max(0, m.index - 8), m.index)))) out += span('type', word);
+      else if (next === '(') out += span('function', word);
+      else if (prev === '.') out += span('property', word);
+      else if (prev === ':' || prev === '|' || prev === '<') out += span('type', word);
+      else out += span('variable', word);
+    } else out += esc(t);
+    if (/\S/.test(t)) prev = t.trim().slice(-1);
   }
-  return fallbackMarkdown(md);
+  return out;
 }
-/** Enough Markdown for these pages: code blocks, headings, lists, inline code, bold, italics, links. Exported for tests. */
+
+const unesc = (s: string) => s.replace(/&(amp|lt|gt|quot|#39);/g, (_m, e: string) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]!);
+/** Inline code that is clearly code (a member path, a call, a literal): coloured; a plain word (`handlers`) stays
+ *  plain. The workbench's rule (codehl.ts looksLikeCode). */
+function looksLikeCode(s: string): boolean {
+  const t = s.trim();
+  if (!t || t.length > 400) return false;
+  if (/^[\w$]+$/.test(t)) return /^(true|false|null|undefined|var|function|new|\d[\d.]*)$/.test(t);
+  if (/[\\/]/.test(t) && !/[("=]/.test(t)) return false;
+  return /[.()=;"'[\]{}+<>!-]/.test(t);
+}
+/** Markdown → HTML, enough for these pages (they're ours): code blocks (coloured), headings, lists, inline code, bold,
+ *  italics, links. Exported for tests. */
 export function fallbackMarkdown(md: string): string {
   const inline = (t: string) =>
     esc(t)
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${href}">${text}</a>`)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/`([^`]+)`/g, (_m, c: string) => `<code>${looksLikeCode(unesc(c)) ? highlightCode(unesc(c)) : c}</code>`)
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])_([^_]+)_(?=$|[\s.,)])/g, '$1<em>$2</em>');
   return md.split(/(```\w*\n[\s\S]*?```)/).map((part, i) => {
-    if (i % 2) return `<pre><code>${esc(part.replace(/^```\w*\n/, '').replace(/```$/, '').trimEnd())}</code></pre>`;
+    if (i % 2) return `<pre><code>${highlightCode(part.replace(/^```\w*\n/, '').replace(/```$/, '').trimEnd())}</code></pre>`;
     return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
       const lines = p.trim().split('\n');
       if (/^#{1,3} /.test(lines[0])) return `<h2>${inline(lines[0].replace(/^#+ /, ''))}</h2>`;
@@ -64,6 +94,17 @@ a { color: var(--vscode-textLink-foreground); }
 code { font-family: var(--vscode-editor-font-family); font-size: .95em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.15)); padding: 0 3px; border-radius: 3px; }
 pre { background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.15)); padding: 8px 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
 pre code { background: none; padding: 0; }
+/* Code colours: VS Code's default token colours for each kind of theme (the webview's body says which). */
+.tk-keyword { color: #0000ff; } .tk-string { color: #a31515; } .tk-number { color: #098658; } .tk-comment { color: #008000; }
+.tk-type { color: #267f99; } .tk-function { color: #795e26; } .tk-property { color: #001080; } .tk-variable { color: #001080; }
+body.vscode-dark .tk-keyword { color: #569cd6; } body.vscode-dark .tk-string { color: #ce9178; } body.vscode-dark .tk-number { color: #b5cea8; }
+body.vscode-dark .tk-comment { color: #6a9955; } body.vscode-dark .tk-type { color: #4ec9b0; } body.vscode-dark .tk-function { color: #dcdcaa; }
+body.vscode-dark .tk-property, body.vscode-dark .tk-variable { color: #9cdcfe; }
+body.vscode-high-contrast .tk-keyword { color: #569cd6; } body.vscode-high-contrast .tk-string { color: #ce9178; } body.vscode-high-contrast .tk-number { color: #b5cea8; }
+body.vscode-high-contrast .tk-comment { color: #7ca668; } body.vscode-high-contrast .tk-type { color: #4ec9b0; } body.vscode-high-contrast .tk-function { color: #dcdcaa; }
+body.vscode-high-contrast .tk-property, body.vscode-high-contrast .tk-variable { color: #9cdcfe; }
+body.vscode-high-contrast-light .tk-keyword { color: #0f4a85; } body.vscode-high-contrast-light .tk-string { color: #0f4a85; }
+body.vscode-high-contrast-light .tk-comment { color: #515151; } body.vscode-high-contrast-light .tk-type { color: #185e73; } body.vscode-high-contrast-light .tk-function { color: #5e2cbc; }
 ul { padding-left: 20px; } li { margin: 3px 0; }
 </style></head><body>
 <nav aria-label="Where you are in the docs">${canGoBack ? `<a class="back" href="command:${BACK}" title="Back" aria-label="Back">←</a>` : ''}${parts.join('<span class="sep" aria-hidden="true">/</span>')}<span class="end"><a href="command:${SEARCH}" title="Search the docs (names and words)">Search…</a><a href="${esc(web)}" title="The same page in the browser workbench">Open in the workbench</a></span></nav>
@@ -82,7 +123,7 @@ export function registerDocsPanel(context: vscode.ExtensionContext) {
     view = next;
     const page = docsPage(view, docsCommandLink);
     // Names inside the docs open their own page too.
-    const body = await renderMarkdown(linkApiNames(page.markdown, docsCommandLink));
+    const body = fallbackMarkdown(linkApiNames(page.markdown, docsCommandLink));
     if (!panel) {
       panel = vscode.window.createWebviewPanel('splitscreenme.docs', 'Nucleus Docs', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
         enableScripts: false,

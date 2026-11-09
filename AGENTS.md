@@ -112,5 +112,6 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 
 - TypeScript strict; keep `src/core` free of `vscode` imports.
 - New editor features go in `src/core/features.ts` first (plain data, offsets), then into every adapter: `src/extension.ts` and `src/lsp.ts` (PORTING.md), and the Notepad++ plugin if it needs to show something new.
+- **Every code block is syntax highlighted**, wherever it shows: hovers, hints, suggestion docs, the Docs/Try it panels, the workbench (`codehl.ts`: `hlCode`/`hlHtml`, `modeFor` by file type), the start page. Fenced Markdown gets a language (```` ```js ````/```` ```ts ````) so editors colour it; HTML we render ourselves colours it (`docspanel.ts` `highlightCode`). Inline code that is clearly code is coloured too.
 - Handler code you generate (templates, snippets, skill docs) must be ES5 and lint-clean. Tests lint the templates and every `js` block in the skill docs.
 - The skill docs must only name real API members. A test resolves every `Game.*`/`Context.*` path mentioned in them.

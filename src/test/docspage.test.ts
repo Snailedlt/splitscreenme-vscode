@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apiPathOf, hoverAt, linkApiNames, signatureHelpAt, workbenchDocsUrl } from '../core/features';
 import { docsPage, docsView, docsValue } from '../core/docspage';
-import { fallbackMarkdown, renderDocsPanel, docsCommandLink } from '../docspanel';
+import { fallbackMarkdown, highlightCode, renderDocsPanel, docsCommandLink } from '../docspanel';
 
 const link = (p: string) => `L(${p})`;
 
@@ -59,5 +59,15 @@ test('Nucleus Docs panel: path, back, search and workbench links; no scripts', (
   assert.match(html, /href="command:splitscreenme\.openDocs\?%5B%22Context%22%5D">Context<\/a>/, 'the group crumb');
   assert.match(html, /<strong aria-current="page">ModifySaveFile<\/strong>/);
   assert.match(html, /\?ref=vscode#docs-Context\.ModifySaveFile/);
-  assert.match(fallbackMarkdown('## T\n\n- [`A`](u)\n\n```js\nx < 1\n```'), /<h2>T<\/h2><ul><li><a href="u"><code>A<\/code><\/a><\/li><\/ul><pre><code>x &lt; 1<\/code><\/pre>/);
+  assert.match(fallbackMarkdown('## T\n\n- [`A`](u)\n\n```js\nx < 1\n```'), /<h2>T<\/h2><ul><li><a href="u"><code>A<\/code><\/a><\/li><\/ul><pre><code><span class="tk-variable">x<\/span> &lt; <span class="tk-number">1<\/span><\/code><\/pre>/);
+  // Every code block is coloured: the signature on top of a name's page included.
+  assert.match(html, /<pre><code><span class="tk-variable">Context<\/span>\.<span class="tk-function">ModifySaveFile<\/span>\(<span class="tk-variable">installSavePath<\/span>: <span class="tk-type">string<\/span>/);
+});
+
+test('Nucleus Docs panel: code colours (keywords, strings, numbers, comments, types, calls, members)', () => {
+  const h = highlightCode('var ini = Context.GetFolder(Nucleus.Folder.Documents) + "\\\\a.ini"; // x\nreturn 0x10;');
+  for (const [cls, t] of [['keyword', 'var'], ['function', 'GetFolder'], ['type', 'Folder'], ['property', 'Documents'], ['comment', '// x'], ['keyword', 'return'], ['number', '0x10']])
+    assert.ok(h.includes(`<span class="tk-${cls}">${t}</span>`), `${cls}: ${t} in ${h}`);
+  assert.match(h, /<span class="tk-string">&quot;.*a\.ini&quot;<\/span>/);
+  assert.ok(!highlightCode('a < b').includes('<b'), 'escaped');
 });
