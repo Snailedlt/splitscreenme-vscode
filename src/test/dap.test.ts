@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { HandlerDebugSession } from '../dap';
+import { tmpdir } from './tmp';
 
 const HANDLER = [
   'Game.GameName = "Demo";',
@@ -31,8 +32,8 @@ function session() {
   return { req };
 }
 
-test('dap: breakpoint, stack, scopes, variables, evaluate, stepping back and on to the end', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dap-')), 'Demo.js');
+test('dap: breakpoint, stack, scopes, variables, evaluate, stepping back and on to the end', (t) => {
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
   fs.writeFileSync(file, HANDLER);
   const { req } = session();
   const init = req('initialize', { adapterID: 'nucleus' });
@@ -75,9 +76,9 @@ test('dap: an error stops where it ends the run; unsaved text is debugged as it 
   assert.equal(req('launch', {}).res.success, false, 'no program, a clear error');
 });
 
-test('dap: `nucleus dap` speaks the protocol on stdio', async () => {
+test('dap: `nucleus dap` speaks the protocol on stdio', async (t) => {
   const { spawn } = await import('node:child_process');
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dap-')), 'Demo.js');
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
   fs.writeFileSync(file, HANDLER);
   const proc = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'dap'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const got: any[] = [];

@@ -10,8 +10,10 @@ import { execFileSync } from 'node:child_process';
 import { assetName, installRelease, latestRelease, newer, versionOf } from '../standalone';
 import { nppArch, readIni, setupNotepadPP } from '../setup-npp';
 import { mergeNotepadPP } from '../core/notepadpp';
+import type { TestContext } from 'node:test';
+import { tmpdir } from './tmp';
 
-const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const tmp = (t: TestContext, p: string) => tmpdir(t, p);
 
 test('standalone: versions from tags, and which is newer', () => {
   assert.equal(versionOf('v0.5.0-beta.1'), '0.5.0');
@@ -23,8 +25,8 @@ test('standalone: versions from tags, and which is newer', () => {
   assert.equal(assetName('freebsd', 'x64'), undefined);
 });
 
-test('standalone: the update check asks GitHub at most once a day, with the ETag', async () => {
-  const dir = tmp('ncdev-update-');
+test('standalone: the update check asks GitHub at most once a day, with the ETag', async (t) => {
+  const dir = tmp(t, 'ncdev-update-');
   const calls: Record<string, string>[] = [];
   const releases = [
     { tag_name: 'workbench-2026-11-08', draft: false, html_url: 'w', assets: [] },
@@ -49,13 +51,13 @@ test('standalone: the update check asks GitHub at most once a day, with the ETag
     throw new Error('offline');
   }) as unknown as typeof fetch;
   assert.equal((await latestRelease(true, offline, dir, t0 + 9e7))?.tag, 'v0.6.0-beta.1', 'offline: what we knew');
-  assert.equal(await latestRelease(true, offline, tmp('ncdev-update-'), t0), undefined, 'offline, nothing known');
+  assert.equal(await latestRelease(true, offline, tmp(t, 'ncdev-update-'), t0), undefined, 'offline, nothing known');
   const none = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
-  assert.equal(await latestRelease(true, none, tmp('ncdev-update-'), t0), null, 'no release has ncdev yet');
+  assert.equal(await latestRelease(true, none, tmp(t, 'ncdev-update-'), t0), null, 'no release has ncdev yet');
 });
 
-test('standalone: an update replaces the exe only when its SHA-256 matches', async () => {
-  const dir = tmp('ncdev-install-');
+test('standalone: an update replaces the exe only when its SHA-256 matches', async (t) => {
+  const dir = tmp(t, 'ncdev-install-');
   const target = path.join(dir, 'ncdev.exe');
   fs.writeFileSync(target, 'old');
   const name = assetName()!;
@@ -72,8 +74,8 @@ test('standalone: an update replaces the exe only when its SHA-256 matches', asy
   await assert.rejects(installRelease({ ...latest, assets: { 'SHA256SUMS.txt': 'x' } }, target, serve(good)), /has no/);
 });
 
-test('notepad++: the plugin install (DLL, NcDev.ini, the static list taken out) and its removal', () => {
-  const dir = tmp('ncdev-npp-');
+test('notepad++: the plugin install (DLL, NcDev.ini, the static list taken out) and its removal', (t) => {
+  const dir = tmp(t, 'ncdev-npp-');
   fs.mkdirSync(path.join(dir, 'autoCompletion'));
   const original = '<?xml version="1.0" encoding="UTF-8" ?>\n<NotepadPlus>\n\t<AutoComplete language="JavaScript">\n\t\t<Environment ignoreCase="no" />\n\t\t<KeyWord name="abs" />\n\t</AutoComplete>\n</NotepadPlus>\n';
   const xml = path.join(dir, 'autoCompletion', 'javascript.xml');

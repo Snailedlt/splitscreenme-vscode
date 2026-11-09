@@ -10,6 +10,7 @@ import * as acorn from 'acorn';
 import { lookup, search, markdownReference } from '../core/lookup';
 import { lint } from '../core/lint';
 import { installAgentKit, findSkillDir } from '../core/pkg';
+import { tmpdir } from './tmp';
 
 const ROOT = path.join(__dirname, '..');
 const SKILL = path.join(ROOT, 'plugin', 'skills', 'nucleus-handler');
@@ -63,8 +64,8 @@ test('generated api.md and bundled CLI are up to date', () => {
   assert.ok(fs.existsSync(CLI), 'run npm run build');
 });
 
-test('bundled CLI: lint, api, new, package (offline)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-cli-'));
+test('bundled CLI: lint, api, new, package (offline)', (t) => {
+  const dir = tmpdir(t, 'nucleus-cli-');
   const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: 'utf8' });
 
   let r = run('new', '--name', 'Halo: Reach', '--exe', 'reach.exe', '--features', 'protoinput,goldberg');
@@ -104,8 +105,8 @@ test('bundled CLI: lint, api, new, package (offline)', () => {
   assert.match(q.stderr, /double quotes/);
 });
 
-test('installAgentKit is idempotent and preserves user content', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-kit-'));
+test('installAgentKit is idempotent and preserves user content', (t) => {
+  const dir = tmpdir(t, 'nucleus-kit-');
   fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# My notes\n\nKeep me.\n');
   fs.writeFileSync(path.join(dir, 'CLAUDE.md'), 'Use tabs.\n');
   const skill = findSkillDir(path.dirname(CLI))!;
@@ -140,8 +141,8 @@ test('plugin manifests are consistent', () => {
   assert.ok(skill.split('\n').length < 500);
 });
 
-test('bundled CLI: new --list-features, install into a Nucleus folder', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-install-'));
+test('bundled CLI: new --list-features, install into a Nucleus folder', (t) => {
+  const dir = tmpdir(t, 'nucleus-install-');
   const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: 'utf8' });
   let r = run('new', '--list-features', '--json');
   assert.equal(r.status, 0, r.stderr);

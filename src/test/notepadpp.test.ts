@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { mergeNotepadPP, notepadPPVersion } from '../core/notepadpp';
+import { tmpdir } from './tmp';
 
 // The shape of Notepad++'s own autoCompletion/javascript.xml (a few entries; the real one is part of Notepad++).
 const ORIGINAL = `<?xml version="1.0" encoding="UTF-8" ?>
@@ -40,8 +41,8 @@ test('notepad++: our names merged into its JavaScript list, sorted, with call ti
   assert.equal([...again.matchAll(/<KeyWord name="/g)].length, names.length);
 });
 
-test('notepad++: `nucleus setup notepad++` installs, checks, updates and removes, keeping a backup', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-npp-'));
+test('notepad++: `nucleus setup notepad++` installs, checks, updates and removes, keeping a backup', (t) => {
+  const dir = tmpdir(t, 'nucleus-npp-');
   fs.mkdirSync(path.join(dir, 'autoCompletion'));
   fs.writeFileSync(path.join(dir, 'autoCompletion', 'javascript.xml'), ORIGINAL);
   fs.writeFileSync(path.join(dir, 'doLocalConf.xml'), ''); // portable: shortcuts.xml next to it

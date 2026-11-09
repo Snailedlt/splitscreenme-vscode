@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { debugLogOn, guidOf, nucleusStatus, setDebugLog } from '../nucleusrun';
+import { tmpdir } from './tmp';
 
-test("Nucleus' debug log switch in its Settings.ini: read and set, everything else kept (UTF-16 and ANSI)", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-ini-'));
+test("Nucleus' debug log switch in its Settings.ini: read and set, everything else kept (UTF-16 and ANSI)", (t) => {
+  const dir = tmpdir(t, 'nucleus-ini-');
   const ini = path.join(dir, 'Settings.ini');
   assert.equal(debugLogOn(dir), undefined, 'no Settings.ini yet');
   setDebugLog(dir, true);
@@ -25,10 +26,10 @@ test("Nucleus' debug log switch in its Settings.ini: read and set, everything el
   assert.equal(fs.readFileSync(ini, 'latin1'), '[Misc]\r\nDebugLog=True\r\nGMOnly=False\r\n[Other]\r\nA=1\r\n');
 });
 
-test('the game Nucleus selects: Game.GUID; starting Nucleus needs Windows and NucleusCoop.exe', () => {
+test('the game Nucleus selects: Game.GUID; starting Nucleus needs Windows and NucleusCoop.exe', (t) => {
   assert.equal(guidOf('Game.GameName = "x";\nGame.GUID = "Halo Reach";\n'), 'Halo Reach');
   assert.equal(guidOf("Game.GUID = 'A B';"), 'A B');
-  const s = nucleusStatus(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dir-')));
+  const s = nucleusStatus(tmpdir(t, 'nucleus-dir-'));
   assert.equal(s.canStart, false);
   assert.match(s.why!, process.platform === 'win32' ? /NucleusCoop\.exe/ : /Windows/);
 });
