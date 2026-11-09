@@ -27,9 +27,9 @@ export function publishedFor(text: string): Promise<Published | undefined> {
   if (!p) {
     p = (async () => {
       try {
-        const h = (await hubHandlers()).find((x) => x._id === id);
+        const h = (await hubHandlers({ feature: 'package-compare' })).find((x) => x._id === id);
         if (!h) return undefined;
-        const entry = (await hubPackage(h)).find((e) => /^handler\.js$/i.test(e.name));
+        const entry = (await hubPackage(h, { feature: 'package-compare' })).find((e) => /^handler\.js$/i.test(e.name));
         const guid = entry?.data ? guidOf(new TextDecoder().decode(entry.data)) : undefined;
         return guid ? { version: h.currentVersion, guid } : undefined;
       } catch {

@@ -411,7 +411,8 @@ function cmdApi(args: Args, json: boolean): number {
 
 async function cmdHub(args: Args, json: boolean): Promise<number> {
   const [sub, ...rest] = args.positional;
-  const list = await hubHandlers();
+  const feature = sub === 'fetch' ? 'hub-fetch' : sub === 'search' ? (has(args, '--popular') && !rest.length ? 'hub-popular' : 'hub-search') : 'hub-list';
+  const list = await hubHandlers({ feature });
   if (sub === 'search') {
     const words = rest.join(' ').toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length && !has(args, '--popular')) throw new Usage('hub search: give some words, e.g. "hub search halo" (or --popular for the most downloaded)');
@@ -444,7 +445,7 @@ async function cmdHub(args: Args, json: boolean): Promise<number> {
     const h: HubHandler | undefined = list.find((x) => x._id === key) ?? list.find((x) => x.title.toLowerCase() === key.toLowerCase());
     if (!h) throw new Error(`No handler with id or title "${key}"`);
     const out = flag(args, '--out') ?? path.join('hub-handlers', toHandlerFileName(h.title));
-    const files = extractEntries(await hubPackage(h), out);
+    const files = extractEntries(await hubPackage(h, { feature: 'hub-fetch' }), out);
     print(json, { id: h._id, title: h.title, dir: path.resolve(out), files }, () => `Extracted ${h.title} v${h.currentVersion} to ${path.resolve(out)}:\n` + files.map((f) => `  ${f}`).join('\n'));
     return 0;
   }

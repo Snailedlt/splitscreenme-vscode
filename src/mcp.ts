@@ -10,7 +10,7 @@ import { fixAll } from './core/fix';
 import { formatHandler } from './core/format';
 import { lookup, search, formatEntry } from './core/lookup';
 import { handlerPageUrl } from './core/hub';
-import { hubHandlers, hubPackage } from './hubcache';
+import { hubHandlers, hubPackage, setHubTool } from './hubcache';
 import { renderHandler, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
 import { pluginsFor } from './sandbox';
@@ -189,7 +189,7 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true, openWorldHint: true },
     run: async (a) => {
       const words = String(a.query).toLowerCase().split(/\s+/).filter(Boolean);
-      const hits = (await hubHandlers())
+      const hits = (await hubHandlers({ feature: 'hub-search' }))
         .map((h) => ({ h, score: words.reduce((n, w) => n + (`${h.title} ${h.gameName}`.toLowerCase().includes(w) ? 2 : `${h.ownerName} ${h.description ?? ''}`.toLowerCase().includes(w) ? 1 : 0), 0) }))
         .filter((x) => x.score > 0)
         .sort((x, y) => y.score - x.score || (y.h.downloadCount ?? 0) - (x.h.downloadCount ?? 0))
@@ -206,10 +206,10 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Handler id from nucleus_hub_search' } }, required: ['id'] },
     annotations: { readOnlyHint: true, openWorldHint: true },
     run: async (a) => {
-      const h = (await hubHandlers()).find((x) => x._id === a.id);
+      const h = (await hubHandlers({ feature: 'hub-fetch' })).find((x) => x._id === a.id);
       if (!h) return { text: `No Hub handler with id ${a.id}.`, isError: true };
       if (!h.verified) return { text: `${h.title} is not verified on the Hub; only verified handlers are offered as examples.`, isError: true };
-      const entry = (await hubPackage(h)).find((e) => e.name === 'handler.js');
+      const entry = (await hubPackage(h, { feature: 'hub-fetch' })).find((e) => e.name === 'handler.js');
       if (!entry?.data) return { text: `${h.title}: the package has no handler.js.`, isError: true };
       const src = Buffer.from(entry.data).toString('utf8').replace(/^﻿/, '');
       return { text: `// ${h.title} v${h.currentVersion} by ${h.ownerName} (${handlerPageUrl(h._id)})\n${src}`, data: { id: h._id, title: h.title, version: h.currentVersion, source: src } };
@@ -232,6 +232,7 @@ function guide(): string | undefined {
 }
 
 export async function handle(msg: any): Promise<unknown | undefined> {
+  setHubTool('ncdev-mcp'); // Hub requests say they come from the MCP server
   const { id, method, params } = msg ?? {};
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id, result });
   const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });

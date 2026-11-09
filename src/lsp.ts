@@ -20,6 +20,7 @@ import { folderAt } from './gamefolder-node';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { publishedNow } from './published';
+import { setHubTool } from './hubcache';
 import { pluginsFor } from './sandbox';
 import { simWorker, isCancelled } from './simworker';
 import { formatSimulation } from './simformat';
@@ -293,6 +294,8 @@ export class Server {
         // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
         const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
         this.docsLink = (path: string) => workbenchDocsUrl(path, ref);
+        // Hub requests (the guid-changed check) name the server and the editor, not the person.
+        setHubTool(p.clientInfo?.name ? `ncdev-lsp/${ref}` : 'ncdev-lsp');
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
         this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
         this.relativeWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.relativePatternSupport;
