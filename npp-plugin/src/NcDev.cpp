@@ -241,8 +241,10 @@ struct Doc {
   int version = 0;
   bool open = false;
   bool dirty = false;
+  unsigned long long sent = 0;  // hash of the text the server has
 };
 static std::map<UINT_PTR, Doc> docs;
+static unsigned long long textHash(HWND h);
 static std::map<std::string, Value> diagnostics;  // uri -> the server's diagnostics
 
 static Doc* currentDoc() {
@@ -921,15 +923,25 @@ void lsp::openCurrent() {
     d->open = true;
     d->version = 1;
     d->dirty = false;
+    d->sent = textHash(curSci());
     lsp::notify("textDocument/didOpen", Value(Object{{"textDocument", Value(Object{{"uri", d->uri}, {"languageId", "javascript"}, {"version", d->version}, {"text", docText(curSci())}})}}));
   }
   applyDiagnostics();
+}
+/** FNV-1a of the document's text: notices a change no SCN_MODIFIED told us about (a reload from disk). */
+static unsigned long long textHash(HWND h) {
+  const char* p = (const char*)sci(h, SCI_GETCHARACTERPOINTER);
+  sptr_t n = sci(h, SCI_GETLENGTH);
+  unsigned long long x = 1469598103934665603ULL;
+  for (sptr_t i = 0; p && i < n; i++) x = (x ^ (unsigned char)p[i]) * 1099511628211ULL;
+  return x;
 }
 static void flushChange() {
   Doc* d = currentDoc();
   if (!d || !d->open || !d->dirty) return;
   d->dirty = false;
   d->version++;
+  d->sent = textHash(curSci());
   lsp::notify("textDocument/didChange", Value(Object{{"textDocument", Value(Object{{"uri", d->uri}, {"version", d->version}})}, {"contentChanges", Value(Array{Value(Object{{"text", docText(curSci())}})})}}));
 }
 static void closeBuffer(UINT_PTR b) {
@@ -1275,7 +1287,16 @@ static POINT caretPoint(HWND h) {
 /** A small menu at the caret; returns the chosen index or -1. */
 static int pickAtCaret(HWND h, const std::vector<std::wstring>& choices) {
   HMENU m = CreatePopupMenu();
-  for (size_t i = 0; i < choices.size(); i++) AppendMenuW(m, choices[i].empty() ? MF_SEPARATOR : MF_STRING, i + 1, choices[i].c_str());
+  for (size_t i = 0; i < choices.size(); i++) {
+    // Titles come as Markdown (`code`); a menu shows plain text, and & would underline the next letter.
+    std::wstring t;
+    for (wchar_t c : choices[i]) {
+      if (c == L'`') continue;
+      if (c == L'&') t += L'&';
+      t += c;
+    }
+    AppendMenuW(m, t.empty() ? MF_SEPARATOR : MF_STRING, i + 1, t.c_str());
+  }
   POINT p = caretPoint(h);
   int r = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_TOPALIGN, p.x, p.y, 0, npp._nppHandle, nullptr);
   DestroyMenu(m);
@@ -2346,6 +2367,16 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* n) {
         }
       }
       return;
+    case SCN_UPDATEUI: {
+      // A reload from disk (the file changed in another program) fills the document through another Scintilla, so no
+      // SCN_MODIFIED reaches this one. Compare the text with what the server has (cheap: handlers are small).
+      Doc* d = currentDoc();
+      if ((n->updated & SC_UPDATE_CONTENT) && d && d->open && !d->dirty && textHash(from) != d->sent) {
+        d->dirty = true;
+        SetTimer(msgWnd, 1, 300, nullptr);
+      }
+      return;
+    }
     case SCN_CHARADDED: {
       if (!currentDoc() || !lsp::ready) return;
       int c = n->ch;
