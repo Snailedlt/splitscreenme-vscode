@@ -99,6 +99,9 @@ test('bundled CLI: lint, api, new, package (offline)', () => {
   assert.equal(run('frobnicate', '--bogus').status, 2, 'unknown flag is a usage error');
   assert.equal(run('lint', 'missing.js').status, 1);
   assert.equal(run('new').status, 2);
+  const q = run('new', '--name', 'Say "Hi"', '--exe', 'game.exe', '--out', 'quoted.js');
+  assert.equal(q.status, 2, 'a game name the Hub install would break on');
+  assert.match(q.stderr, /double quotes/);
 });
 
 test('installAgentKit is idempotent and preserves user content', () => {

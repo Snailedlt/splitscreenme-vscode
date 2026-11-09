@@ -346,6 +346,8 @@ test('lsp: Package, Install and New handler, as commands and source actions', as
   const fsx = require('node:fs') as typeof import('node:fs');
   const os = require('node:os') as typeof import('node:os');
   const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-cmd-'));
+  const refused = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'A\\B', exe: 'game.exe', dir }] });
+  assert.match(refused.error?.message ?? '', /backslash/, 'a game name that breaks the Hub install');
   const r = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'My Game', exe: 'game.exe', dir }] });
   const file = path.join(dir, 'My Game.js');
   assert.ok(fsx.existsSync(file), JSON.stringify(r));

@@ -3,7 +3,7 @@ import { WORKBENCH_URL } from './core/sharelink';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { FEATURES, renderHandler, toHandlerFileName, Feature } from './core/templates';
+import { FEATURES, renderHandler, toHandlerFileName, validateGameName, Feature } from './core/templates';
 import { writeZip, handlerPackageEntries } from './core/zip';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
@@ -50,7 +50,7 @@ async function newHandler() {
     title: 'New Nucleus handler (1/4)',
     prompt: 'Game name, as shown in Nucleus',
     placeHolder: 'e.g. Borderlands 2',
-    validateInput: (v) => (v.trim() ? undefined : 'Required'),
+    validateInput: (v) => validateGameName(v),
   });
   if (!gameName) return;
   const executableName = await vscode.window.showInputBox({

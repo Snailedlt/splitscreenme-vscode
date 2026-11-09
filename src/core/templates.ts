@@ -18,9 +18,32 @@ export const FEATURES: { id: Feature; label: string; detail: string }[] = [
   { id: 'options', label: 'User options', detail: 'Example Game.AddOption prompt read back with Context.Options.' },
 ];
 
-/** Nucleus uses GUID as a folder name: keep letters, digits and spaces. */
+/** Letters with accents and a few others, spelt in plain Latin letters (Ü → U, ß → ss, Ø → O). */
+const LATIN: Record<string, string> = { ß: 'ss', Æ: 'AE', æ: 'ae', Ø: 'O', ø: 'o', Œ: 'OE', œ: 'oe', Đ: 'D', đ: 'd', Ł: 'L', ł: 'l', Þ: 'Th', þ: 'th', Ð: 'D', ð: 'd', ı: 'i' };
+
+/** Nucleus uses GUID as a folder name (GameManager: `Path.Combine(<content folder>, GUID)`, also the backups and the
+ *  `NucleusCoop.exe <GUID>` argument) that games run from, and old games break on paths outside plain ASCII: keep
+ *  letters, digits and spaces, with accented letters spelt plainly ("Pokémon" → "Pokemon"). */
 export function toGuid(name: string): string {
-  return name.replace(/[^A-Za-z0-9 ]/g, '').replace(/\s+/g, ' ').trim() || 'MyGame';
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x00-\x7f]/g, (c) => LATIN[c] ?? '')
+    .replace(/[^A-Za-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'MyGame';
+}
+
+/** Why a game name can't go into a new handler as it is, in plain words, or undefined when it can. The Hub install
+ *  reads `Game.GameName` from between the first and last double quote on its line and names the handler's file and
+ *  folder after it, removing only / : * ? " < > | (core/hubscan.ts). */
+export function validateGameName(name: string): string | undefined {
+  if (!name.trim()) return "Enter the game's name.";
+  if (name.includes('"')) return 'Leave out double quotes: when Nucleus installs a handler from the Hub, it reads the game name from between the first and last double quote on its line.';
+  if (name.includes('\\')) return "Leave out backslashes: Nucleus names the handler's file and folder after the game name and keeps a backslash, which breaks the install.";
+  if (/[\u0000-\u001f\u007f\u2028\u2029]/.test(name)) return 'Keep the name on one line, without tabs or other control characters: Nucleus reads the handler line by line.';
+  if (!name.replace(/[\/:*?"<>|]/g, '').trim()) return 'Use some letters or digits: Nucleus removes / : * ? " < > | from the name it gives the handler\'s file and folder.';
+  return undefined;
 }
 
 /** A name that is safe as one file or folder name on Windows and everywhere else: no path separators or characters

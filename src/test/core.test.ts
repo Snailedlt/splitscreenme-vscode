@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
 import { memberContextAt, resolveAt, callContextAt, valueContextAt } from '../core/complete';
 import { membersOf, suggest } from '../core/api';
-import { renderHandler, toGuid, toHandlerFileName, FEATURES } from '../core/templates';
+import { renderHandler, toGuid, toHandlerFileName, validateGameName, FEATURES } from '../core/templates';
 import { writeZip, readZip, handlerPackageEntries, crc32 } from '../core/zip';
 import { lint } from '../core/lint';
 import { completionsAt, signatureHelpAt } from '../core/features';
@@ -228,4 +228,19 @@ test('completion: nothing in comments or strings, but the deliberate string sugg
   const opts = 'Game.AddOption("Mode", "", "mode", ["Easy", "Hard"]);\n';
   assert.deepEqual(c(opts + 'if (Context.Options["|"]) {}')!.map((x) => x.label), ['mode'], 'option keys');
   assert.deepEqual(c(opts + 'if (Context.Options["mode"] == "|') !.map((x) => x.label), ['Easy', 'Hard'], 'option choices');
+});
+
+test('New Handler: game names the template can take, and plain reasons for the rest', () => {
+  const nl = String.fromCharCode(10);
+  const bad: [string, RegExp][] = [['', /name/], ['   ', /name/], ['Say "Hi"', /double quotes/], ['A\\B', /backslash/], ['Two' + nl + 'lines', /one line/], ['Tab' + String.fromCharCode(9), /one line/], ['Sep' + String.fromCharCode(0x2028), /one line/], ['???', /letters or digits/]];
+  for (const [name, why] of bad) assert.match(validateGameName(name) ?? '', why, JSON.stringify(name));
+  // Every name it lets through gives a handler our own checks pass, the Hub install included.
+  for (const name of ['Halo: Reach', 'Pokémon Ünïcödé', '日本のゲーム', "Tom's <Game>?", 'Ninja Gaiden Σ', '  Spaced  ']) {
+    assert.equal(validateGameName(name), undefined, name);
+    const diags = lint(renderHandler({ gameName: name, executableName: 'game.exe', features: [] })).filter((d) => d.severity === 'error' || d.rule === 'guid-characters');
+    assert.deepEqual(diags.map((d) => d.message), [], name);
+  }
+  assert.equal(toGuid('Ünïcödé 日本'), 'Unicode', 'accents spelt plainly');
+  assert.equal(toGuid('Pokémon Straße Œuvre Ørsted'), 'Pokemon Strasse OEuvre Orsted');
+  assert.equal(toGuid('日本'), 'MyGame');
 });
