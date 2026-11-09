@@ -2025,6 +2025,59 @@ static void cmdPackage() {
     ShellExecuteW(npp._nppHandle, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
   }
 }
+
+// Test in Nucleus Co-op: install, then (re)start Nucleus with the handler's game selected (ncdev test).
+static void cmdTestInNucleus() {
+  Doc* d = currentDoc();
+  if (!d) return needHandler();
+  if (findTool().empty()) return lsp::start();
+  SendMessage(npp._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);  // what's tested is what's on screen
+  std::wstring nucleus = nucleusFolder(false);
+  if (nucleus.empty()) return;
+  Value st;
+  if (!json::parse(runTool(L"test --status --nucleus " + quoteArg(nucleus) + L" --json", nullptr, 30000), st) || !st.isObj()) {
+    MessageBoxW(npp._nppHandle, L"Couldn't ask ncdev about Nucleus Co-op.", PLUGIN_NAME, MB_OK | MB_ICONWARNING);
+    return;
+  }
+  if (!st["canStart"].boolean()) {
+    MessageBoxW(npp._nppHandle, wide(st["why"].str()).c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  std::wstring flags;
+  int errors = 0;
+  for (auto& x : diagnostics[d->uri].arr())
+    if (x["severity"].num(1) == 1) errors++;
+  if (errors) {
+    std::wstring q = baseName(d->path) + L" has " + std::to_wstring(errors) + (errors == 1 ? L" error" : L" errors") + L", so Nucleus may not load it (see the Problems panel). Test it anyway?";
+    if (MessageBoxW(npp._nppHandle, q.c_str(), PLUGIN_NAME, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return;
+    flags += L" --force";
+  }
+  if (st["running"].boolean()) {
+    if (MessageBoxW(npp._nppHandle, L"Nucleus Co-op is open. It reads handlers when it starts: close it and start it again with this handler?", PLUGIN_NAME, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    flags += L" --restart";
+  }
+  // The debug log tells you why a test went wrong: offered once.
+  if (st["debugLog"].type == json::Value::Bool && !st["debugLog"].boolean() && iniGet(L"ncdev", L"debugLogAsked").empty()) {
+    iniSet(L"ncdev", L"debugLogAsked", L"1");
+    if (MessageBoxW(npp._nppHandle, L"Turn on Nucleus' debug log? debug-log.txt then says what Nucleus did, step by step: the first thing to read when a test goes wrong.", PLUGIN_NAME, MB_YESNO | MB_ICONQUESTION) == IDYES) flags += L" --debug-log on";
+  }
+  status(L"Nucleus: starting Nucleus Co-op…");
+  DWORD code = 1;
+  std::string said = runTool(L"test " + quoteArg(d->path) + L" --nucleus " + quoteArg(nucleus) + flags, &code, 60000);
+  while (!said.empty() && (said.back() == '\n' || said.back() == '\r')) said.pop_back();
+  status(code == 0 ? L"Nucleus: Nucleus Co-op started" : L"Nucleus: couldn't start Nucleus Co-op");
+  MessageBoxW(npp._nppHandle, (wide(said.empty() ? "Couldn't run ncdev test." : said) + (code == 0 ? L"\n\nAfterwards: Plugins › Nucleus Co-op handlers › Open Nucleus' debug log." : L"")).c_str(), PLUGIN_NAME, MB_OK | (code == 0 ? MB_ICONINFORMATION : MB_ICONWARNING));
+}
+static void cmdOpenNucleusLog() {
+  std::wstring nucleus = nucleusFolder(false);
+  if (nucleus.empty()) return;
+  std::wstring log = nucleus + L"\\debug-log.txt";
+  if (!exists(log)) {
+    MessageBoxW(npp._nppHandle, (L"There's no debug-log.txt in " + nucleus + L" yet. Turn on the debug log in Nucleus' settings (or say yes when testing), then run a test.").c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  SendMessage(npp._nppHandle, NPPM_DOOPEN, 0, (LPARAM)log.c_str());
+}
 static void cmdDocs() {
   HWND h = curSci();
   if (!currentDoc()) return needHandler();
@@ -2101,6 +2154,8 @@ static FuncItem funcs[] = {
     {L"", nullptr, 0, false, nullptr},
     {L"New handler…", cmdNewHandler, 0, false, nullptr},
     {L"Browse the Hub…", cmdHub, 0, false, nullptr},
+    {L"Test in Nucleus Co-op", cmdTestInNucleus, 0, false, nullptr},
+    {L"Open Nucleus' debug log", cmdOpenNucleusLog, 0, false, nullptr},
     {L"Install to Nucleus Co-op", cmdInstall, 0, false, nullptr},
     {L"Package as .nc (for the Hub)…", cmdPackage, 0, false, nullptr},
     {L"Set the Nucleus Co-op folder…", cmdSetNucleus, 0, false, nullptr},
@@ -2113,7 +2168,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 24;
+static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 26;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)

@@ -24,6 +24,7 @@ import { pluginsFor, simulateIsolated } from './sandbox';
 import { formatSimulation } from './simformat';
 import { buildPackage } from './core/pkg';
 import { installHandler } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleusSync, testInNucleus } from './nucleusrun';
 import { FEATURES, Feature, renderHandler, toHandlerFileName } from './core/templates';
 
 declare const __VERSION__: string;
@@ -47,7 +48,7 @@ export interface LspSettings {
 }
 const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {}, format: { quotes: 'double', semicolons: 'add' } };
 
-export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler' } as const;
+export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler', testInNucleus: 'nucleus.testInNucleus' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
 
 // LSP enums (numbers in the protocol)
@@ -654,6 +655,24 @@ export class Server {
         const r = installHandler(file, nucleus, { overwrite: force || (args[0] as any)?.overwrite !== false });
         this.notify('window/showMessage', { type: 3, message: `Nucleus: installed ${path.basename(r.dest)}${r.assets ? ` and ${r.assets} file(s)` : ''}. Restart Nucleus Co-op (or re-add the game) to pick it up.` });
         return { file: r.dest, assetCount: r.assets };
+      }
+      case COMMANDS.testInNucleus: {
+        // { uri, restart?, debugLog? }: install, then start Nucleus Co-op (Windows) with the handler's game selected.
+        const o = (args[0] ?? {}) as { uri?: string; restart?: boolean; debugLog?: boolean; nucleusPath?: string; force?: boolean };
+        const file = typeof o.uri === 'string' ? pathOf(o.uri) : undefined;
+        const nucleus = o.nucleusPath ?? this.settings.nucleusPath;
+        if (!file) throw new Error('nucleus.testInNucleus: give { uri } of a handler file.');
+        if (!nucleus) throw new Error('Set nucleus.nucleusPath (the Nucleus Co-op folder, with NucleusCoop.exe) first.');
+        const status = nucleusStatus(nucleus);
+        if (!status.canStart) throw new Error(status.why);
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        if (errors && !o.force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        if (status.running && !o.restart) return { started: false, running: true, message: 'Nucleus Co-op is running and only reads handlers when it starts: ask the user, then call again with { restart: true }.' };
+        if (status.running) stopNucleusSync();
+        if (typeof o.debugLog === 'boolean') setDebugLog(nucleus, o.debugLog);
+        const r = testInNucleus(file, nucleus);
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: ${AFTER_START}` });
+        return { started: true, guid: r.guid, debugLog: debugLogOn(nucleus), log: debugLogPath(nucleus) };
       }
       case COMMANDS.newHandler: {
         // { name, exe, dir, steamId?, maxPlayers?, features? }: writes <dir>/<name>.js from the template and opens it.

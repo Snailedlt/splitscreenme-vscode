@@ -11,6 +11,7 @@ import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
 import { gameFolderName } from './core/pkgcheck';
 import { installHandler as installFiles, InstallError } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleus, testInNucleus } from './nucleusrun';
 
 export interface CommandHost {
   lintFiles(entries: { uri: vscode.Uri; text: string }[]): void;
@@ -31,6 +32,8 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
   reg('splitscreenme.newHandler', newHandler);
   reg('splitscreenme.packageHandler', (uri?: vscode.Uri) => packageHandler(uri));
   reg('splitscreenme.installHandler', (uri?: vscode.Uri) => installHandler(uri));
+  reg('splitscreenme.testInNucleus', (uri?: vscode.Uri) => testHandlerInNucleus(context, uri));
+  reg('splitscreenme.openNucleusLog', openNucleusLog);
   reg('splitscreenme.browseHub', () => browseHub(context));
   reg('splitscreenme.setupTypes', () => setupTypes(context));
   reg('splitscreenme.openDocs', openDocs);
@@ -178,6 +181,48 @@ async function nucleusFolder(): Promise<string | undefined> {
   }
   await cfg.update('nucleusPath', dir, vscode.ConfigurationTarget.Global);
   return dir;
+}
+
+/** Install the handler and start Nucleus Co-op on its game: the real test, one click away (src/nucleusrun.ts). */
+async function testHandlerInNucleus(context: vscode.ExtensionContext, uri?: vscode.Uri) {
+  const file = await resolveHandlerFile(uri);
+  if (!file) return;
+  const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === file.toString());
+  if (doc?.isDirty) await doc.save(); // what's tested is what's on screen
+  const text = await fs.readFile(file.fsPath, 'utf8');
+  if (!(await confirmNoErrors(text, 'Test'))) return;
+  const nucleus = await nucleusFolder();
+  if (!nucleus) return;
+  const status = nucleusStatus(nucleus);
+  if (!status.canStart) {
+    vscode.window.showWarningMessage(`Nucleus: ${status.why}`);
+    return;
+  }
+  if (status.running) {
+    const ok = await vscode.window.showWarningMessage('Nucleus Co-op is open. It reads handlers when it starts: close it and start it again with this handler?', { modal: true }, 'Restart Nucleus Co-op');
+    if (ok !== 'Restart Nucleus Co-op') return;
+    await stopNucleus();
+  }
+  // The debug log is what tells you why something went wrong: offer it once, remember the answer.
+  if (status.debugLog === false && !context.globalState.get('nucleus.debugLogAsked')) {
+    const on = await vscode.window.showInformationMessage("Turn on Nucleus' debug log? debug-log.txt then says what Nucleus did, step by step: the first thing to read when a test goes wrong.", 'Turn it on', 'Not now');
+    await context.globalState.update('nucleus.debugLogAsked', true);
+    if (on === 'Turn it on') setDebugLog(nucleus, true);
+  }
+  testInNucleus(file.fsPath, nucleus);
+  const pick = await vscode.window.showInformationMessage(AFTER_START, ...(debugLogOn(nucleus) ? ['Open the Debug Log'] : []));
+  if (pick) await openNucleusLog();
+}
+
+async function openNucleusLog() {
+  const nucleus = await nucleusFolder();
+  if (!nucleus) return;
+  const log = debugLogPath(nucleus);
+  if (!(await fs.stat(log).then(() => true, () => false))) {
+    vscode.window.showInformationMessage(`Nucleus: there's no debug-log.txt in ${nucleus} yet. Turn on the debug log in Nucleus' settings (or answer yes when testing), then run a test.`);
+    return;
+  }
+  await vscode.window.showTextDocument(vscode.Uri.file(log), { preview: true });
 }
 
 async function installHandler(uri?: vscode.Uri) {

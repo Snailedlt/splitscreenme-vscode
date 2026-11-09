@@ -89,6 +89,19 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.testInNucleus",
+        "title": "Test in Nucleus Co-op",
+        "category": "Nucleus",
+        "icon": "$(debug-start)",
+        "enablement": "!isWeb"
+      },
+      {
+        "command": "splitscreenme.openNucleusLog",
+        "title": "Open Nucleus Co-op's Debug Log",
+        "category": "Nucleus",
+        "enablement": "!isWeb"
+      },
+      {
         "command": "splitscreenme.browseHub",
         "title": "Browse Handlers on the Hub…",
         "category": "Nucleus"
@@ -154,7 +167,12 @@
         {
           "command": "splitscreenme.tryIt",
           "when": "splitscreenme.isHandler",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "splitscreenme.testInNucleus",
+          "when": "splitscreenme.isHandler && isWindows",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
@@ -954,11 +972,12 @@
           {
             "id": "install",
             "title": "Test it in Nucleus Co-op",
-            "description": "Install copies the handler (and its folder) into Nucleus' `handlers` folder. Turn on Nucleus' debug log, start 2 players, and if something's off, `debug-log.txt` in the Nucleus folder says why.\n[Install Handler into Nucleus Co-op](command:splitscreenme.installHandler)",
+            "description": "One click installs the handler (and its folder) into Nucleus' `handlers` folder and starts Nucleus with the game selected: pick the players and press Play. Turn on the debug log when asked: if something's off, `debug-log.txt` says why.\n[Test in Nucleus Co-op](command:splitscreenme.testInNucleus)\n[Open the Debug Log](command:splitscreenme.openNucleusLog)",
             "media": {
               "markdown": "media/walkthrough/install.md"
             },
             "completionEvents": [
+              "onCommand:splitscreenme.testInNucleus",
               "onCommand:splitscreenme.installHandler"
             ]
           },

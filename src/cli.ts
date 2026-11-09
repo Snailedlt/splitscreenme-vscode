@@ -2,6 +2,7 @@
 // Also a standalone .exe (#18, scripts/sea.mjs). `nucleus` is its old name and still works; `nucleus-lint <paths>`
 // is kept as a shortcut for `ncdev lint <paths>`.
 import { installHandler } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleus, testInNucleus } from './nucleusrun';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
 import { packageFilesFor } from './pkgfiles';
@@ -60,6 +61,11 @@ Commands:
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
       [--features ${FEATURES.map((f) => f.id).join(',')}] [--out file.js] [--force]
                               Create a handler from a template (--list-features: the features)
+  test <handler.js> --nucleus <folder> [--restart] [--debug-log on|off] [--force] [--status]
+                              Test in Nucleus Co-op (Windows): install the handler, then start
+                              Nucleus with its game selected. --restart closes a running Nucleus
+                              first (it reads handlers when it starts); --debug-log sets Nucleus'
+                              debug log; --status only says whether it's running and the log's on
   install <handler.js> --nucleus <folder> [--force]
                               Copy the handler (and its <Name>/ folder) into Nucleus Co-op's
                               handlers folder. --force replaces an installed one and installs
@@ -111,7 +117,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '--restart', '--status', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -130,7 +136,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'update', 'version'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'test', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'update', 'version'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (!cmd && (argv[0] === '--version' || argv[0] === '-v')) cmd = 'version';
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
@@ -164,6 +170,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdNew(args, json);
     case 'install':
       return cmdInstall(args, json);
+    case 'test':
+      return cmdTest(args, json);
     case 'package':
       return cmdPackage(args, json);
     case 'init-agent':
@@ -471,6 +479,34 @@ function cmdInstall(args: Args, json: boolean): number {
   if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s), so Nucleus may not load it; fix them or pass --force. Run "ncdev lint ${file}".`);
   const { dest, assets } = installHandler(file, nucleus, { overwrite: has(args, '--force') });
   print(json, { file: dest, assetCount: assets }, () => `Installed ${path.basename(dest)}${assets ? ` and ${assets} asset file(s)` : ''} to ${path.dirname(dest)}. Restart Nucleus Co-op (or re-add the game) to pick it up.`);
+  return 0;
+}
+
+async function cmdTest(args: Args, json: boolean): Promise<number> {
+  const nucleus = flag(args, '--nucleus');
+  if (!nucleus) throw new Usage('test: --nucleus <folder> is required (the Nucleus Co-op folder, with NucleusCoop.exe and handlers)');
+  const status = nucleusStatus(nucleus);
+  if (has(args, '--status')) {
+    print(json, status, () => `${status.canStart ? (status.running ? 'Nucleus Co-op is running.' : 'Nucleus Co-op is not running.') : status.why}\nDebug log: ${status.debugLog === undefined ? 'no Settings.ini yet' : status.debugLog ? 'on' : 'off'}`);
+    return 0;
+  }
+  const file = args.positional[0];
+  if (!file?.endsWith('.js')) throw new Usage('test: give the handler .js file');
+  if (!status.canStart) throw new Error(status.why);
+  const errors = lint(fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error');
+  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s), so Nucleus may not load it; fix them or pass --force. Run "ncdev lint ${file}".`);
+  if (status.running) {
+    if (!has(args, '--restart')) {
+      if (json) print(json, { started: false, running: true }, () => '');
+      else console.error('Nucleus Co-op is running and only reads handlers when it starts: close it, or pass --restart.');
+      return 3;
+    }
+    await stopNucleus();
+  }
+  const log = flag(args, '--debug-log');
+  if (log === 'on' || log === 'off') setDebugLog(nucleus, log === 'on');
+  const r = testInNucleus(file, nucleus);
+  print(json, { started: true, file: r.dest, guid: r.guid, debugLog: debugLogOn(nucleus), log: debugLogPath(nucleus) }, () => `${AFTER_START}\nDebug log: ${debugLogOn(nucleus) ? debugLogPath(nucleus) : 'off (--debug-log on turns it on)'}`);
   return 0;
 }
 
