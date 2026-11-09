@@ -190,13 +190,14 @@ export function completionsAt(text: string, offset: number, opts: FeatureOptions
   if (key) {
     const options = addedOptions(text, offset);
     if (!options.length) return undefined;
-    const closeAfter = /^["']?\s*\]/.test(text.slice(key.end));
+    const closeAfter = /^["']?\s*\]/.test(text.slice(key.end)) || /^\s*\]/.test(text.slice(key.end));
     return options.map((o, i) => ({
       label: o.key,
       kind: 'property' as const,
       detail: o.name ?? 'Game.AddOption',
       documentation: optionMarkdown(o, text),
-      insertText: key.quote ? o.key : `"${o.key}"${closeAfter ? '' : ']'}`,
+      // The closing quote and bracket too, unless they're there already (an editor that closes them as you type).
+      insertText: key.quote ? o.key + (text.slice(key.end).startsWith(key.quote) ? '' : key.quote + (closeAfter ? '' : ']')) : `"${o.key}"${closeAfter ? '' : ']'}`,
       range: { start: key.start, end: key.end },
       sortText: String(i).padStart(3, '0'),
     }));

@@ -173,3 +173,11 @@ test('an empty file offers the whole New Handler template', async () => {
   assert.deepEqual(lint(code).filter((d) => d.severity === 'error').map((d) => d.message), []);
   assert.ok(!(completionsAt('Game.GUID = "A";\nhand', 21) ?? []).some((x) => x.label === 'handler'), 'not in a file that has code');
 });
+
+test('Context.Options keys: the closing quote and bracket are added when the editor has not added them', () => {
+  const t = 'Game.AddOption("Mode", "", "mode", ["A", "B"]);\nGame.Play = function () {\n  var m = Context.Options["\n};\n';
+  const at = t.indexOf('Options["') + 9;
+  assert.equal(completionsAt(t, at)![0].insertText, 'mode"]');
+  const closed = t.replace('Options["\n', 'Options[""]\n');
+  assert.equal(completionsAt(closed, at)![0].insertText, 'mode');
+});
