@@ -2,6 +2,7 @@
 // with them (DownloadPrompt.ExtractHandler, AGENTS.md in splitscreenme-vscode): handler.js at the root is the handler,
 // every top-level folder's contents are merged into handlers/<GameName>/, other files at the root are dropped.
 // Pure functions (no DOM, no Node): shared by the workbench, the VS Code extension, the CLI and `nucleus lsp`.
+import { hubGameName } from './hubscan';
 
 /** A file of a handler package other than handler.js: its path inside the package (with /) and its bytes. */
 export interface PackageFile {
@@ -59,7 +60,8 @@ export function installPath(name: string, gameName: string): string | null {
   if (parts.length < 2) return null; // at the root: dropped
   return `handlers\\${gameName}\\${parts.slice(1).join('\\')}`;
 }
-export const gameFolderName = (handler: string) => (handler.match(/^\s*Game\.GameName\s*=\s*"([^"\r\n]*)"/m)?.[1] ?? '<GameName>').replace(/[\/:*?"<>|]/g, '');
+/** The folder a Hub install merges the package's folders into (core/hubscan.ts), or `<GameName>` when it can't tell. */
+export const gameFolderName = (handler: string) => hubGameName(handler) ?? '<GameName>';
 
 export interface PkgProblem {
   /** The package file it's about, or undefined for handler.js. */

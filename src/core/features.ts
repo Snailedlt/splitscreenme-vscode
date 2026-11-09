@@ -17,6 +17,8 @@ import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
 import { lookup } from './lookup';
 import { prettySignature } from './pretty';
 import { WORKBENCH_URL } from './sharelink';
+import { BOM, withoutBom } from './bom';
+import { eolOf } from './eol';
 
 /** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
  *  variables: `own: false` leaves those out, so they don't show twice. */
@@ -236,7 +238,7 @@ const lineBounds = (text: string, offset: number) => {
 
 /** Completion items at `offset`, or undefined when there's nothing to offer (let the editor do its own). */
 export function completionsAt(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
-  const list = completionsAtRaw(text, offset, opts);
+  const list = withoutBom(text, offset, (t, o) => completionsAtRaw(t, o, opts));
   const link = opts.docsLink;
   return link && list ? list.map((c) => (c.documentation ? { ...c, documentation: linkApiNames(c.documentation, link) } : c)) : list;
 }
@@ -267,6 +269,10 @@ function completionsAtRaw(text: string, offset: number, opts: FeatureOptions = {
     while (end < text.length && !/["'\n]/.test(text[end])) end++;
     return o.values.map((v, i) => ({ label: v, kind: 'value' as const, detail: o.name ?? o.key, range: { start: offset - cmp.partial.length, end }, sortText: String(i).padStart(3, '0'), preselect: v === o.default }));
   }
+  // Inside a comment or any other string: nothing (help on request; `// this sets Game.` isn't code). Not even on
+  // Ctrl+Space: editors send "invoked" for every typed letter too. File names in the game folder lists come from
+  // their own providers (gamefolders.ts, lsp.ts).
+  if (codeStateAt(text, offset) !== 'code') return undefined;
   // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
   const list = blockedListAt(text, offset);
   if (list && !blockedItemAt(text, offset)) {
@@ -572,6 +578,7 @@ export function fixAllCodeAction(text: string, rules?: RuleOverrides): CodeActio
  *  problem is auto-fixable) and "Disable <rule> for this line". */
 export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: RuleOverrides): CodeActionEntry[] {
   const actions: CodeActionEntry[] = [];
+  const eol = eolOf(text);
   for (const diag of diagnostics) {
     for (const fix of diag.fixes ?? []) actions.push({ title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: fix.preferred, diagnostic: diag });
     if (!actions.some((a) => a.kind === 'source.fixAll') && diag.fixes?.some((f) => f.preferred)) {
@@ -579,9 +586,9 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
       if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'source.fixAll', edits: [fix.edit], diagnostic: diag });
     }
     if (diag.rule in RULES && diag.rule !== 'syntax-error') {
-      const start = lineStart(text, diag.start);
+      const start = Math.max(lineStart(text, diag.start), text.startsWith(BOM) ? 1 : 0); // after a BOM
       const indent = text.slice(start).match(/^[ \t]*/)![0];
-      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}\n` }], diagnostic: diag });
+      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}${eol}` }], diagnostic: diag });
     }
   }
   return actions;
@@ -612,23 +619,30 @@ export function formatEdits(text: string, opts: FormatSettings): { edits: TextEd
 export function rangeFormatEdits(text: string, start: number, end: number, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
   const r = formatHandler(text, { ...formatOptions(opts), keepBlankLines: true });
   if (!r.ok) return { error: r.reason };
-  const crlf = r.code.includes('\r\n');
-  const was = text.split('\n');
-  const now = r.code.split('\n');
-  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
-  const l0 = text.slice(0, start).split('\n').length - 1;
-  const l1 = text.slice(0, Math.max(start, end)).split('\n').length - 1;
-  const edits: TextEdit[] = [];
-  let at = 0;
-  for (let i = 0; i < was.length; i++) {
-    const lineEnd = at + was[i].length;
-    if (i >= l0 && i <= l1) {
-      const strip = (s: string) => (crlf ? s.replace(/\r$/, '') : s);
-      const a = strip(was[i]);
-      const b = strip(now[i]);
-      if (a !== b) edits.push({ start: at, end: at + a.length, text: b });
+  // Lines as JavaScript and Nucleus see them (\r\n, \n, a lone \r, U+2028/U+2029); only their text is compared.
+  const linesOf = (t: string) => {
+    const out: { start: number; text: string }[] = [];
+    let at = 0;
+    for (const m of t.matchAll(/\r\n|[\r\n\u2028\u2029]/g)) {
+      out.push({ start: at, text: t.slice(at, m.index) });
+      at = m.index! + m[0].length;
     }
-    at = lineEnd + 1;
+    out.push({ start: at, text: t.slice(at) });
+    return out;
+  };
+  const was = linesOf(text);
+  const now = linesOf(r.code);
+  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
+  const lineAt = (o: number) => {
+    let i = 0;
+    while (i + 1 < was.length && was[i + 1].start <= o) i++;
+    return i;
+  };
+  const l0 = lineAt(start);
+  const l1 = lineAt(Math.max(start, end));
+  const edits: TextEdit[] = [];
+  for (let i = l0; i <= l1; i++) {
+    if (was[i].text !== now[i].text) edits.push({ start: was[i].start, end: was[i].start + was[i].text.length, text: now[i].text });
   }
   return { edits };
 }

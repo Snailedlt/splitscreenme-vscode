@@ -74,7 +74,8 @@ export function jsRuleDiagnostics(text: string, rules: JsRuleId[]): JsDiagnostic
   }
   if (messages.some((m) => m.fatal)) return [];
   const starts = [0];
-  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  // ESLint's own line breaks (\r\n, \r, \n, U+2028, U+2029), so positions after a lone \r stay right.
+  for (const m of text.matchAll(/\r\n|[\r\n\u2028\u2029]/g)) starts.push(m.index! + m[0].length);
   const offset = (line: number, col: number) => Math.min(text.length, (starts[line - 1] ?? text.length) + col - 1);
   return messages
     .filter((m) => m.ruleId && m.ruleId in JS_RULES)

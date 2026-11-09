@@ -4,6 +4,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { globToRegExp, isHandlerFile } from '../core/features';
 import { snippetToPlain } from '../lsp';
+import { tmpdir } from './tmp';
 
 // The real server: `node dist/cli.js lsp`, spoken to over stdio like an editor would.
 const HEADER = 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\n';
@@ -218,11 +219,11 @@ test('snippets become plain text for clients without snippet support', () => {
   assert.equal(snippetToPlain('function () {\n\t$0\n}'), 'function () {\n\t\n}');
 });
 
-test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async () => {
+test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const { pathToFileURL } = await import('node:url');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-pkg-'));
+  const dir = tmpdir(t, 'nucleus-lsp-pkg-');
   const js = path.join(dir, 'Pkg.js');
   fs.mkdirSync(path.join(dir, 'Pkg'));
   fs.writeFileSync(path.join(dir, 'Pkg', 'Config.json'), '{ bad');
@@ -249,12 +250,12 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
   assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
 });
 
-test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async () => {
+test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const { pathToFileURL } = await import('node:url');
   const { spawn } = await import('node:child_process');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-ws-'));
+  const root = tmpdir(t, 'nucleus-lsp-ws-');
   fs.mkdirSync(path.join(root, 'handlers'));
   const a = path.join(root, 'handlers', 'A.js');
   fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = "M";\n');
@@ -342,10 +343,12 @@ test('lsp: range and on-type formatting, with the style settings', async () => {
   notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'double', semicolons: 'add' } } } });
 });
 
-test('lsp: Package, Install and New handler, as commands and source actions', async () => {
+test('lsp: Package, Install and New handler, as commands and source actions', async (t) => {
   const fsx = require('node:fs') as typeof import('node:fs');
   const os = require('node:os') as typeof import('node:os');
-  const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-cmd-'));
+  const dir = tmpdir(t, 'nucleus-lsp-cmd-');
+  const refused = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'A\\B', exe: 'game.exe', dir }] });
+  assert.match(refused.error?.message ?? '', /backslash/, 'a game name that breaks the Hub install');
   const r = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'My Game', exe: 'game.exe', dir }] });
   const file = path.join(dir, 'My Game.js');
   assert.ok(fsx.existsSync(file), JSON.stringify(r));
@@ -361,4 +364,28 @@ test('lsp: Package, Install and New handler, as commands and source actions', as
   await request('workspace/executeCommand', actions[1].command);
   assert.ok(fsx.existsSync(path.join(nucleus, 'handlers', 'My Game.js')));
   notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: '' } } });
+});
+
+test('lsp: quick fixes in a CRLF document insert CRLF (no mixed line endings)', async () => {
+  const uri = 'file:///tmp/nucleus-lsp-test/handlers/Crlf.js';
+  const text = 'Game.GameName = "Crlf";\r\nGame.ExecutableName = "a.exe";\r\nGame.Hook.ForceFocuss = true;\r\nGame.KillMutex = "M";\r\n';
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const { params } = await diagnosticsFor(uri, 1);
+  assert.ok(params.diagnostics.some((d: any) => d.code === 'missing-required'), 'Game.GUID missing');
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const off = (p: { line: number; character: number }) => starts[p.line] + p.character;
+  let applied = 0;
+  for (const d of params.diagnostics) {
+    const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: d.range, context: { diagnostics: [d] } })).result;
+    for (const a of actions) {
+      const edits = [...(a.edit?.changes?.[uri] ?? [])].sort((x: any, y: any) => off(y.range.start) - off(x.range.start));
+      let t = text;
+      for (const e of edits) t = t.slice(0, off(e.range.start)) + e.newText + t.slice(off(e.range.end));
+      assert.ok(!/(?<!\r)\n|\r(?!\n)/.test(t), `${a.title}: ${JSON.stringify(t)}`);
+      applied++;
+    }
+  }
+  assert.ok(applied >= 4, `${applied} quick fixes tried`);
+  notify('textDocument/didClose', { textDocument: { uri } });
 });

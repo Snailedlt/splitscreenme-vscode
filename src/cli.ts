@@ -15,7 +15,7 @@ import { formatHandler } from './core/format';
 import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
-import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
+import { renderHandler, toHandlerFileName, validateGameName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
 import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
 import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
@@ -459,6 +459,8 @@ function cmdNew(args: Args, json: boolean): number {
   const name = flag(args, '--name');
   const exe = flag(args, '--exe');
   if (!name || !exe) throw new Usage('new: --name and --exe are required');
+  const badName = validateGameName(name);
+  if (badName) throw new Usage(`new: --name: ${badName}`);
   const features = (flag(args, '--features') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   const bad = features.filter((f) => !FEATURES.some((x) => x.id === f));
   if (bad.length) throw new Usage(`Unknown feature(s): ${bad.join(', ')}. Available: ${FEATURES.map((f) => f.id).join(', ')}`);

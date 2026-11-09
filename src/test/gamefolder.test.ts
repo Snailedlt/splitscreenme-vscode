@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as gf from '../core/gamefolder';
+import { tmpdir } from './tmp';
 
 const mk = (name, paths) => {
   const files = [], dirs = new Set();
@@ -178,12 +179,12 @@ test('Unity facts and the folder summary', () => {
   assert.equal(gf.engineFacts(mk('X', ['X.exe', 'Game_Data/readme.txt'])).length, 0);
 });
 
-test('readGameFolder: files and folders from disk, relative with "/", skipping .git', async () => {
+test('readGameFolder: files and folders from disk, relative with "/", skipping .git', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
   const { readGameFolder } = await import('../gamefolders');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-game-'));
+  const dir = tmpdir(t, 'nucleus-game-');
   fs.mkdirSync(path.join(dir, 'Binaries', 'Win64'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.git'));
   fs.writeFileSync(path.join(dir, 'Binaries', 'Win64', 'Game.exe'), 'xx');
