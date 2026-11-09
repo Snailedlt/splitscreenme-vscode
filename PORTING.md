@@ -260,7 +260,7 @@ Unsaved buffers (no `file:` URI) count when the client calls them `javascript` a
 | **Package** / **Install** | `nucleus package MyGame.js` (a `.nc` for the Hub); to install, copy `MyGame.js` and its `MyGame/` folder into Nucleus' `handlers` folder |
 | **Lint all handlers** | `nucleus lint path/to/handlers` (`--fix` applies the safe fixes) |
 | **Set Up Type Definitions** | Point your TypeScript server at `types/nucleus.d.ts` |
-| **Debugging** (Run and Debug) | `nucleus dap` in an editor with DAP support ([above](#debugging-nucleus-dap)), or `nucleus debug MyGame.js --break 14 --watch Context.PlayerID` in a terminal. |
+| **Debugging** (Run and Debug) | `nucleus dap` in an editor with DAP support ([above](#debugging-ncdev-dap)), or `nucleus debug MyGame.js --break 14 --watch Context.PlayerID` in a terminal. |
 | **What's New** | `CHANGELOG.md` |
 | Agent tools for Copilot | `nucleus mcp` for any MCP client (README, "AI agents") |
 

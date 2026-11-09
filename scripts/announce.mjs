@@ -26,11 +26,19 @@ for (const [i, url] of urls.entries()) {
     failed++;
     continue;
   }
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    // No connection, DNS…: a warning like any other failed post, never a failed release.
+    failed++;
+    console.log(`::warning::Couldn't reach Discord for webhook ${i + 1}: ${e?.message ?? e}`);
+    continue;
+  }
   if (res.ok) console.log(`Announced in channel ${i + 1} of ${urls.length}.`);
   else {
     failed++;

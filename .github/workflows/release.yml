@@ -22,6 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Only from main (or a pushed tag)
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run the Release workflow from main (this run is on ${{ github.ref_name }}): merge the release pull request first."
+          exit 1
       - name: Which version? (checked before anything is built)
         id: version
         run: node scripts/release-version.mjs "${{ inputs.version }}"
@@ -36,6 +41,8 @@ jobs:
         run: node scripts/release-notes.mjs --tag "${{ steps.version.outputs.tag }}" > release-notes.md
       - run: npm run typecheck
       - run: npm test
+      - name: The skill's generated files are committed (npm run build, then commit plugin/)
+        run: git diff --exit-code -- plugin/
       - name: Build the offline workbench (workbench.html)
         run: |
           git clone --quiet --depth 1 https://github.com/Snailedlt/nucleuscoop-handler-testbench testbench

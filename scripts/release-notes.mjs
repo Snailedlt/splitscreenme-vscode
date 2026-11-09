@@ -15,6 +15,11 @@ const flag = (n) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const version = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--tag') ?? JSON.parse(fs.readFileSync(new URL('package.json', root), 'utf8')).version;
+// Release tags are vX.Y.Z-beta.N (scripts/release-version.mjs); without --tag the links would point at a tag that doesn't exist.
+if (!flag('--tag') && args.includes('--discord')) {
+  console.error('--discord needs --tag vX.Y.Z-beta.N (the release workflow passes it; release-version.mjs prints the next one).');
+  process.exit(1);
+}
 const tag = flag('--tag') ?? `v${version}`;
 
 export function section(changelog, v) {
@@ -73,7 +78,7 @@ if (args.includes('--discord')) {
       }),
     );
   } else {
-    const lines = [`**v${version} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
+    const lines = [`**v${version}${/-beta/.test(tag) ? ' (beta)' : ''} is out** 🛠️`, ...items.slice(0, 3).map((s) => `• ${s}`)];
     lines.push('', `<${repo}/releases/tag/${tag}>`);
     if (thanks.length) lines.push(`Thanks ${thanks.join(', ')} 🙏`);
     console.log(lines.join('\n'));
