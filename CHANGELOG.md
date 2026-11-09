@@ -56,6 +56,12 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **Package and Install follow your rule settings.** A rule you turned down or off no longer blocks them.
 - **Examples in the docs mean what they say.** Laying out an example could drop parentheses it needed (`(a + b) * c`); such examples now stay as written.
 - **The rule link in each problem works.** It pointed at an empty repository.
+- **No suggestions inside comments and strings.** Typing `Game.` in a comment or a string no longer opens the API list; option keys and choices inside `Context.Options["…"]` still come up.
+- **The Hub install name, the same everywhere.** Check, Try it (`Game.Folder`) and the package checks read `Game.GameName` exactly as Nucleus' Hub install does: no indentation, the second of two matching lines wins, a BOM is ignored.
+- **Format keeps unusual line breaks.** Files with an old Mac line break (`\r`) or U+2028/U+2029 are formatted with each break left where it was.
+- **Files saved with a BOM.** Problems, fixes and Add `Game.GUID` land in the right place, and a BOM no longer causes a false Hub install error.
+- **Quick fixes keep Windows line endings.** In a CRLF handler, quick fixes and Fix all insert CRLF, so lines no longer end up mixed.
+- **New Handler checks the game name.** A name with a double quote, backslash, line break or control character is refused with the reason (it would break the Hub install). Accented names give a readable GUID ("Pokémon" → "Pokemon").
 ---
 
 ## 0.5.0 (beta) · 2026-11-08
