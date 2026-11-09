@@ -16,6 +16,15 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
 
 *Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md). Testing it? See [TESTING.md](TESTING.md).*
 
+**In motion** (about a minute each, captioned, no sound; click to play):
+
+<p>
+  <a href="docs/videos/vscode.mp4"><img src="docs/videos/vscode-poster.jpg" width="49%" alt="Video: VS Code with the extension, showing problems, quick fixes, suggestions, parameter hints, the Docs panel and Try it"></a>
+  <a href="docs/videos/notepadpp.mp4"><img src="docs/videos/notepadpp-poster.jpg" width="49%" alt="Video: Notepad++ with the plugin, showing the same checks, fixes, suggestions and docs"></a>
+</p>
+
+The browser workbench has [its own](https://github.com/Snailedlt/nucleuscoop-handler-testbench/blob/main/docs/videos/workbench.mp4).
+
 - **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`. After `=`, the values the option takes.
 - **Suggestions that know your handler:** `Context.Options["` suggests the keys your `Game.AddOption` lines add, and `== "` their choices; what your own functions return is understood after a dot.
 - **Hover docs** and **signature help** for every method and its overloads, saying what to pass for each parameter of the most used ones. API names in them are links to the **Nucleus Docs** panel.
