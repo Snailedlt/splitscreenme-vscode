@@ -196,19 +196,9 @@ test('Open in the Browser Workbench: the share link decodes to the handler, as t
   const { url, withHandler } = workbenchLinkFor(text, 'vscode');
   assert.ok(withHandler);
   assert.match(url, /^https:\/\/snailedlt\.github\.io\/nucleuscoop-handler-testbench\/\?ref=vscode#share-[0-9A-Za-z]+$/);
-  // The workbench's decoder (playground/src/share.ts fromBase62), then inflate.
-  const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  const TAIL = [0, 2, 3, 5, 6, 7];
-  const code = url.split('#share-')[1];
-  const bytes: number[] = [];
-  for (let i = 0; i < code.length; i += 7) {
-    const part = code.slice(i, i + 7);
-    let n = 0;
-    for (const c of part) n = n * 62 + ALPHABET.indexOf(c);
-    const chunk: number[] = [];
-    for (let k = 0; k < TAIL.indexOf(part.length); k++) { chunk.unshift(n % 256); n = Math.floor(n / 256); }
-    bytes.push(...chunk);
-  }
+  // The workbench's decoder (core/sharelink.ts fromBase62, which playground/src/share.ts imports), then inflate.
+  const { fromBase62 } = require('../core/sharelink');
+  const bytes = fromBase62(url.split('#share-')[1]);
   assert.equal(zlib.inflateRawSync(Buffer.from(bytes)).toString('utf8'), text);
   // Too large for a link: the workbench without it.
   const big = workbenchLinkFor(Array.from({ length: 40000 }, (_, i) => `var v${i} = ${Math.random()};`).join('\n'), 'vscode');
