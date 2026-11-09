@@ -38,6 +38,11 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **Try it never freezes the editor.** It runs in a background thread: a handler stuck in an endless loop is stopped, a new edit cancels the old run, and Test all shows progress and can be cancelled. The same goes for `ncdev lsp`, `ncdev mcp` and the debugger.
+- **Notepad++ stays responsive while ncdev works.** Hub search and download, Install, Package, Test, Update and the API reference run in the background with a timer in the status bar, and a tool that hangs is stopped.
+- **Lighter on hub.splitscreen.me, and it knows who asks.** Requests at the same time are shared, at most two downloads run at once, retries back off on errors, and when the Hub is down the last list is used for a while. Every request names these devtools, which tool sent it and why (e.g. `vscode-extension hub-browse`), and nothing about you.
+- **`ncdev lsp` watches only handlers and their folders.** Changes in `node_modules` and `.git` no longer wake it up.
+- **Zip packages read more file names correctly.** Names stored without the UTF-8 flag are read as UTF-8 when they are valid UTF-8.
 - **Missing required options, explained and filled in.** A missing `Game.GUID`, `Game.GameName` or `Game.ExecutableName` now says what each one is for, and the fix fills in what the handler already tells it (the GUID from the game's name, or the other way round), so *Fix all* can add it; only real unknowns get a placeholder to fill in. A missing `Game.ExecutableName` is reported once, not twice.
 - **Every use of a name, highlighted.** In editors that use `ncdev lsp`, the cursor on a variable or function highlights its other uses, as VS Code does.
 - **The Hub's most downloaded.** `ncdev hub search --popular` lists the Hub's most downloaded handlers.
