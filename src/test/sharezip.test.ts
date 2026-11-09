@@ -1,11 +1,12 @@
-// The share-link letters and the zip bytes (core/sharelink.ts, core/zip.ts), shared with the browser workbench
+// The share-link letters and the zip bytes (core/sharelink.ts, core/zipbytes.ts through zip.ts), shared with the browser workbench
 // (nucleuscoop-handler-testbench playground/src/share.ts and package.ts), which compresses with the browser's own
 // CompressionStream: these parts must work on plain Uint8Arrays, without Node.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import { ALPHABET, TAIL_CHARS, fromBase62, toBase62 } from '../core/sharelink';
-import { crc32, handlerPackageEntries, packageEntries, readZip, writeZip, zipBytes, zipRecords } from '../core/zip';
+import { readZip, writeZip } from '../core/zip';
+import { crc32, handlerPackageEntries, packageEntries, zipBytes, zipRecords } from '../core/zipbytes';
 
 test('base 62: every length round-trips, and damaged text throws', () => {
   assert.equal(ALPHABET.length, 62);
