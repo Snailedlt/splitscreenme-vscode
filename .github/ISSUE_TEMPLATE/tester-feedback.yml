@@ -1,5 +1,5 @@
 name: Tester feedback
-description: Something wrong, confusing or missing in the extension, the nucleus CLI, Try it or the workbench.
+description: Something wrong, confusing or missing in the VS Code extension, the Notepad++ plugin, ncdev (and other editors), Try it or the workbench.
 labels: [feedback]
 body:
   - type: dropdown
@@ -12,6 +12,8 @@ body:
         - Completion / hover / docs
         - Commands (New Handler, Package, Install, Hub)
         - Workbench (browser)
+        - Notepad++ plugin
+        - ncdev (command line, or another editor through ncdev lsp)
         - AI agent skill (Claude Code plugin)
         - Something else
     validations:
