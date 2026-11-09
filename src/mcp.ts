@@ -13,7 +13,8 @@ import { handlerPageUrl } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { pluginsFor } from './sandbox';
+import { simWorker } from './simworker';
 import { EVERY_KEYBOARD } from './core/sim';
 
 /** MCP protocol versions this server speaks, newest first. */
@@ -118,13 +119,14 @@ export const TOOLS: Tool[] = [
       },
     },
     annotations: { readOnlyHint: true },
-    run: (a) => {
+    run: async (a) => {
       const { text, file } = readSource(a);
       // The schema's limits, enforced (a client may send anything): 1-16 players, a sensible screen.
       const int = (v: unknown, def: number, min: number, max: number) => (Number.isFinite(Number(v ?? def)) ? Math.min(max, Math.max(min, Math.round(Number(v ?? def)))) : def);
       const players = int(a.players, 2, 1, 16);
       const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : int(a.keyboardPlayer, 1, 0, players) - 1;
-      const r = simulateIsolated(text, { players, width: int(a.width, 1920, 320, 16384), height: int(a.height, 1080, 200, 16384), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
+      // In the simulator's worker, so other calls are answered while it runs.
+      const r = await simWorker().simulate(text, { players, width: int(a.width, 1920, 320, 16384), height: int(a.height, 1080, 200, 16384), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
       return { text: formatSimulation(r, kb), data: r };
     },
   },

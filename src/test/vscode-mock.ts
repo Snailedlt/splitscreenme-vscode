@@ -169,6 +169,9 @@ export const window = {
   showErrorMessage: async () => undefined,
   showWarningMessage: async () => undefined,
   showInformationMessage: async () => undefined,
+  __progress: [] as { message?: string }[],
+  withProgress: async (_o: unknown, task: (p: { report(v: { message?: string }): void }, t: { isCancellationRequested: boolean; onCancellationRequested(f: () => void): unknown }) => Promise<unknown>) =>
+    task({ report: (v) => window.__progress.push(v) }, { isCancellationRequested: false, onCancellationRequested: () => disposable }),
 };
 export const env = { openExternal: async () => true };
 

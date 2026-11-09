@@ -114,11 +114,8 @@ export class SimWorker {
   }
 
   private start(): Worker {
-    const w = new Worker(this.code, { eval: true, workerData: { sandbox: this.sandbox }, resourceLimits: { maxOldGenerationSizeMb: 512 }, stderr: true, stdout: true });
+    const w = new Worker(this.code, { eval: true, workerData: { sandbox: this.sandbox }, resourceLimits: { maxOldGenerationSizeMb: 512 } });
     this.started++;
-    // Nothing in the sandbox writes there; never let it reach stdout (the LSP's and MCP's protocol channel).
-    w.stdout.resume();
-    w.stderr.resume();
     w.on('message', (m: { id: number; reply: VmReply }) => {
       const job = this.running;
       if (!job || job.id !== m.id || w !== this.worker) return;

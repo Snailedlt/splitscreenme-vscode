@@ -20,7 +20,8 @@ import { folderAt } from './gamefolder-node';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { publishedNow } from './published';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { pluginsFor } from './sandbox';
+import { simWorker, isCancelled } from './simworker';
 import { formatSimulation } from './simformat';
 import { buildPackage } from './core/pkg';
 import { installHandler } from './install';
@@ -238,19 +239,37 @@ export class Server {
     );
   }
 
-  /** Handle one message; returns the response for requests (undefined for notifications). */
-  handle(msg: any): unknown | undefined {
+  /** Requests still being answered (Try it runs in the simulator's worker), by id, so $/cancelRequest can stop them. */
+  private running = new Map<string | number, AbortController>();
+  private current: AbortSignal | undefined; // the signal of the request being dispatched
+
+  /** Handle one message; returns the response for requests (undefined for notifications), or a promise of it
+   *  for the few requests answered off the main thread. */
+  handle(msg: any): unknown | Promise<unknown> | undefined {
     const { id, method, params } = msg ?? {};
     if (method === undefined) return undefined; // a response to one of our requests (applyEdit)
     const isRequest = id !== undefined && id !== null;
-    try {
-      const result = this.dispatch(method, params ?? {});
+    const failed = (e: any) => {
+      if (isCancelled(e)) return isRequest ? { jsonrpc: '2.0', id, error: { code: -32800, message: 'Request cancelled' } } : undefined;
+      this.log(`${method} failed: ${e?.stack ?? e}`);
+      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+    };
+    const answer = (result: unknown) => {
       if (!isRequest) return undefined;
       if (result === NOT_FOUND) return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
       return { jsonrpc: '2.0', id, result: result ?? null };
+    };
+    const ac = isRequest ? new AbortController() : undefined;
+    this.current = ac?.signal;
+    try {
+      const result = this.dispatch(method, params ?? {});
+      if (!(result instanceof Promise)) return answer(result);
+      this.running.set(id, ac!);
+      return result.then(answer, failed).finally(() => this.running.delete(id));
     } catch (e: any) {
-      this.log(`${method} failed: ${e?.stack ?? e}`);
-      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+      return failed(e);
+    } finally {
+      this.current = undefined;
     }
   }
 
@@ -301,6 +320,8 @@ export class Server {
         for (const c of p.changes ?? []) this.fileChanged(String(c.uri), c.type);
         return undefined;
       case '$/cancelRequest':
+        this.running.get(p.id)?.abort();
+        return undefined;
       case '$/setTrace':
         return undefined;
       case 'shutdown':
@@ -629,8 +650,10 @@ export class Server {
         // keyboardPlayer: 1-based player, 'none' (or 0) for nobody, 'all' (or -1) for each player their own.
         const kb = a.keyboardPlayer === 'all' || a.keyboardPlayer === -1 ? EVERY_KEYBOARD : a.keyboardPlayer === 'none' || a.keyboardPlayer === 0 ? -1 : Math.min(Math.max(1, Number(a.keyboardPlayer ?? 1)), players) - 1;
         const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
-        const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
-        return formatSimulation(r, kb);
+        // In the simulator's worker: the server keeps answering (completion, hover) while it runs.
+        return simWorker()
+          .simulate(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined }, { signal: this.current })
+          .then((r) => formatSimulation(r, kb));
       }
       case COMMANDS.workbenchLink: {
         // The browser workbench with this handler open (a share link); `ref` says which editor asked.
@@ -760,7 +783,8 @@ export function serve(input: NodeJS.ReadableStream = process.stdin, output: Node
         }
         for (const one of Array.isArray(msg) ? msg : [msg]) {
           const out = server.handle(one);
-          if (out) write(out);
+          if (out instanceof Promise) void out.then((o) => o && write(o));
+          else if (out) write(out);
           if (server.exited) return finish(0);
         }
       }
