@@ -57,6 +57,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🐛 Fixed
 
+- **A misspelled Context property in `var x = (Context.X = …)`** is now a warning with the fix (the idiom itself stays a quiet hint). **`PauseBetweenStarts`** is documented in seconds, which is what Nucleus waits (the official docs say milliseconds), and **`Hook.CustomDllEnabled`** says it's on by default. Context's file, registry and process functions are in their own docs categories instead of "Path variables".
 - **Long handlers no longer freeze the editor.** With thousands of assignments, moving the cursor near the end re-read the whole handler once per line above it (finding values to pick from a list); it's read once now.
 - **`ncdev lint` no longer stops on a wrong value type.** A value of the wrong type (`Game.MaxPlayers = "4"`) made the command line crash, and VS Code showed it as an error instead of a warning.
 - **Browse the Hub can't copy over your workspace.** A Hub handler whose game name was `.` or `..` could make *Copy into Workspace* write over the workspace folder (or the one above it).

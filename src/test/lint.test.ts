@@ -223,6 +223,15 @@ test('the `var x = (Context.X = ...)` idiom is only a hint', () => {
   assert.deepEqual(d.map((x) => x.severity), ['hint', 'warning']);
 });
 
+test('...but a typo of a real member in that idiom is a warning, with the fix', () => {
+  const src = HEADER + 'Game.Play = function () {\n  var a = (Context.StartArgument = "-x");\n};\n';
+  const d = only(src, 'unknown-member');
+  assert.equal(d.length, 1);
+  assert.equal(d[0].severity, 'warning');
+  assert.match(d[0].message, /Did you mean `StartArguments`/);
+  assert.equal(d[0].fixes?.[0].edits[0].text, 'StartArguments');
+});
+
 test('member names follow Jint: first letter case-insensitive, the rest exact', () => {
   const src = HEADER + 'Game.symlinkGame = true;\nGame.IgnoreWindowBordercheck = true;\nGame.Play = function () { var w = Context.width; };\n';
   const d = only(src, 'unknown-member');

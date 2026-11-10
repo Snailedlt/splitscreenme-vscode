@@ -265,7 +265,16 @@ function parseClass(file, className) {
 const docs = new Map();
 const MEMBER_LINE = /^\s*((?:Game|Context|Hub|ProtoInput)(?:\.\w+)*)\.(\w+)(\s*(?:=|\(|;|\/\/|$).*)$/;
 
+// handler-api.mdx lists Context's functions (files, registry, processes, helpers) under "Path variables" with the
+// paths: give each the category of what it does.
+const FUNCTION_CATEGORIES = [
+  [/^Context\.(\w*TextFile|ChangeXmlNode\w*|FindFiles|CopyScriptFolder|RunAdditionalFiles|CreatedDate|ModifiedDate|ModifySaveFile|\w*Backup\w*)$/, 'Files'],
+  [/^Context\.\w*RegKey$/, 'Registry'],
+  [/^Context\.KillProcesses\w*$/, 'Processes'],
+  [/^Context\.(Convert\w+|GCD|Random\w+|Log)$/, 'Helpers'],
+];
 function setDoc(key, info, override = false) {
+  if (info.category === 'Path variables') { const c = FUNCTION_CATEGORIES.find(([re]) => re.test(key)); if (c) info = { ...info, category: c[1] }; }
   const prev = docs.get(key);
   if (prev && !override) {
     for (const [k, v] of Object.entries(info)) if (v && !prev[k]) prev[k] = v;

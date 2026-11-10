@@ -334,7 +334,9 @@
      "csType": "int",
      "type": "number",
      "ts": "number",
-     "doc": "Pause between game intances starts in milliseconds.",
+     "doc": "How long Nucleus waits before starting the next instance, in **seconds** (the official docs say milliseconds, but every place Nucleus uses it waits `TimeSpan.FromSeconds(...)`). 0 or unset: no wait. A profile's \"instances startup wait time\" (also seconds) replaces it. `Game.PromptBetweenInstances` still needs it.",
+     "docBy": "claude",
+     "docBasis": "Nucleus GenericGameHandler.cs (Thread.Sleep(TimeSpan.FromSeconds(gen.PauseBetweenStarts))); GameProfile.cs and ProfilesList.cs (PauseBetweenInstanceLaunch, shown in seconds)",
      "example": "Game.PauseBetweenStarts = 20;"
     },
     "DPIHandling": {
@@ -2943,7 +2945,9 @@
      "type": "boolean",
      "ts": "boolean",
      "default": "true",
-     "doc": "Game.Hook.XInputNames = [ \"xinput1_3.dll\"]; //This line specify which DLLS CustomDll will use. DInput dlls are not supported.",
+     "doc": "Use Nucleus' own XInput DLL (a custom x360ce) in each instance to give it one controller and keep it in focus. **On by default**: set it to `false` when the handler hands out controllers another way (XInputPlus with `Game.XInputPlusDll`, Proto Input), or Nucleus adds its DLL as well. `Game.Hook.XInputNames` says which DLL names it uses.",
+     "docBy": "claude",
+     "docBasis": "Nucleus GameHookInfo.cs (CustomDllEnabled = true); GenericGameHandler.cs (XInputPlusDll.CustomDllEnabled); MasterHandler.js",
      "example": "Game.Hook.CustomDllEnabled = false;"
     },
     "DInputEnabled": {
@@ -4977,7 +4981,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "HandlerGUID": {
      "kind": "property",
@@ -5603,7 +5607,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "RandomInt": {
      "kind": "method",
@@ -5627,7 +5631,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "RandomString": {
      "kind": "method",
@@ -5652,7 +5656,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "ConvertToInt": {
      "kind": "method",
@@ -5679,7 +5683,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "ConvertToString": {
      "kind": "method",
@@ -5696,7 +5700,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "ToUpperCase": {
      "kind": "method",
@@ -5765,7 +5769,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Helpers"
     },
     "RunAdditionalFiles": {
      "kind": "method",
@@ -5899,7 +5903,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "ModifiedDate": {
      "kind": "method",
@@ -5971,7 +5975,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "CreatedDate": {
      "kind": "method",
@@ -6043,7 +6047,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "FindFiles": {
      "kind": "method",
@@ -6085,7 +6089,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "GetFileName": {
      "kind": "method",
@@ -6182,7 +6186,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "RemoveLineInTextFile": {
      "kind": "method",
@@ -6269,7 +6273,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "ReplaceLinesInTextFile": {
      "kind": "method",
@@ -6321,7 +6325,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "ReplacePartialLinesInTextFile": {
      "kind": "method",
@@ -6373,7 +6377,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "EditTextFile": {
      "kind": "method",
@@ -6802,7 +6806,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "CreateRegKey": {
      "kind": "method",
@@ -6829,7 +6833,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Registry"
     },
     "DeleteRegKey": {
      "kind": "method",
@@ -6856,7 +6860,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Registry"
     },
     "DeleteRegKeyValues": {
      "kind": "method",
@@ -6909,7 +6913,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Registry"
     },
     "EditRegKey": {
      "kind": "method",
@@ -6956,7 +6960,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Registry"
     },
     "EditRegKeyNoBackup": {
      "kind": "method",
@@ -7003,7 +7007,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Files"
     },
     "KillProcessesMatchingWindowName": {
      "kind": "method",
@@ -7020,7 +7024,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Processes"
     },
     "Wait": {
      "kind": "method",
@@ -7055,7 +7059,7 @@
        ]
       }
      ],
-     "category": "Path variables"
+     "category": "Processes"
     },
     "MoveFolder": {
      "kind": "method",

@@ -995,6 +995,17 @@ class Analyzer {
       // guide): the property write is dropped, but the value still reaches the variable.
       const assign = ctx.parent;
       const valueUsed = isWrite && assign && this.parentOf.get(assign)?.type === 'VariableDeclarator';
+      // ...unless the name is a typo of a real member: then the handler likely meant that one, and it isn't set.
+      if (valueUsed && s && !known && !digitsOnly) {
+        this.report({
+          rule: 'unknown-member',
+          message: `\`${name}\` does not exist on \`${label}\`, so only the variable receives this value. Did you mean \`${s}\`?`,
+          start: n.property.start,
+          end: n.property.end,
+          fixes,
+        });
+        return;
+      }
       if (valueUsed) {
         this.report({
           rule: 'unknown-member',

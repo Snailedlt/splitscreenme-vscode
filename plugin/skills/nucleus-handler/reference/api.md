@@ -1063,7 +1063,8 @@ Example: `Game.PauseBetweenProcessGrab = 30;`
 
 ### Game.PauseBetweenStarts
 `PauseBetweenStarts: number`
-Pause between game intances starts in milliseconds.
+How long Nucleus waits before starting the next instance, in **seconds** (the official docs say milliseconds, but every place Nucleus uses it waits `TimeSpan.FromSeconds(...)`). 0 or unset: no wait. A profile's "instances startup wait time" (also seconds) replaces it. `Game.PromptBetweenInstances` still needs it.
+_✎ AI-written, based on Nucleus GenericGameHandler.cs (Thread.Sleep(TimeSpan.FromSeconds(gen.PauseBetweenStarts))); GameProfile.cs and ProfilesList.cs (PauseBetweenInstanceLaunch, shown in seconds). Not from the official docs._
 Example: `Game.PauseBetweenStarts = 20;`
 
 ### Game.PauseCMDBatchAfter
@@ -1606,7 +1607,8 @@ If force focus is enabled, this blocks all mouse input.
 ### Game.Hook.CustomDllEnabled
 `CustomDllEnabled: boolean`
 default `true`
-Game.Hook.XInputNames = [ "xinput1_3.dll"]; //This line specify which DLLS CustomDll will use. DInput dlls are not supported.
+Use Nucleus' own XInput DLL (a custom x360ce) in each instance to give it one controller and keep it in focus. **On by default**: set it to `false` when the handler hands out controllers another way (XInputPlus with `Game.XInputPlusDll`, Proto Input), or Nucleus adds its DLL as well. `Game.Hook.XInputNames` says which DLL names it uses.
+_✎ AI-written, based on Nucleus GameHookInfo.cs (CustomDllEnabled = true); GenericGameHandler.cs (XInputPlusDll.CustomDllEnabled); MasterHandler.js. Not from the official docs._
 Example: `Game.Hook.CustomDllEnabled = false;`
 
 ### Game.Hook.DInputEnabled
@@ -2291,7 +2293,7 @@ _✎ AI-written, based on Nucleus GenericContext.cs (ChangeXmlAttributeValue). N
 
 ### Context.ChangeXmlNodeInnerTextValue
 `ChangeXmlNodeInnerTextValue(path: string | number | boolean, xpath: string | number | boolean, innerTextValue: string | number | boolean): boolean`
-Path variables
+Files
 Edit an XML element (previously only nodes and attributes).
 
 ### Context.ChangeXmlNodeValue
@@ -2334,15 +2336,15 @@ Copied from `Game.CMDStartArgsInside` for the current instance.
 
 ### Context.ConvertToBytes
 `ConvertToBytes(num: number): number[]` / `Context.ConvertToBytes(num: number): number[]` / `Context.ConvertToBytes(str: string | number | boolean): number[]`
-Path variables
+Helpers
 
 ### Context.ConvertToInt
 `ConvertToInt(num: string | number | boolean): number` / `Context.ConvertToInt(num: any): number`
-Path variables
+Helpers
 
 ### Context.ConvertToString
 `ConvertToString(str: any): string`
-Path variables
+Helpers
 
 ### Context.CopyCustomUtils
 `CopyCustomUtils: string[]`
@@ -2363,18 +2365,18 @@ _✎ AI-written, based on Nucleus GenericContext.cs (CopyFolder), FileUtil.cs (C
 
 ### Context.CopyScriptFolder
 `CopyScriptFolder(DestinationPath: string | number | boolean): boolean`
-Path variables
+Files
 Copies the handler's folder (Game.Folder) to the given destination.
 _✎ AI-written, based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.CreatedDate
 `CreatedDate(file: string | number | boolean, year: number, month: number, day: number, hour: number, minute: number, second: number): void` / `Context.CreatedDate(file: string | number | boolean, year: number, month: number, day: number): void`
-Path variables
+Files
 Change the creation date of a file.
 
 ### Context.CreateRegKey
 `CreateRegKey(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean): boolean`
-Path variables
+Registry
 Create a registry key for current user, baseKey can either be "HKEY_LOCAL_MACHINE" or "HKEY_CURRENT_USER".
 
 ### Context.CustomUserGeneralValues
@@ -2401,7 +2403,7 @@ _✎ AI-written, based on Nucleus GenericGameInfo.cs and GenericGameHandler.cs. 
 
 ### Context.DeleteRegKey
 `DeleteRegKey(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean): void`
-Path variables
+Registry
 Delete a registry key for current user, baseKey can either be "HKEY_LOCAL_MACHINE" or "HKEY_CURRENT_USER".
 
 ### Context.DeleteRegKeyValues
@@ -2440,13 +2442,13 @@ Copied from `Game.DPIHandling` for the current instance.
 
 ### Context.EditRegKey
 `EditRegKey(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean, value: any, regType: Nucleus.RegType | number | boolean): void`
-Path variables
+Registry
 Edit a registry key for current user, baseKey can either be "HKEY_LOCAL_MACHINE" or "HKEY_CURRENT_USER".
 EditRegKey uses a custom registry data type to use, by using `Nucleus.RegType.DWord` for example. The last word can be of the same name of RegistryValueKind enum.
 
 ### Context.EditRegKeyNoBackup
 `EditRegKeyNoBackup(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean, value: any, regType: Nucleus.RegType | number | boolean): void`
-Path variables
+Files
 Edit a registry key for current user without Nucleus creating a backup of the registry or before it creates one. Must be placed before any "Context.EditRegKey" line in handler for it to work.
 
 ### Context.EditTextFile
@@ -2512,12 +2514,12 @@ Copied from `Game.FakeFocusInstances` for the current instance.
 
 ### Context.FindFiles
 `FindFiles(rootFolder: string | number | boolean, fileName: string | number | boolean): string[]` / `Context.FindFiles(rootFolder: string | number | boolean, fileName: string | number | boolean, searchAll: boolean): string[]`
-Path variables
+Files
 Return a string array of filenames (and their paths) found that match a pattern you specify.
 
 ### Context.FindLineNumberInTextFile
 `FindLineNumberInTextFile(path: string | number | boolean, searchValue: string | number | boolean, type: Nucleus.SearchType | number | boolean): number`
-Path variables
+Files
 Returns a line number (int), utilizes a newly created enum SearchType.
 
 ### Context.ForceWindowTitle
@@ -2726,12 +2728,12 @@ Copied from `Game.KillMutexType` for the current instance.
 
 ### Context.KillProcessesMatchingProcessName
 `KillProcessesMatchingProcessName(name: string | number | boolean): boolean`
-Path variables
+Processes
 Kill processes matching a given process name during preperation.
 
 ### Context.KillProcessesMatchingWindowName
 `KillProcessesMatchingWindowName(name: string | number | boolean): boolean`
-Path variables
+Processes
 Kill processes matching a given window name during preperation.
 
 ### Context.LauncherExe
@@ -2757,7 +2759,7 @@ Example: `Context.LocalIP`
 
 ### Context.Log
 `Log(msg: string | number | boolean): void` / `Context.Log(msg: string | number | boolean, val: string | number | boolean): void` / `Context.Log(msg: string | number | boolean, val: number): void` / `Context.Log(msg: string | number | boolean, val: boolean): void` / `Context.Log(msg: string | number | boolean, val: number): void` / `Context.Log(msg: string | number | boolean, vals: string[]): void`
-Path variables
+Helpers
 Writes a line to the Nucleus debug log (requires `Game.Debug = true` or debug logging enabled).
 _✎ AI-written, based on Nucleus GenericContext.cs. Not from the official docs._
 
@@ -2775,7 +2777,7 @@ Copied from `Game.MaxPlayersOneMonitor` for the current instance.
 
 ### Context.ModifiedDate
 `ModifiedDate(file: string | number | boolean, year: number, month: number, day: number, hour: number, minute: number, second: number): void` / `Context.ModifiedDate(file: string | number | boolean, year: number, month: number, day: number): void`
-Path variables
+Files
 Change the last modified date of a file.
 
 ### Context.ModifySaveFile
@@ -2971,13 +2973,13 @@ Copied from `Game.PromptBetweenInstances` for the current instance.
 
 ### Context.RandomInt
 `RandomInt(min: number, max: number): number`
-Path variables
+Helpers
 Returns a random integer between min and max.
 _✎ AI-written, based on Nucleus GenericContext.cs. Not from the official docs._
 
 ### Context.RandomString
 `RandomString(size: number, lowerCase: boolean): string`
-Path variables
+Helpers
 Returns a random alphanumeric string of the given length.
 _✎ AI-written, based on Nucleus GenericContext.cs. Not from the official docs._
 
@@ -2987,12 +2989,12 @@ read-only
 
 ### Context.ReadRegKey
 `ReadRegKey(baseKey: string | number | boolean, sKey: string | number | boolean, subKey: string | number | boolean): string`
-Path variables
+Registry
 Return the value of a provided key as a string.
 
 ### Context.RemoveLineInTextFile
 `RemoveLineInTextFile(path: string | number | boolean, lineNum: number): void` / `Context.RemoveLineInTextFile(path: string | number | boolean, lineNum: number, encoder: string | number | boolean): void` / `Context.RemoveLineInTextFile(path: string | number | boolean, searchValue: string | number | boolean, type: Nucleus.SearchType | number | boolean): boolean` / `Context.RemoveLineInTextFile(path: string | number | boolean, searchValue: string | number | boolean, type: Nucleus.SearchType | number | boolean, encoder: string | number | boolean): boolean`
-Path variables
+Files
 Removes a given line number completely.
 
 ### Context.RenameNotKillMutex
@@ -3003,12 +3005,12 @@ Copied from `Game.RenameNotKillMutex` for the current instance.
 
 ### Context.ReplaceLinesInTextFile
 `ReplaceLinesInTextFile(path: string | number | boolean, newLines: string[]): boolean` / `Context.ReplaceLinesInTextFile(path: string | number | boolean, newLines: string[], encoder: string | number | boolean): boolean`
-Path variables
+Files
 Replace an entire line; for string array use the format: "lineNum|newValue", the | is required.
 
 ### Context.ReplacePartialLinesInTextFile
 `ReplacePartialLinesInTextFile(path: string | number | boolean, newLines: string[]): boolean` / `Context.ReplacePartialLinesInTextFile(path: string | number | boolean, newLines: string[], encoder: string | number | boolean): boolean`
-Path variables
+Files
 Partially replace a line; for string array use the format: "lineNum|Regex pattern|newValue", the | is required.
 
 ### Context.ResetWindows
@@ -3030,7 +3032,7 @@ Example: `Context.RootInstallFolder`
 
 ### Context.RunAdditionalFiles
 `RunAdditionalFiles(filePaths: string[], changeWorkingDir: boolean, secondsToPauseInbetween: number): void` / `Context.RunAdditionalFiles(filePaths: string[], changeWorkingDir: boolean, secondsToPauseInbetween: number, runAsAdmin: boolean, promptBetween: boolean): void` / `Context.RunAdditionalFiles(filePaths: string[], changeWorkingDir: boolean, customText: string | number | boolean, secondsToPauseInbetween: number, showFilePath: boolean, runAsAdmin: boolean, promptBetween: boolean, confirm: boolean): void`
-Path variables
+Files
 Specify additional files to run before launching game. By default will run each additional file once but can specify to run during specific player's instances by prefixing the filepath with #|. Replace # with player number. Can also specify to run files for each player by prefixing filepath with "all|". "bool confirm" will only run the file after clicking "Ok" in the prompt.
 
 ### Context.SavePath

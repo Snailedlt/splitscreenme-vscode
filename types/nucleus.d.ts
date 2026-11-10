@@ -149,7 +149,8 @@ interface Game {
    */
   MaxPlayersOneMonitor: number;
   /**
-   * Pause between game intances starts in milliseconds.
+   * How long Nucleus waits before starting the next instance, in **seconds** (the official docs say milliseconds, but every place Nucleus uses it waits `TimeSpan.FromSeconds(...)`). 0 or unset: no wait. A profile's "instances startup wait time" (also seconds) replaces it. `Game.PromptBetweenInstances` still needs it.
+   * (AI-written, based on Nucleus GenericGameHandler.cs (Thread.Sleep(TimeSpan.FromSeconds(gen.PauseBetweenStarts))); GameProfile.cs and ProfilesList.cs (PauseBetweenInstanceLaunch, shown in seconds). Not from the official docs.)
    * @example Game.PauseBetweenStarts = 20;
    */
   PauseBetweenStarts: number;
@@ -1432,7 +1433,8 @@ interface Game {
  */
 interface GameHook {
   /**
-   * Game.Hook.XInputNames = [ "xinput1_3.dll"]; //This line specify which DLLS CustomDll will use. DInput dlls are not supported.
+   * Use Nucleus' own XInput DLL (a custom x360ce) in each instance to give it one controller and keep it in focus. **On by default**: set it to `false` when the handler hands out controllers another way (XInputPlus with `Game.XInputPlusDll`, Proto Input), or Nucleus adds its DLL as well. `Game.Hook.XInputNames` says which DLL names it uses.
+   * (AI-written, based on Nucleus GameHookInfo.cs (CustomDllEnabled = true); GenericGameHandler.cs (XInputPlusDll.CustomDllEnabled); MasterHandler.js. Not from the official docs.)
    * @default true
    * @example Game.Hook.CustomDllEnabled = false;
    */
