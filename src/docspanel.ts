@@ -3,8 +3,8 @@
 // the main page, a group (one line per name), one name, a search. A quiet path on top (Docs / Context / name) and a
 // back arrow; Search opens VS Code's quick pick. Scripts are off: every control is a command link.
 import * as vscode from 'vscode';
-import { docsPage, docsValue, docsView, DocsPage } from './core/docspage';
-import { linkApiNames, workbenchDocsUrl } from './core/features';
+import { docsPageUrl, docsPage, docsValue, docsView, DocsPage } from './core/docspage';
+import { linkApiNames } from './core/features';
 import { allEntries } from './core/lookup';
 import { api } from './core/api';
 
@@ -78,7 +78,7 @@ export function fallbackMarkdown(md: string): string {
 export function renderDocsPanel(page: DocsPage, body: string, canGoBack: boolean): string {
   const crumb = (label: string, value?: string) => (value === undefined ? `<strong aria-current="page">${esc(label)}</strong>` : `<a href="${docsCommandLink(value)}">${esc(label)}</a>`);
   const parts = [page.crumbs.length ? crumb('Docs', '') : crumb('Docs')].concat(page.crumbs.map((c, i) => crumb(c.label, i < page.crumbs.length - 1 && c.view ? docsValue(c.view) : undefined)));
-  const web = page.path ? workbenchDocsUrl(page.path, 'vscode') : workbenchDocsUrl('', 'vscode').replace(/#docs-$/, '#docs');
+  const web = docsPageUrl(page.path ?? '', 'vscode');
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
 <style>
@@ -107,7 +107,7 @@ body.vscode-high-contrast-light .tk-keyword { color: #0f4a85; } body.vscode-high
 body.vscode-high-contrast-light .tk-comment { color: #515151; } body.vscode-high-contrast-light .tk-type { color: #185e73; } body.vscode-high-contrast-light .tk-function { color: #5e2cbc; }
 ul { padding-left: 20px; } li { margin: 3px 0; }
 </style></head><body>
-<nav aria-label="Where you are in the docs">${canGoBack ? `<a class="back" href="command:${BACK}" title="Back" aria-label="Back">←</a>` : ''}${parts.join('<span class="sep" aria-hidden="true">/</span>')}<span class="end"><a href="command:${SEARCH}" title="Search the docs (names and words)">Search…</a><a href="${esc(web)}" title="The same page in the browser workbench">Open in the workbench</a></span></nav>
+<nav aria-label="Where you are in the docs">${canGoBack ? `<a class="back" href="command:${BACK}" title="Back" aria-label="Back">←</a>` : ''}${parts.join('<span class="sep" aria-hidden="true">/</span>')}<span class="end"><a href="command:${SEARCH}" title="Search the docs (names and words)">Search…</a><a href="${esc(web)}" title="The same page on the site, to share or read in the browser">Open on the web</a></span></nav>
 <main>${body}</main>
 </body></html>`;
 }

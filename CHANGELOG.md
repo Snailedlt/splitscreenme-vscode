@@ -57,6 +57,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🐛 Fixed
 
+- **Docs links open the name's own page on the site** (`docs/Context.ModifySaveFile/`): from hovers and suggestions in Notepad++, Neovim and the other LSP editors, and from **Open on the web** in VS Code's Nucleus Docs panel. Each page has the 👍/👎 and the report link.
 - **Notepad++ in dark mode: the problem and outline lists' column headers and scroll bars are dark too**, with Windows' own dark themes (the ones Notepad++ uses).
 - **A misspelled Context property in `var x = (Context.X = …)`** is now a warning with the fix (the idiom itself stays a quiet hint). **`PauseBetweenStarts`** is documented in seconds, which is what Nucleus waits (the official docs say milliseconds), and **`Hook.CustomDllEnabled`** says it's on by default. Context's file, registry and process functions are in their own docs categories instead of "Path variables".
 - **Long handlers no longer freeze the editor.** With thousands of assignments, moving the cursor near the end re-read the whole handler once per line above it (finding values to pick from a list); it's read once now.

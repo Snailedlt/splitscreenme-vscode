@@ -9,7 +9,8 @@ import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lin
 import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/definition';
 import { workbenchLinkFor } from './workbenchlink';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, workbenchDocsUrl } from './core/features';
+import { docsPageUrl } from './core/docspage';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -291,10 +292,10 @@ export class Server {
       case 'initialize': {
         this.applySettings(p.initializationOptions);
         this.snippets = p.capabilities?.textDocument?.completion?.completionItem?.snippetSupport !== false;
-        // API names in hovers, hints and suggestion docs link to the workbench's docs (#docs-…), tagged with the
+        // API names in hovers, hints and suggestion docs link to their docs pages on the site (docs/<name>/), tagged with the
         // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
         const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
-        this.docsLink = (path: string) => workbenchDocsUrl(path, ref);
+        this.docsLink = (path: string) => docsPageUrl(path, ref);
         // Hub requests (the guid-changed check) name the server and the editor, not the person.
         setHubTool(p.clientInfo?.name ? `ncdev-lsp/${ref}` : 'ncdev-lsp');
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);

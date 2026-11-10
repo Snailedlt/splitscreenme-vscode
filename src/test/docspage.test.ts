@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apiPathOf, hoverAt, linkApiNames, signatureHelpAt, workbenchDocsUrl } from '../core/features';
-import { docsPage, docsView, docsValue } from '../core/docspage';
+import { docsPageUrl, docsPage, docsView, docsValue } from '../core/docspage';
 import { lint } from '../core/lint';
 import { fallbackMarkdown, highlightCode, renderDocsPanel, docsCommandLink } from '../docspanel';
 
@@ -34,6 +34,13 @@ test('docs links: hover ends with "Open in Docs" for the name; signature docs li
   assert.ok(sig.signatures.length);
 });
 
+test('docsPageUrl: a name with a page goes to it, anything else to the workbench', () => {
+  assert.equal(docsPageUrl('Context.ModifySaveFile', 'neovim'), 'https://snailedlt.github.io/nucleuscoop-handler-testbench/docs/Context.ModifySaveFile/?ref=neovim');
+  assert.equal(docsPageUrl('Nucleus.SaveType', 'x'), 'https://snailedlt.github.io/nucleuscoop-handler-testbench/docs/Nucleus.SaveType/?ref=x');
+  assert.equal(docsPageUrl('', 'x'), 'https://snailedlt.github.io/nucleuscoop-handler-testbench/docs/?ref=x');
+  assert.match(docsPageUrl('mutex', 'x'), /\?ref=x#docs-mutex$/);
+});
+
 test('docs pages: home, group, name, enum, search; views and #docs- values round-trip', () => {
   const home = docsPage('home', link);
   assert.match(home.markdown, /\[Context\]\(L\(Context\)\)/);
@@ -59,7 +66,7 @@ test('Nucleus Docs panel: path, back, search and workbench links; no scripts', (
   assert.match(html, /command:splitscreenme\.docsSearch/);
   assert.match(html, /href="command:splitscreenme\.showDocs\?%5B%22Context%22%5D">Context<\/a>/, 'the group crumb');
   assert.match(html, /<strong aria-current="page">ModifySaveFile<\/strong>/);
-  assert.match(html, /\?ref=vscode#docs-Context\.ModifySaveFile/);
+  assert.match(html, /docs\/Context\.ModifySaveFile\/\?ref=vscode/);
   assert.match(fallbackMarkdown('## T\n\n- [`A`](u)\n\n```js\nx < 1\n```'), /<h2>T<\/h2><ul><li><a href="u"><code>A<\/code><\/a><\/li><\/ul><pre><code><span class="tk-variable">x<\/span> &lt; <span class="tk-number">1<\/span><\/code><\/pre>/);
   // Every code block is coloured: the signature on top of a name's page included.
   assert.match(html, /<pre><code><span class="tk-variable">Context<\/span>\.<span class="tk-function">ModifySaveFile<\/span>\(\n  <span class="tk-variable">installSavePath<\/span>: <span class="tk-type">string<\/span>/);

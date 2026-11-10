@@ -5,6 +5,19 @@
 
 import { api, memberMarkdown } from './api';
 import { allEntries, Entry, lookup, search } from './lookup';
+import { WORKBENCH_URL } from './sharelink';
+
+let pageNames: Set<string> | undefined;
+/**
+ * A name's own docs page on the site (docs/Context.ModifySaveFile/, built by the workbench's docs-pages.mjs from these
+ * same pages): lighter than the workbench and easy to share, with the votes and the report link. A name without a
+ * page (a search, an enum value) goes to the workbench's Docs (#docs-…) instead. `ref` says which tool sent the visit.
+ */
+export function docsPageUrl(path: string, ref: string): string {
+  pageNames ??= new Set([...allEntries(true).map((e) => e.path), ...DOCS_GROUPS.map((g) => g.key), ...Object.keys(api.enums).map((n) => `Nucleus.${n}`)]);
+  if (path && (!/^[A-Za-z_$][\w$.]*$/.test(path) || !pageNames.has(path))) return `${WORKBENCH_URL}?ref=${encodeURIComponent(ref)}#docs-${encodeURIComponent(path)}`;
+  return `${WORKBENCH_URL}docs/${path ? `${path}/` : ''}?ref=${encodeURIComponent(ref)}`;
+}
 
 export interface DocsGroup { key: string; title: string; doc: string; match: (path: string) => boolean }
 export const DOCS_GROUPS: DocsGroup[] = [
