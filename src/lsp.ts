@@ -10,6 +10,7 @@ import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/
 import { workbenchLinkFor } from './workbenchlink';
 import { rangeFormatEdits } from './core/features';
 import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, workbenchDocsUrl } from './core/features';
+import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
@@ -791,7 +792,7 @@ function toLspDiagnostic(l: Lines, d: LintDiagnostic) {
     range: l.range(d),
     severity: SEVERITY[d.severity],
     code: d.rule,
-    codeDescription: { href: RULES_URL },
+    codeDescription: { href: RULE_DOCS[d.rule] ? ruleUrl(d.rule) : RULES_URL }, // the check's own page
     source: 'nucleus',
     message: d.message,
     ...(d.tags?.length ? { tags: d.tags.map((t) => TAG[t]) } : {}),

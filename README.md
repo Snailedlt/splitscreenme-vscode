@@ -194,6 +194,8 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 
 ## Lint rules
 
+Every check has its own page, with why it matters, a wrong and a right example and the fix: [all checks](https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/). Each problem in VS Code and other editors links to its page.
+
 | Rule | Default | What it catches |
 | --- | --- | --- |
 | `syntax-error` | error | The file does not parse. |
