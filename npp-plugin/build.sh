@@ -40,7 +40,7 @@ RC
 build() {
   "$3" -i ../dist-sea/NcDev.rc -O coff -o "../dist-sea/$2.res.o"
   "$1" -std=c++17 -O2 -s -shared -static -municode -Wall -Wno-unused-function \
-    -o "../dist-sea/$2" src/NcDev.cpp "../dist-sea/$2.res.o" -lcomctl32 -lole32 -luuid -lurlmon -lbcrypt -lshell32
+    -o "../dist-sea/$2" src/NcDev.cpp "../dist-sea/$2.res.o" -lcomctl32 -luxtheme -lole32 -luuid -lurlmon -lbcrypt -lshell32
   rm -f "../dist-sea/$2.res.o"
   echo "dist-sea/$2 ($(wc -c < "../dist-sea/$2") bytes, version $DOTTED)"
 }

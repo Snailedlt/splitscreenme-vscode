@@ -11,6 +11,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commctrl.h>
+#include <uxtheme.h>
 #include <shlobj.h>
 #include <shellapi.h>
 #include <shobjidl.h>
@@ -787,7 +788,12 @@ static void gotoProblem(int i) {
 static void themeList(HWND list) {
   if (!list) return;
   DarkColors c{};
-  if (SendMessage(npp._nppHandle, NPPM_ISDARKMODEENABLED, 0, 0) && SendMessage(npp._nppHandle, NPPM_GETDARKMODECOLORS, sizeof c, (LPARAM)&c)) {
+  const bool dark = SendMessage(npp._nppHandle, NPPM_ISDARKMODEENABLED, 0, 0) && SendMessage(npp._nppHandle, NPPM_GETDARKMODECOLORS, sizeof c, (LPARAM)&c);
+  // The column header and the scroll bars are drawn by the Windows theme, not by the list's colours: Windows' own
+  // dark themes for them (the ones Notepad++ uses for its lists), or the normal ones in light mode.
+  SetWindowTheme(ListView_GetHeader(list), dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
+  SetWindowTheme(list, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+  if (dark) {
     ListView_SetBkColor(list, c.background);
     ListView_SetTextBkColor(list, c.background);
     ListView_SetTextColor(list, c.text);
