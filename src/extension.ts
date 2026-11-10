@@ -7,7 +7,7 @@ import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
 import { ruleOverrides } from './settings';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -134,6 +134,23 @@ export function activate(context: vscode.ExtensionContext) {
       const [edit] = formatEdits(editor.document, { insertSpaces: opts.insertSpaces !== false, tabSize: typeof opts.tabSize === 'number' ? opts.tabSize : 4 });
       if (edit) await editor.edit((b) => b.replace(edit.range, edit.newText));
       else vscode.window.setStatusBarMessage('Nucleus: already formatted', 2500);
+    }),
+    // Explain This Line (Ctrl+Alt+E, or the link under a hover): the line's explanation, shown as a hover on request.
+    vscode.commands.registerCommand(EXPLAIN, async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isHandler(editor.document)) {
+        vscode.window.showInformationMessage('Open a Nucleus handler to explain a line of it.');
+        return;
+      }
+      const pos = editor.selection.active;
+      const line = editor.document.lineAt(pos.line);
+      if (line.isEmptyOrWhitespace) {
+        vscode.window.setStatusBarMessage('Nucleus: an empty line, nothing to explain', 2500);
+        return;
+      }
+      if (pos.character < line.firstNonWhitespaceCharacterIndex) editor.selection = new vscode.Selection(pos.with(undefined, line.firstNonWhitespaceCharacterIndex), pos.with(undefined, line.firstNonWhitespaceCharacterIndex));
+      explainPending = { uri: editor.document.uri.toString(), line: pos.line };
+      await vscode.commands.executeCommand('editor.action.showHover');
     }),
     vscode.commands.registerCommand('splitscreenme.fixAll', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -367,13 +384,23 @@ function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.Com
 function markdown(s: string) {
   const md = new vscode.MarkdownString(s);
   // API names link to the Nucleus Docs panel: that one command may run from a link, nothing else.
-  md.isTrusted = { enabledCommands: [OPEN_DOCS] };
+  md.isTrusted = { enabledCommands: [OPEN_DOCS, EXPLAIN] };
   return md;
 }
 
+const EXPLAIN = 'splitscreenme.explainLine';
+/** Set by Explain This Line until the hover it opens has shown. */
+let explainPending: { uri: string; line: number } | undefined;
+
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
+  const p = explainPending;
+  explainPending = undefined;
+  if (p && p.uri === doc.uri.toString() && p.line === pos.line) {
+    const e = explainLine(doc.getText(), doc.offsetAt(pos));
+    if (e) return new vscode.Hover(markdown(e.markdown), doc.lineAt(pos.line).range);
+  }
   const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
-  return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
+  return h && new vscode.Hover(markdown(`${h.markdown}\n\n---\n\n[Explain this line](command:${EXPLAIN} "Ctrl+Alt+E")`), toRange(doc, h.range));
 }
 
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {

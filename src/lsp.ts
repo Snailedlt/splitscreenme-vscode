@@ -10,7 +10,7 @@ import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/
 import { workbenchLinkFor } from './workbenchlink';
 import { rangeFormatEdits } from './core/features';
 import { docsPageUrl } from './core/docspage';
-import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, explainLine, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -52,7 +52,7 @@ export interface LspSettings {
 }
 const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {}, format: { quotes: 'double', semicolons: 'add' } };
 
-export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler', testInNucleus: 'nucleus.testInNucleus' } as const;
+export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler', testInNucleus: 'nucleus.testInNucleus', explainLine: 'nucleus.explainLine' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
 
 // LSP enums (numbers in the protocol)
@@ -676,6 +676,8 @@ export class Server {
       const f = cd?.code === 'game-folder' ? cd.data?.fix : undefined;
       if (f && typeof f.start === 'number') actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: [{ range: l.range({ start: f.start, end: f.end }), newText: f.text }] } } } as any);
     }
+    // Explain this line: on request from the actions menu, never on screen by itself.
+    if (!only && p.range?.start && (doc.text.split('\n')[p.range.start.line] ?? '').trim()) actions.push({ title: 'Nucleus: Explain this line', command: { title: 'Explain this line', command: COMMANDS.explainLine, arguments: [{ uri: doc.uri, line: p.range.start.line }] } });
     if (!only && !actions.some((a) => a.kind === FIX_ALL_KIND)) {
       const all = fixAllCodeAction(doc.text, this.settings.lint.rules);
       if (all) actions.push(toAction(all));
@@ -761,6 +763,16 @@ export class Server {
         const uri = pathToFileURL(out).href;
         this.request('window/showDocument', { uri, takeFocus: true });
         return { uri };
+      }
+      case COMMANDS.explainLine: {
+        if (!doc) throw new Error('nucleus.explainLine: give the uri of an open document and a 0-based line.');
+        const line = Number((a as { line?: number }).line ?? 0);
+        const e = explainLine(doc.text, linesOf(doc).offset({ line, character: 0 }));
+        if (!e) return { markdown: undefined };
+        // Plain text for the message popup; the Markdown for clients that can show it.
+        const plain = e.markdown.replace(/\*\*/g, '').replace(/`/g, '');
+        this.notify('window/showMessage', { type: 3, message: plain });
+        return { markdown: e.markdown, aiPrompt: e.aiPrompt };
       }
       case COMMANDS.fixAll: {
         if (!doc) throw new Error('nucleus.fixAll: give the uri of an open document.');

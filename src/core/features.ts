@@ -6,6 +6,7 @@
 import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './wm';
 import { api, claudeNote, DOCS_URL, isStringMember, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './api';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './complete';
+export { explainLine, type LineExplanation } from './explain';
 import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severity, TextEdit } from './lint';
 import { fixAll } from './fix';
 import { formatHandler } from './format';

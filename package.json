@@ -76,6 +76,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.explainLine",
+        "title": "Explain This Line",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.fixAll",
         "title": "Fix All Auto-fixable Problems",
         "category": "Nucleus"
@@ -165,6 +170,12 @@
       }
     ],
     "keybindings": [
+      {
+        "command": "splitscreenme.explainLine",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && splitscreenme.isHandler"
+      },
       {
         "command": "splitscreenme.formatHandler",
         "key": "shift+alt+f",

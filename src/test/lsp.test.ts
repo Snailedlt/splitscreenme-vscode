@@ -177,6 +177,19 @@ test('lsp: formatting, and refusing code that is not ES5', async () => {
   assert.match(msg.params.message, /^Nucleus: /);
 });
 
+test('lsp: Explain this line is a code action and a command', async () => {
+  const uri = URI.replace('Test', 'Explain');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { };\n' } });
+  const line = HEADER.split('\n').length - 1;
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: { start: { line, character: 0 }, end: { line, character: 0 } }, context: { diagnostics: [] } })).result;
+  const a = actions.find((x: any) => x.title === 'Nucleus: Explain this line');
+  assert.ok(a, 'offered on a line with code');
+  const r = (await request('workspace/executeCommand', a.command)).result;
+  assert.match(r.markdown, /once for each player/);
+  const msg = await nextNotification((m) => m.method === 'window/showMessage');
+  assert.doesNotMatch(msg.params.message, /\*\*/);
+});
+
 test('lsp: Try it returns the simulation text', async () => {
   const uri = URI.replace('Test', 'TryIt');
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { Context.StartArguments = "-w " + Context.Width; };\n' } });
