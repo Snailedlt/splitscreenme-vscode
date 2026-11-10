@@ -407,7 +407,7 @@ export function sessionSummary(r: SimResult): string {
     return `Setup fails for player ${p}, so Nucleus ends the session: it shows an error and closes the games it started.${rest}`;
   }
   if (r.sessionEnded) return `All ${plural(n)} are set up, but Game.OnFinishedSetup fails, so Nucleus ends the session.`;
-  return `Nucleus would set up all ${plural(n)}.${r.hasPlay ? '' : ' The handler has no Game.Play, so every player gets the same setup.'}`;
+  return `Nucleus would set up ${n === 1 ? 'the one player' : `all ${plural(n)}`}.${r.hasPlay ? '' : ' The handler has no Game.Play, so every player gets the same setup.'}`;
 }
 
 /** The `Handler` global (GenericGameHandler): the members handlers use, first letter case-insensitive. */
