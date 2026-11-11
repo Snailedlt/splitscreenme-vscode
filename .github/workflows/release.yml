@@ -54,7 +54,7 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix osslsigncode >/dev/null
+          sh scripts/install-mingw.sh osslsigncode
           sh npp-plugin/build.sh
           node scripts/sea.mjs --require-plugin --targets win-x64,linux-x64
           node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64

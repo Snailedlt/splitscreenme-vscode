@@ -36,7 +36,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix g++-mingw-w64-i686-posix >/dev/null
+      - run: sh scripts/install-mingw.sh
       - run: npm run build && sh npp-plugin/build.sh
       - name: The plugin is ready for Notepad++'s Plugins Admin (DLL versions, zips)
         run: |
