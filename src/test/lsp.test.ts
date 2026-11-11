@@ -88,7 +88,7 @@ test('lsp: diagnostics with codes, links and tags; quick fixes and fix all', asy
   assert.deepEqual(unknown.range.start, { line: 3, character: 10 });
   assert.equal(unknown.severity, 2);
   assert.equal(unknown.source, 'nucleus');
-  assert.match(unknown.codeDescription.href, /\/rules\/unknown-member\/$/); // the check's own page
+  assert.match(unknown.codeDescription.href, /\/rules\/unknown-member\/\?ref=[a-z0-9-]+$/); // the check's own page
   assert.ok(params.diagnostics.some((d: any) => d.tags?.includes(2)), 'deprecated tag');
 
   const actions = (await request('textDocument/codeAction', { textDocument: { uri: URI }, range: unknown.range, context: { diagnostics: [unknown] } })).result;

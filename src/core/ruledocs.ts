@@ -23,7 +23,8 @@ export interface RuleDoc {
 
 /** Where the pages live: the workbench site (GitHub Pages). */
 export const RULES_BASE = 'https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/';
-export const ruleUrl = (id: string) => `${RULES_BASE}${encodeURIComponent(id)}/`;
+/** A check's page; `ref` tags the link with the tool it was followed from, for the anonymous visit counts. */
+export const ruleUrl = (id: string, ref?: string) => `${RULES_BASE}${encodeURIComponent(id)}/${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
 
 const NUCLEUS: Record<string, RuleDoc> = {
   'syntax-error': {

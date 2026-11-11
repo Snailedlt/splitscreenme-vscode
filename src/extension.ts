@@ -273,7 +273,7 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
     const range = new vscode.Range(doc.positionAt(d.start), doc.positionAt(Math.max(d.end, d.start)));
     const v = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
     v.source = SOURCE;
-    v.code = { value: d.rule, target: vscode.Uri.parse(RULE_DOCS[d.rule] ? ruleUrl(d.rule) : RULES_URL) }; // the check's own page
+    v.code = { value: d.rule, target: vscode.Uri.parse(RULE_DOCS[d.rule] ? ruleUrl(d.rule, 'vscode') : RULES_URL) }; // the check's own page
     if (d.tags) {
       v.tags = d.tags.map((t) => (t === 'deprecated' ? vscode.DiagnosticTag.Deprecated : vscode.DiagnosticTag.Unnecessary));
     }

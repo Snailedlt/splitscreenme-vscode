@@ -296,6 +296,7 @@ export class Server {
         // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
         const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
         this.docsLink = (path: string) => docsPageUrl(path, ref);
+        linkRef = ref;
         // Hub requests (the guid-changed check) name the server and the editor, not the person.
         setHubTool(p.clientInfo?.name ? `ncdev-lsp/${ref}` : 'ncdev-lsp');
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
@@ -800,12 +801,15 @@ export function watchersFor(handlerDirs: string[], relative: boolean): { globPat
   ];
 }
 
+/** The editor's name for links to the site (set at initialize), as for the docs links. */
+let linkRef = 'lsp';
+
 function toLspDiagnostic(l: Lines, d: LintDiagnostic) {
   return {
     range: l.range(d),
     severity: SEVERITY[d.severity],
     code: d.rule,
-    codeDescription: { href: RULE_DOCS[d.rule] ? ruleUrl(d.rule) : RULES_URL }, // the check's own page
+    codeDescription: { href: RULE_DOCS[d.rule] ? ruleUrl(d.rule, linkRef) : RULES_URL }, // the check's own page
     source: 'nucleus',
     message: d.message,
     ...(d.tags?.length ? { tags: d.tags.map((t) => TAG[t]) } : {}),
