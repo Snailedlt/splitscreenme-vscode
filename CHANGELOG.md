@@ -16,6 +16,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### ✨ New
 
+- **Nucleus names in your theme's colours.** `Game` and `Context` show as objects, with their properties, methods and enum values (`Nucleus.Folder.InstancedGameFolder`) each in their own colour, so a name Nucleus doesn't know stands out in plain text next to its underline. In VS Code and the LSP editors that colour by meaning (semantic highlighting).
 - **Explain this line.** Not sure what a line does? **Ctrl+Alt+E** (or right-click › *Explain This Line*) says it in plain words: what it sets or calls, the docs of the names in it, and what Check says about it. In Notepad++: *Plugins › Nucleus Co-op handlers › Explain this line*. Other editors get it as a code action (`nucleus.explainLine`).
 - **A page for every check.** Each problem links to its own page: what it means, why Nucleus cares, a wrong and a right example, the fix, and how to turn it off. [All checks](https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/), one page each, so you can link one in Discord too.
 - **Test in Nucleus Co-op, one click.** The ▷ button above a handler (and *Plugins › Nucleus Co-op handlers* in Notepad++) installs it and starts Nucleus Co-op with its game selected: pick the players and press Play. An open Nucleus is restarted with your OK (it reads handlers when it starts), its debug log can be turned on with one answer, and *Open Nucleus Co-op's Debug Log* shows what happened. Also `ncdev test` for other editors.

@@ -10,7 +10,7 @@ import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/
 import { workbenchLinkFor } from './workbenchlink';
 import { rangeFormatEdits } from './core/features';
 import { docsPageUrl } from './core/docspage';
-import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, explainLine, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, explainLine, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
@@ -319,6 +319,7 @@ export class Server {
             documentRangeFormattingProvider: true,
             documentOnTypeFormattingProvider: { firstTriggerCharacter: "}", moreTriggerCharacter: [";", "\n"] },
             inlayHintProvider: true,
+            semanticTokensProvider: { legend: { tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS] }, full: true },
             executeCommandProvider: { commands: Object.values(COMMANDS) },
           },
           serverInfo: { name: 'nucleus', version: VERSION },
@@ -459,6 +460,22 @@ export class Server {
           activeSignature: s.activeSignature,
           activeParameter: s.activeParameter,
         };
+      }
+      case 'textDocument/semanticTokens/full': {
+        if (!this.featuresOn(doc)) return { data: [] };
+        // Relative positions, five numbers a token (LSP 3.16): line delta, start (relative on the same line), length,
+        // type index, modifier bits. Tokens never span lines here (a name).
+        const l = linesOf(doc);
+        const data: number[] = [];
+        let line = 0, char = 0;
+        for (const t of semanticTokens(doc.text)) {
+          const s = l.position(t.start), e = l.position(t.end);
+          if (e.line !== s.line) continue;
+          data.push(s.line - line, s.line === line ? s.character - char : s.character, e.character - s.character, SEMANTIC_TOKEN_TYPES.indexOf(t.type), t.modifiers.reduce((m, x) => m | (1 << SEMANTIC_TOKEN_MODIFIERS.indexOf(x)), 0));
+          line = s.line;
+          char = s.character;
+        }
+        return { data };
       }
       case 'textDocument/inlayHint': {
         if (!this.featuresOn(doc)) return [];

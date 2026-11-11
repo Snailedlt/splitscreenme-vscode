@@ -70,6 +70,20 @@ export class CompletionItem {
     this.kind = kind;
   }
 }
+export class SemanticTokensLegend {
+  constructor(public tokenTypes: string[], public tokenModifiers: string[] = []) {}
+}
+/** Collects the pushed tokens as they are (range, type, modifiers) instead of encoding them. */
+export class SemanticTokensBuilder {
+  tokens: { range: Range; type: string; modifiers: string[] }[] = [];
+  constructor(public legend?: SemanticTokensLegend) {}
+  push(range: Range, type: string, modifiers: string[] = []) {
+    this.tokens.push({ range, type, modifiers });
+  }
+  build() {
+    return { tokens: this.tokens };
+  }
+}
 export class InlayHint {
   paddingLeft?: boolean;
   tooltip?: unknown;
@@ -130,6 +144,7 @@ export const languages = {
   registerDocumentRangeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).rangeFormatting ??= []).push(p), disposable),
   registerOnTypeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).onType ??= []).push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
+  registerDocumentSemanticTokensProvider: (_s: any, p: any, legend: any) => (((__registered as any).semantic ??= []).push({ p, legend }), disposable),
   registerInlayHintsProvider: (_s: any, p: any) => ((__registered as any).inlay = [...((__registered as any).inlay ?? []), p], disposable),
 };
 export const __applied: WorkspaceEdit[] = [];
@@ -191,7 +206,7 @@ export function makeDocument(text: string, fileName = '/work/handlers/Game.js') 
     fileName,
     languageId: 'javascript',
     isUntitled: false,
-    getText: () => text,
+    getText: (r?: Range) => (r ? text.slice(starts[r.start.line] + r.start.character, starts[r.end.line] + r.end.character) : text),
     positionAt,
     offsetAt: (p: Position) => starts[p.line] + p.character,
     lineAt: (line: number) => ({

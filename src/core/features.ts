@@ -4,7 +4,7 @@
 // same behaviour. Positions are UTF-16 offsets into the text (what JavaScript strings index), which
 // is also what LSP counts by default. No `vscode` import here, no Node APIs either.
 import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './wm';
-import { api, claudeNote, DOCS_URL, isStringMember, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './api';
+import { api, claudeNote, DOCS_URL, isStringMember, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved, resolveCall, resolveGlobal, resolveIndex, resolveMember } from './api';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './complete';
 export { explainLine, type LineExplanation } from './explain';
 import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severity, TextEdit } from './lint';
@@ -809,4 +809,108 @@ function outlineByLines(text: string): SymbolEntry[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Semantic tokens: what a Nucleus name is, so the theme colours it (Game and Context as objects, their
+// properties, methods and Nucleus enum values each in their own colour). Only names the API knows get one;
+// an unknown name keeps the plain colour (its problem underline says why).
+
+/** The token types, in legend order (LSP's and VS Code's standard names). */
+export const SEMANTIC_TOKEN_TYPES = ['namespace', 'class', 'enum', 'enumMember', 'property', 'method'] as const;
+/** The modifiers, in legend order (bit n = SEMANTIC_TOKEN_MODIFIERS[n]). */
+export const SEMANTIC_TOKEN_MODIFIERS = ['readonly', 'defaultLibrary', 'deprecated'] as const;
+export type SemanticTokenType = (typeof SEMANTIC_TOKEN_TYPES)[number];
+export type SemanticTokenModifier = (typeof SEMANTIC_TOKEN_MODIFIERS)[number];
+export interface SemanticToken extends Span {
+  type: SemanticTokenType;
+  modifiers: SemanticTokenModifier[];
+}
+
+export function semanticTokens(text: string): SemanticToken[] {
+  const program = parseTolerant(text) as any;
+  if (!program) return [];
+  const out: SemanticToken[] = [];
+  const memo = new Map<any, Resolved | undefined>();
+  // A variable or parameter of the same name hides the global (`var Context = ...`: then it isn't Nucleus').
+  const own = new Set<string>();
+  const decl = (n: any) => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier') own.add(n.id.name);
+    if (/^Function/.test(n.type) && n.params) for (const p of n.params) if (p.type === 'Identifier') own.add(p.name);
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) v.forEach(decl);
+      else if (v && typeof v === 'object' && typeof v.type === 'string') decl(v);
+    }
+  };
+  decl(program);
+  const emit = (node: any, r: Resolved) => {
+    let type: SemanticTokenType | undefined;
+    const mods: SemanticTokenModifier[] = [];
+    switch (r.kind) {
+      case 'object':
+      case 'nucleus':
+      case 'list':
+        type = 'namespace';
+        mods.push('defaultLibrary');
+        break;
+      case 'enum':
+        type = 'enum';
+        break;
+      case 'enumValue':
+        type = 'enumMember';
+        break;
+      case 'nucleusClass':
+        type = 'class';
+        break;
+      case 'member':
+        if (!r.owner) return; // JavaScript's own functions (parseInt): the editor colours those already
+        type = r.member.kind === 'method' ? 'method' : r.member.kind === 'object' ? 'namespace' : 'property';
+        if (r.member.readonly && r.member.kind !== 'object') mods.push('readonly');
+        if (r.member.deprecated) mods.push('deprecated');
+        break;
+    }
+    if (type) out.push({ start: node.start, end: node.end, type, modifiers: mods });
+  };
+  // What an expression is, colouring each Nucleus name on the way (once per node).
+  const resolve = (node: any): Resolved | undefined => {
+    if (memo.has(node)) return memo.get(node);
+    let r: Resolved | undefined;
+    if (node.type === 'Identifier') {
+      r = api.globals[node.name] && !own.has(node.name) ? resolveGlobal(node.name) : undefined;
+      if (r && r.kind !== 'opaque') emit(node, r);
+    } else if (node.type === 'MemberExpression') {
+      const base = resolve(node.object);
+      if (base && base.kind !== 'opaque') {
+        if (node.computed) r = resolveIndex(base);
+        else if (node.property.type === 'Identifier') {
+          r = resolveMember(base, node.property.name).resolved;
+          if (r && r.kind !== 'opaque') emit(node.property, r);
+        }
+      }
+    } else if (node.type === 'CallExpression') {
+      const callee = resolve(node.callee);
+      r = callee ? resolveCall(callee) : undefined;
+    }
+    memo.set(node, r);
+    return r;
+  };
+  const visit = (node: any, parent: any) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'MemberExpression' || node.type === 'CallExpression') resolve(node);
+    else if (node.type === 'Identifier') {
+      // A name on its own (`Context` passed along): not a property name or a declaration.
+      const isName = !(parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) && !(parent?.type === 'Property' && parent.key === node) && !/Declarat|Function/.test(parent?.type ?? '');
+      if (isName) resolve(node);
+    }
+    for (const k in node) {
+      if (k === 'type' || k === 'start' || k === 'end' || k === 'loc') continue;
+      const v = node[k];
+      if (Array.isArray(v)) for (const c of v) visit(c, node);
+      else if (v && typeof v === 'object' && typeof v.type === 'string') visit(v, node);
+    }
+  };
+  visit(program, undefined);
+  return out.sort((a, b) => a.start - b.start);
 }

@@ -1,4 +1,5 @@
 import { test, before, after } from 'node:test';
+import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../core/features';
 import assert from 'node:assert/strict';
 import { spawn, ChildProcess } from 'node:child_process';
 import path from 'node:path';
@@ -68,6 +69,7 @@ before(async () => {
   assert.equal(caps.textDocumentSync.change, 1);
   assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',', '"']);
   assert.ok(caps.hoverProvider && caps.documentFormattingProvider && caps.inlayHintProvider && caps.signatureHelpProvider);
+  assert.deepEqual(caps.semanticTokensProvider, { legend: { tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS] }, full: true });
   assert.ok(caps.executeCommandProvider.commands.includes('nucleus.tryIt'));
   notify('initialized', {});
 });
@@ -142,6 +144,16 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   const hints = (await request('textDocument/inlayHint', { textDocument: doc, range: { start: { line: 0, character: 0 }, end: { line: 20, character: 0 } } })).result;
   assert.deepEqual(hints.map((h: any) => h.label), ['WM_KILLFOCUS']);
   assert.deepEqual(hints[0].position, { line: 6, character: 41 });
+
+  // Semantic tokens: the legend, then five numbers a token, relative to the one before.
+  const st = (await request('textDocument/semanticTokens/full', { textDocument: doc })).result.data as number[];
+  const decoded: string[] = [];
+  for (let i = 0, line = 0, ch = 0; i < st.length; i += 5) {
+    line += st[i];
+    ch = st[i] ? st[i + 1] : ch + st[i + 1];
+    decoded.push(`${text.split('\n')[line].slice(ch, ch + st[i + 2])}:${SEMANTIC_TOKEN_TYPES[st[i + 3]]}`);
+  }
+  assert.deepEqual(decoded.slice(decoded.indexOf('Hook:namespace') - 1, decoded.indexOf('Hook:namespace') + 2), ['Game:namespace', 'Hook:namespace', 'ForceFocus:property']);
 
   const symbols = (await request('textDocument/documentSymbol', { textDocument: doc })).result;
   // (This handler is half-typed, so it gets the line-by-line outline.)

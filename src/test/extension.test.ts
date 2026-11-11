@@ -200,6 +200,19 @@ test("what's new: highlights of the version's CHANGELOG section", async () => {
   assert.deepEqual(highlights(log, '9.9.9'), []);
 });
 
+test('semantic tokens: Nucleus names in the theme\'s colours; unknown names and other files get none', () => {
+  const semantic = [(m.__registered as any).semantic.at(-1)];
+  assert.deepEqual(semantic[0].legend.tokenTypes, ['namespace', 'class', 'enum', 'enumMember', 'property', 'method']);
+  const doc = m.makeDocument(HEADER + 'Game.wrongName = 1;\nGame.Play = function () {\n  var p = Context.GetFolder(Nucleus.Folder.InstancedGameFolder);\n  var w = Context.Width;\n};\n');
+  const toks = semantic[0].p.provideDocumentSemanticTokens(doc).tokens.map((t: any) => `${doc.getText(t.range)}:${t.type}${t.modifiers.length ? '.' + t.modifiers.join('.') : ''}`);
+  for (const want of ['Game:namespace.defaultLibrary', 'Play:property', 'GetFolder:method', 'Folder:enum', 'InstancedGameFolder:enumMember', 'Width:property.readonly']) assert.ok(toks.includes(want), `${want} in ${toks.join(' ')}`);
+  assert.ok(!toks.some((t: string) => t.startsWith('wrongName')), 'an unknown name keeps the plain colour (its underline explains)');
+  // A local variable named like a Nucleus object isn't Nucleus'.
+  const own = m.makeDocument(HEADER + 'var Context = {};\nContext.Width = 1;\n');
+  assert.ok(!semantic[0].p.provideDocumentSemanticTokens(own).tokens.some((t: any) => own.getText(t.range) === 'Width'));
+  assert.equal(semantic[0].p.provideDocumentSemanticTokens(m.makeDocument('var x = 1;\n', '/work/src/app.js')), undefined);
+});
+
 test('Game.ProtoInput.BlockedMessages: names on hover, as hints, and suggestions inside the brackets', () => {
   const src = HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008, 0x02a3, |];';
   const { doc, pos } = at(src);

@@ -7,7 +7,7 @@ import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
 import { ruleOverrides } from './settings';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -185,6 +185,26 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, { provideDocumentSymbols: (d) => (featuresOn(d) ? documentSymbols(d.getText()).map((s) => toVsSymbol(d, s)) : []) }, { label: 'Nucleus handler' }),
     // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
+    // Nucleus names in the theme's colours: Game/Context as objects, their properties, methods and enum values.
+    // Outside handlers it returns nothing, so JavaScript's own semantic colouring applies there.
+    (() => {
+      const legend = new vscode.SemanticTokensLegend([...SEMANTIC_TOKEN_TYPES], [...SEMANTIC_TOKEN_MODIFIERS]);
+      return vscode.languages.registerDocumentSemanticTokensProvider(
+        SELECTOR,
+        {
+          provideDocumentSemanticTokens: (d) => {
+            if (!featuresOn(d)) return undefined;
+            const b = new vscode.SemanticTokensBuilder(legend);
+            for (const t of semanticTokens(d.getText())) {
+              const start = d.positionAt(t.start);
+              b.push(new vscode.Range(start, d.positionAt(t.end)), t.type, t.modifiers);
+            }
+            return b.build();
+          },
+        },
+        legend,
+      );
+    })(),
     vscode.languages.registerInlayHintsProvider(SELECTOR, {
       provideInlayHints: (d) =>
         featuresOn(d)
