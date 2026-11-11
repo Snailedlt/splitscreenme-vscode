@@ -1,3 +1,6 @@
+# LF everywhere, also on Windows checkouts: the build, the tests and the templates expect it.
+* text=auto eol=lf
+npp-plugin/include/** -text
 plugin/skills/nucleus-handler/scripts/nucleus.js linguist-generated=true
 plugin/skills/nucleus-handler/reference/api.md linguist-generated=true
 data/nucleus-api.json linguist-generated=true
