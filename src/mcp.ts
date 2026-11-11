@@ -20,6 +20,12 @@ import { EVERY_KEYBOARD } from './core/sim';
 /** MCP protocol versions this server speaks, newest first. */
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 import { formatSimulation } from './simformat';
+import { explainLine } from './core/features';
+import { aiHardRulesText, ruleDocText } from './core/airules';
+import { ruleUrl } from './core/ruledocs';
+import { checkPackage } from './core/pkgcheck';
+import { packageFilesFor } from './pkgfiles';
+import { parseBreakpoint, runDebug } from './debugrun';
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : '0.0.0';
@@ -51,7 +57,13 @@ const diagnostics = (text: string) =>
     rule: d.rule,
     message: d.message,
     fixes: (d.fixes ?? []).map((f) => f.title),
+    docs: ruleUrl(d.rule, 'mcp'),
   }));
+/** Problems in the handler's own folder (<Name>/ next to <Name>.js), as it goes into the .nc package. */
+const packageProblems = (text: string, file?: string) => {
+  const files = file ? packageFilesFor(file, 0) : undefined;
+  return (files ? checkPackage(text, files) : []).map((p) => ({ file: p.file ?? null, line: p.line ?? (p.start !== undefined ? lineOf(text, p.start) + 1 : null), severity: p.severity, message: `${p.title}. ${p.why}` }));
+};
 const summary = (ds: ReturnType<typeof diagnostics>) =>
   ds.length
     ? ds.map((d) => `${d.line}:${d.column} ${d.severity} ${d.message} [${d.rule}]${d.fixes.length ? ` (fix: ${d.fixes[0]})` : ''}`).join('\n')
@@ -62,14 +74,17 @@ export const TOOLS: Tool[] = [
     name: 'nucleus_lint',
     title: 'Check a handler',
     description:
-      'Check a Nucleus Co-op handler the way Nucleus runs it (Jint 2.11.58: ES5 only, first-letter-only case matching, silent unknown options, Hub-install line scanning, Context outside callbacks, ...). Returns every problem with line, severity, rule and available fixes. Errors stop Nucleus loading or running the handler; warnings are lines Nucleus ignores or that do something other than they look.',
+      'Check a Nucleus Co-op handler the way Nucleus runs it (Jint 2.11.58: ES5 only, first-letter-only case matching, silent unknown options, Hub-install line scanning, Context outside callbacks, ...). Returns every problem with line, severity, rule, available fixes and a docs link; nucleus_rules with a rule id explains one. With path, also checks the files in the handler\'s <Name>/ folder (as they go into the .nc package). Errors stop Nucleus loading or running the handler; warnings are lines Nucleus ignores or that do something other than they look.',
     inputSchema: { type: 'object', properties: SOURCE },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const { text } = readSource(a);
+      const { text, file } = readSource(a);
       const ds = diagnostics(text);
-      const errors = ds.filter((d) => d.severity === 'error').length;
-      return { text: `${errors} error(s), ${ds.filter((d) => d.severity === 'warning').length} warning(s)\n${summary(ds)}`, data: { errors, diagnostics: ds } };
+      const pkg = packageProblems(text, file);
+      const errors = ds.filter((d) => d.severity === 'error').length + pkg.filter((p) => p.severity === 'error').length;
+      const warnings = ds.filter((d) => d.severity === 'warning').length + pkg.filter((p) => p.severity === 'warning').length;
+      const pkgText = pkg.length ? `\nPackage files:\n${pkg.map((p) => `${p.file ?? 'handler'}${p.line ? `:${p.line}` : ''} ${p.severity} ${p.message}`).join('\n')}` : '';
+      return { text: `${errors} error(s), ${warnings} warning(s)\n${summary(ds)}${pkgText}`, data: { errors, diagnostics: ds, ...(pkg.length ? { package: pkg } : {}) } };
     },
   },
   {
@@ -128,6 +143,50 @@ export const TOOLS: Tool[] = [
       // In the simulator's worker, so other calls are answered while it runs.
       const r = await simWorker().simulate(text, { players, width: int(a.width, 1920, 320, 16384), height: int(a.height, 1080, 200, 16384), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
       return { text: formatSimulation(r, kb), data: r };
+    },
+  },
+  {
+    name: 'nucleus_debug',
+    title: 'Debug a handler (simulated)',
+    description:
+      'Step through the handler as nucleus_simulate runs it: stop at breakpoints (a line, optionally with a condition such as "14 if Context.PlayerID == 1") and on errors, with the variables, call stack, watched expressions and what the handler did so far at each stop. step: true stops at every statement. Isolated like nucleus_simulate: nothing on this computer is touched.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...SOURCE,
+        breakpoints: { type: 'array', items: { type: 'string' }, description: 'Lines to stop at: "14", or "14 if Context.PlayerID == 1".' },
+        watches: { type: 'array', items: { type: 'string' }, description: 'Expressions to show at each stop, e.g. "Context.Width".' },
+        step: { type: 'boolean', default: false, description: 'Stop at every statement (long output; prefer breakpoints).' },
+        players: { type: 'integer', minimum: 1, maximum: 16, default: 2 },
+      },
+    },
+    annotations: { readOnlyHint: true },
+    run: (a) => {
+      const { text, file } = readSource(a);
+      const breakpoints = (a.breakpoints ?? []).map((b: unknown) => {
+        const bp = parseBreakpoint(String(b));
+        if (!bp) throw new Error(`A breakpoint is a line number, optionally with a condition: "14 if Context.PlayerID == 1" (got "${b}").`);
+        return bp;
+      });
+      const players = Math.min(16, Math.max(1, Math.round(Number(a.players ?? 2)) || 2));
+      const r = runDebug(text, { players, width: 1920, height: 1080, keyboardPlayer: 0, plugins: file ? pluginsFor(file) : undefined }, { breakpoints, watches: (a.watches ?? []).map(String), step: !!a.step });
+      return { text: r.text, data: r.data };
+    },
+  },
+  {
+    name: 'nucleus_explain',
+    title: 'Explain a line',
+    description: 'What one line of a handler does, in plain words: each Nucleus name on it with its docs, and the problems the checks find on it. No AI: from the API model and the linter. Good for learning an unfamiliar handler.',
+    inputSchema: { type: 'object', properties: { ...SOURCE, line: { type: 'integer', minimum: 1, description: '1-based line number.' } }, required: ['line'] },
+    annotations: { readOnlyHint: true },
+    run: (a) => {
+      const { text } = readSource(a);
+      const lines = text.split('\n');
+      const n = Math.round(Number(a.line));
+      if (!(n >= 1 && n <= lines.length)) return { text: `The handler has ${lines.length} lines; give a line from 1 to ${lines.length}.`, isError: true };
+      const offset = lines.slice(0, n - 1).reduce((o, l) => o + l.length + 1, 0) + (lines[n - 1].length - lines[n - 1].trimStart().length);
+      const e = explainLine(text, offset);
+      return e ? { text: e.markdown, data: { line: n, text: e.text, markdown: e.markdown } } : { text: `Line ${n} is empty.`, data: { line: n, text: '' } };
     },
   },
   {
@@ -218,10 +277,16 @@ export const TOOLS: Tool[] = [
   {
     name: 'nucleus_rules',
     title: 'List the checks',
-    description: 'Every lint rule with its default severity and what it checks.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Every lint rule with its default severity and what it checks. With rule (an id from nucleus_lint, e.g. "type-mismatch"), that check explained: why Nucleus cares, the fix, a wrong and a right example, and its page.',
+    inputSchema: { type: 'object', properties: { rule: { type: 'string', description: 'A rule id, to explain that one check.' } } },
     annotations: { readOnlyHint: true },
-    run: () => ({ text: Object.entries(RULES).map(([id, r]) => `${id} (${r.severity}): ${r.description}`).join('\n'), data: RULES }),
+    run: (a) => {
+      if (a.rule) {
+        const t = ruleDocText(String(a.rule), 'mcp');
+        return t ? { text: t, data: { id: a.rule, ...(RULES as any)[a.rule], docs: ruleUrl(String(a.rule), 'mcp') } } : { text: `No check called "${a.rule}". nucleus_rules without a rule lists them.`, isError: true };
+      }
+      return { text: Object.entries(RULES).map(([id, r]) => `${id} (${r.severity}): ${r.description}`).join('\n'), data: RULES };
+    },
   },
 ];
 
@@ -245,7 +310,7 @@ export async function handle(msg: any): Promise<unknown | undefined> {
         capabilities: { tools: {}, prompts: {} },
         serverInfo: { name: 'nucleus', title: 'Nucleus Co-op handler tools', version: VERSION },
         instructions:
-          'Tools for Nucleus Co-op game handlers (the JavaScript files Nucleus uses to run games split-screen). Handlers must be ES5 (Jint 2.11.58). After writing or editing a handler, run nucleus_lint and fix every error; use nucleus_api before using an option you are not sure exists; nucleus_simulate shows what each player gets. The nucleus-handler prompt has the full guide.',
+          `Tools for Nucleus Co-op game handlers (the JavaScript files Nucleus uses to run games split-screen). After writing or editing a handler, run nucleus_lint and fix every error (nucleus_fix applies the safe fixes; nucleus_rules with a rule id explains a check); use nucleus_api before using an option you are not sure exists; nucleus_simulate shows what each player gets, nucleus_debug stops inside it, nucleus_explain explains a line. The nucleus-handler prompt has the full guide.\n\n${aiHardRulesText()}`,
       });
     case 'ping':
       return reply({});

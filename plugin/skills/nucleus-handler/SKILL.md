@@ -19,12 +19,18 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 | `node .../nucleus.js lint <file.js>` | **Always run after every edit.** Catches syntax Nucleus can't load, nonexistent options, wrong types, Context used outside `Game.Play`, Hub-install pitfalls. Shows available fixes. |
 | `node .../nucleus.js format <file.js> --write` | Tidy indentation and spacing after editing. It never moves a line or changes a token (it checks), so it can't change what the handler does. |
 | `node .../nucleus.js simulate <file.js> [--players 4]` | **Run after lint is clean.** Loads the handler and runs `Game.Play` for each player the way Nucleus would (emulating its Jint engine), without Nucleus or the game: each player's window, launch arguments, the file/registry changes it would make, settings Nucleus skips, and errors a player would hit (for example an ES2015 method that Jint lacks). Check the output matches what you intended. It runs isolated and touches nothing. |
+| `node .../nucleus.js debug <file.js> --break 14 [--watch Context.Width]` | When `simulate` shows a wrong value or an error: stop at a line (optionally `--break "14 if Context.PlayerID == 1"`) and see the variables, the call stack and what the handler did so far. Isolated like `simulate`. |
+| `node .../nucleus.js rules <id>` | A check you don't understand, by the rule id `lint` printed: why Nucleus cares, the fix, a wrong and a right example. Each has a page too (`https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/<id>/`), worth linking for the user. |
+| `node .../nucleus.js explain <file.js> --line N` | What a line of an unfamiliar handler does: the docs of each name on it and its problems. |
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |
 | `node .../nucleus.js hub search <words>` | Find existing handlers by game or series name. The Hub has no engine field: to find same-engine handlers, get a list of games on that engine (for example PCGamingWiki's engine page) and search for those titles. |
 | `node .../nucleus.js hub fetch <id> --out <dir>` | Download one to read how its author solved instancing, input and LAN. The best learning resource there is. Fetch the one or two that matter, never in bulk: the Hub is run by volunteers. The list is cached for an hour and each version is downloaded once, so repeating a search is free. |
 | `node .../nucleus.js new --name "Game" --exe Game.exe [--steam-id N] [--features protoinput,goldberg,resolution-ini,options]` | Start a new handler from a lint-clean template. |
-| `node .../nucleus.js package <file.js>` | Build the `.nc` package for hub.splitscreen.me. |
+| `node .../nucleus.js package <file.js>` | Build the `.nc` package for hub.splitscreen.me. `lint` already checks the files in the handler's `<Name>/` folder next to it, as they go into the package. |
+| `node .../nucleus.js install <file.js> --nucleus <folder>` / `test …` | Install the handler into the user's Nucleus Co-op, or install and start Nucleus with it selected. They change the user's Nucleus folder (and `test` closes a running Nucleus), so only with the user's OK. |
+
+Through MCP instead of a shell (`node .../nucleus.js mcp`), the same tools are `nucleus_lint`, `nucleus_fix`, `nucleus_format`, `nucleus_simulate`, `nucleus_debug`, `nucleus_explain`, `nucleus_rules`, `nucleus_api`, `nucleus_api_search`, `nucleus_new_handler`, `nucleus_hub_search` and `nucleus_hub_handler`.
 
 If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `### Game.Name`) and apply the rules below by hand.
 

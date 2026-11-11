@@ -41,6 +41,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **AI agents get the newer tools.** The MCP server adds `nucleus_debug` (breakpoints with conditions, watches), `nucleus_explain` (what a line does) and check explanations (`nucleus_rules` with a rule id); every problem carries its docs link, a path also checks the handler's folder, and the server hands every agent the hard rules. The CLI has `ncdev rules <id>` and `ncdev explain`, and the skill lists them all.
 - **Where to ask for help.** Nucleus: Open Documentation lists the SplitScreen.Me Discord and r/nucleuscoop, and `ncdev --help` ends with both.
 - **The feedback form fits what you report.** It's for checks and the editor tools, with up-to-date choices under *Where*, and links fill that in from where they are. Workbench and site feedback has its own form in the workbench's repository.
 - **The Notepad++ plugin says its version.** `NcDev.dll` now carries its version and name (Properties › Details in Windows, and what Notepad++'s Plugins Admin reads), ready for a listing there.

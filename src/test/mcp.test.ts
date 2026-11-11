@@ -66,3 +66,22 @@ test('mcp: over stdio', () => {
   assert.equal(lines[0].result.serverInfo.name, 'nucleus');
   assert.match(lines[1].result.content[0].text, /unknown-member/);
 });
+
+test('mcp: explain, debug, a check explained, docs links, the hard rules', async () => {
+  const call = async (name: string, args: Record<string, unknown>) => ((await handle({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } })) as any).result;
+  const src = 'Game.GUID = "X";\nGame.GameName = "X";\nGame.ExecutableName = "x.exe";\nGame.Play = function () {\n  var w = Context.Width;\n  Context.StartArguments = "-w " + w;\n};\nGame.KillMutex = "m";\n';
+  const lint = await call('nucleus_lint', { source: src });
+  assert.match(lint.structuredContent.result.diagnostics[0].docs, /\/rules\/type-mismatch\/\?ref=mcp$/);
+  const ex = await call('nucleus_explain', { source: src, line: 5 });
+  assert.match(ex.content[0].text, /Context\.Width/);
+  assert.ok((await call('nucleus_explain', { source: src, line: 99 })).isError);
+  const rule = await call('nucleus_rules', { rule: 'type-mismatch' });
+  assert.match(rule.content[0].text, /Fix: [\s\S]*Wrong:[\s\S]*rules\/type-mismatch\//);
+  assert.ok((await call('nucleus_rules', { rule: 'nope' })).isError);
+  const ok = src.replace('Game.KillMutex = "m";', 'Game.KillMutex = ["m"];');
+  const dbg = await call('nucleus_debug', { source: ok, breakpoints: ['6 if Context.PlayerID == 1'], watches: ['w'] });
+  assert.match(dbg.content[0].text, /line 6/i);
+  assert.match(dbg.content[0].text, /w = 1920|w = 960/);
+  const init = ((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })) as any).result;
+  assert.match(init.instructions, /ES5 JavaScript only[\s\S]*Hub\.\* lines/);
+});

@@ -4,6 +4,7 @@
 import { ownerLabel, type Member } from './api';
 import { resolveAt } from './complete';
 import { lint } from './lint';
+import { aiHardRulesText } from './airules';
 
 export interface LineExplanation {
   /** 0-based line. */
@@ -89,6 +90,7 @@ export function explainLine(text: string, offset: number): LineExplanation | und
     `The lines around it:\n${text.split('\n').slice(Math.max(0, line - 3), line + 4).join('\n')}`,
     names.length ? `Docs of the names in it:\n${names.map((n) => `${n.path}: ${String(n.member.doc ?? '').split('\n')[0]}`).join('\n')}` : '',
     problems.length ? `Problems the checks found on it:\n${problems.join('\n')}` : '',
+    `So your answer stays true to how Nucleus runs it:\n${aiHardRulesText()}`,
     'Answer as JSON: {"explanation": "…"} (Markdown inside the string is fine).',
   ].filter(Boolean).join('\n\n');
   return { line, text: raw, markdown: md, aiPrompt };

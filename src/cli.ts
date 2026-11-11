@@ -17,13 +17,15 @@ import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, toHandlerFileName, validateGameName, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
-import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
+import { pluginsFor, simulateIsolated } from './sandbox';
+import { parseBreakpoint, runDebug } from './debugrun';
+import { ruleDocText } from './core/airules';
+import { ruleUrl } from './core/ruledocs';
+import { explainLine } from './core/features';
 import { serveDap } from './dap';
 import { setupNotepadPP } from './setup-npp';
 import { builtIn, installPath, installRelease, installSelf, isStandalone, latestRelease, newer, TOOL, VERSION } from './standalone';
 import os from 'node:os';
-import type { Stop, ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 import { serve } from './mcp';
@@ -74,7 +76,9 @@ Commands:
                               Build a Hub package (handler.js + the <Name>/ asset folder)
   init-agent [dir]            Install AI agent instructions and this tool into a handler folder
                               (AGENTS.md, CLAUDE.md, .claude/skills/nucleus-handler/)
-  rules                       List lint rules
+  rules [<id>]                List lint rules; with an id, that check explained (why, fix, examples)
+  explain <handler.js> --line N
+                              What line N does, in plain words: its names' docs and its problems
   workbench [--out file.html] [--force]
                               Save the browser workbench as one offline HTML file (from the newest
                               release), to open locally or host yourself
@@ -139,7 +143,7 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'test', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'update', 'version'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'test', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'explain', 'update', 'version'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (!cmd && (argv[0] === '--version' || argv[0] === '-v')) cmd = 'version';
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
@@ -157,6 +161,12 @@ async function main(argv: string[]): Promise<number> {
     case 'lint':
       return cmdLint(args, json);
     case 'rules':
+      if (args.positional[0]) {
+        const t = ruleDocText(args.positional[0], 'ncdev');
+        if (!t) throw new Usage(`rules: no check called "${args.positional[0]}" (ncdev rules lists them)`);
+        print(json, { id: args.positional[0], ...(RULES as any)[args.positional[0]], docs: ruleUrl(args.positional[0], 'ncdev') }, () => t);
+        return 0;
+      }
       print(json, RULES, () => Object.entries(RULES).map(([id, r]) => `${id.padEnd(22)} ${r.severity.padEnd(8)} ${r.description}`).join('\n'));
       return 0;
     case 'format':
@@ -165,6 +175,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdSimulate(args, json);
     case 'debug':
       return cmdDebug(args, json);
+    case 'explain':
+      return cmdExplain(args, json);
     case 'api':
       return cmdApi(args, json);
     case 'hub':
@@ -339,44 +351,29 @@ function cmdSimulate(args: Args, json: boolean): number {
   return failed ? 1 : 0;
 }
 
+function cmdExplain(args: Args, json: boolean): number {
+  const file = args.positional[0];
+  const n = Number(flag(args, '--line'));
+  if (!file || args.positional.length > 1 || !Number.isInteger(n) || n < 1) throw new Usage('explain: give one handler file and --line N');
+  const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  const lines = text.split('\n');
+  if (n > lines.length) throw new Usage(`explain: ${file} has ${lines.length} lines`);
+  const offset = lines.slice(0, n - 1).reduce((o, l) => o + l.length + 1, 0) + (lines[n - 1].length - lines[n - 1].trimStart().length);
+  const e = explainLine(text, offset);
+  print(json, { file, line: n, text: e?.text ?? '', markdown: e?.markdown ?? '' }, () => e?.markdown ?? `Line ${n} is empty.`);
+  return 0;
+}
+
 function cmdDebug(args: Args, json: boolean): number {
   const { file, src, opts } = simArgs(args, 'debug');
   const breakpoints = (args.flags.get('--break') ?? []).map((b) => {
-    const m = /^\s*(\d+)\s*(?:if\s+(.+))?$/s.exec(b);
-    if (!m) throw new Usage(`--break must be a line number, optionally with a condition: --break "14 if Context.PlayerID == 1" (got "${b}")`);
-    return { line: Number(m[1]), ...(m[2] ? { condition: m[2].trim() } : {}) };
+    const bp = parseBreakpoint(b);
+    if (!bp) throw new Usage(`--break must be a line number, optionally with a condition: --break "14 if Context.PlayerID == 1" (got "${b}")`);
+    return bp;
   });
-  const watches = args.flags.get('--watch') ?? [];
-  const trace = traceIsolated(src, opts);
-  const stops: Stop[] = [];
-  const MAX_STOPS = 200;
-  for (let s = nextStop(trace, -1, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true }); s && stops.length < MAX_STOPS; ) {
-    stops.push(s);
-    s = nextStop(trace, s.index, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true });
-  }
-  const show = (v: ValueView) => `${v.text}${v.type === '.NET' || v.type === 'function' || v.type === 'null' || v.type === 'undefined' || v.type === 'default' ? '' : ` (${v.type})`}`;
-  const items = stops.map((s) => {
-    const step = trace.steps[s.index];
-    return { ...s, step, description: describeStep(step), watches: watches.map((w) => ({ expr: w, ...evaluateWatch(trace, s.index, w) })), did: callsBefore(trace, s.index).filter((c) => c.effect).map((c) => c.effect!) };
-  });
-  print(json, { file, stops: items, steps: trace.steps.length, truncated: trace.truncated, truncatedPhases: trace.truncatedPhases, error: trace.error, result: trace.result }, () => {
-    const out: string[] = [];
-    if (trace.error && !trace.steps.length) out.push(trace.error);
-    for (const it of items) {
-      out.push(`${it.description}${it.conditionError ? ` (the breakpoint's condition failed: ${it.conditionError})` : ''}`);
-      const locals = Object.entries(it.step.locals);
-      if (locals.length) out.push(`  Variables: ${locals.map(([k, v]) => `${k} = ${show(v)}`).join(', ')}`);
-      if (it.step.stack.length > 1) out.push(`  Call stack: ${it.step.stack.map((f) => `${f.name} (line ${f.line})`).join(' < ')}`);
-      for (const w of it.watches) out.push(`  ${w.expr} = ${w.error ? `(${w.error})` : show(w.value!)}`);
-      if (it.did.length && !has(args, '--step')) out.push(`  So far: ${it.did.join('; ')}`);
-    }
-    if (!items.length && !trace.error) out.push(breakpoints.length ? `No breakpoint was hit (${trace.steps.length} statements ran).` : `No errors (${trace.steps.length} statements ran). Add --break <line> to stop somewhere.`);
-    if (stops.length >= MAX_STOPS) out.push(`(only the first ${MAX_STOPS} stops are shown)`);
-    if (trace.truncated) out.push(`Not every statement was recorded (limits: ${trace.maxSteps} in all, fewer per phase)${trace.truncatedPhases.length ? `: ${trace.truncatedPhases.join('; ')}` : ''}.`);
-    if (trace.error && trace.steps.length) out.push(trace.error);
-    return out.join('\n');
-  });
-  return trace.error || items.some((i) => i.reason === 'error') ? 1 : 0;
+  const r = runDebug(src, opts, { breakpoints, watches: args.flags.get('--watch') ?? [], step: has(args, '--step') });
+  print(json, { file, ...r.data }, () => r.text);
+  return r.failed ? 1 : 0;
 }
 
 function cmdApi(args: Args, json: boolean): number {

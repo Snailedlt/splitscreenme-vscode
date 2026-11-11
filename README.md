@@ -143,15 +143,18 @@ The skill loads automatically when you ask about Nucleus handlers.
 
 | Tool | What it does |
 | --- | --- |
-| `nucleus_lint` | Every problem, with line, rule and available fixes |
+| `nucleus_lint` | Every problem, with line, rule, available fixes and a docs link; with a path, also the files in the handler's folder |
 | `nucleus_fix` | Apply the safe automatic fixes; returns the fixed source (or saves it) |
+| `nucleus_format` | Indentation and spacing only; never moves a line |
 | `nucleus_simulate` | Try it: each player's window, launch arguments and file changes |
+| `nucleus_debug` | Stop at breakpoints (with conditions) and errors: variables, call stack, watches |
+| `nucleus_explain` | What one line does: its names' docs and its problems |
 | `nucleus_api` / `nucleus_api_search` | Type, default and docs of an option; search by words |
 | `nucleus_new_handler` | A lint-clean handler from the templates |
 | `nucleus_hub_search` / `nucleus_hub_handler` | Find Hub handlers; read a verified one as an example |
-| `nucleus_rules` | What each check does |
+| `nucleus_rules` | What each check does; with a rule id, why it matters, the fix and examples |
 
-It also offers the skill's guide as the `nucleus-handler` prompt.
+It also offers the skill's guide as the `nucleus-handler` prompt, and gives every client the hard rules (ES5, real option names, callbacks, types) in its instructions: the same rules the workbench's Fix with AI and Explain with AI use (`src/core/airules.ts`).
 
 - **VS Code (Copilot agent mode):** nothing to set up. The extension registers the server (VS Code 1.101 or newer); turn it on under **MCP Servers** in the Extensions view or in the agent's tool picker.
 - **Anywhere else:** download `nucleus.js` from the [latest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) (one file, needs Node 18+), and add it to your client. For Claude Desktop (`claude_desktop_config.json`) or Cursor (`.cursor/mcp.json`):
