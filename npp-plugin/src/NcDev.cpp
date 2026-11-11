@@ -199,6 +199,11 @@ static std::wstring configDir() {
   SendMessage(npp._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)buf);
   return buf;
 }
+/** Without trailing spaces and line breaks (tool output ends with one). */
+static std::wstring trimEnd(std::wstring t) {
+  while (!t.empty() && (t.back() == L'\n' || t.back() == L'\r' || t.back() == L' ')) t.pop_back();
+  return t;
+}
 static std::wstring iniFile() { return configDir() + L"\\NcDev.ini"; }
 static std::wstring iniGet(const wchar_t* section, const std::wstring& key) {
   wchar_t buf[2048] = L"";
@@ -1170,7 +1175,8 @@ static std::string plain(const std::string& md, size_t maxLines) {
             k = end;
             continue;
           }
-          t += l.substr(k + 1, close - k - 1);
+          // The link text without its own Markdown (`Game.Play` is code inside a link).
+          for (char ch : l.substr(k + 1, close - k - 1)) if (ch != '`') t += ch;
           k = end;
           continue;
         }
@@ -2031,7 +2037,9 @@ static void cmdSettings() {
     return;
   }
   Value saved = lsp::iniSection(L"rules");
-  for (auto& [id, r] : *rules.o) st.rules.push_back(RuleRow{id, r["severity"].str(), r["description"].str(), saved[id].str()});
+  // Descriptions are Markdown (`code`): plain text in the list and under it.
+  auto noTicks = [](std::string t) { t.erase(std::remove(t.begin(), t.end(), '`'), t.end()); return t; };
+  for (auto& [id, r] : *rules.o) st.rules.push_back(RuleRow{id, r["severity"].str(), noTicks(r["description"].str()), saved[id].str()});
   std::wstring q = iniGet(L"format", L"quotes"), sm = iniGet(L"format", L"semicolons");
   st.quotes = q == L"single" ? 1 : q == L"keep" ? 2 : 0;
   st.semis = sm == L"keep" ? 1 : 0;
@@ -2204,7 +2212,7 @@ static void cmdHub() {
     if (!json::parse(res.out, r) || !r.isObj()) {
       std::wstring why = toolFailure(res, L"to download it");
       status(L"Nucleus: couldn't download " + title);
-      MessageBoxW(npp._nppHandle, (why.empty() ? L"Couldn't download it. Is this PC online, and can it reach hub.splitscreen.me?\n\n(" + wide(res.out.substr(0, 300)) + L")" : why).c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
+      MessageBoxW(npp._nppHandle, (why.empty() ? L"Couldn't download it. Is this PC online, and can it reach hub.splitscreen.me?\n\n(" + trimEnd(wide(res.out.substr(0, 300))) + L")" : why).c_str(), PLUGIN_NAME, MB_OK | MB_ICONWARNING);
       return;
     }
     // The handler is the .js at the top of its folder.
@@ -2307,6 +2315,23 @@ static void cmdDocs() {
   if (!currentDoc()) return needHandler();
   hoverAt(h, sci(h, SCI_GETCURRENTPOS), false);
 }
+// Explain this line: what the line at the cursor does, in plain words (the server's nucleus.explainLine), as a tip.
+static void cmdExplain() {
+  HWND h = curSci();
+  Doc* d = currentDoc();
+  if (!d) return needHandler();
+  sptr_t line = sci(h, SCI_LINEFROMPOSITION, sci(h, SCI_GETCURRENTPOS));
+  sptr_t at = sci(h, SCI_GETLINEINDENTPOSITION, line);
+  std::string uri = d->uri;
+  lsp::request("workspace/executeCommand", Value(Object{{"command", "nucleus.explainLine"}, {"arguments", Value(Array{Value(Object{{"uri", uri}, {"line", (int)line}})})}}), [=](const Value& r) {
+    std::string md = r["markdown"].str();
+    Doc* now = currentDoc();
+    if (!now || now->uri != uri) return;
+    if (md.empty()) return status(L"Nucleus: an empty line, nothing to explain");
+    showTip(h, at, plain(md, 30), TIP_HOVER);
+    status(L"Nucleus: line " + std::to_wstring(line + 1) + L" explained (Esc closes it)");
+  });
+}
 static void cmdSuggest() {
   if (!currentDoc()) return needHandler();
   complete(curSci(), true);
@@ -2373,6 +2398,7 @@ static FuncItem funcs[] = {
     {L"Rename…", cmdRename, 0, false, nullptr},
     {L"Fix all", cmdFixAll, 0, false, nullptr},
     {L"Show docs here", cmdDocs, 0, false, nullptr},
+    {L"Explain this line", cmdExplain, 0, false, nullptr},
     {L"Suggest here", cmdSuggest, 0, false, nullptr},
     {L"Format handler", cmdFormat, 0, false, nullptr},
     {L"Try it (simulate)…", cmdTryIt, 0, false, nullptr},
@@ -2396,7 +2422,7 @@ static FuncItem funcs[] = {
     {L"Check for updates", cmdUpdate, 0, false, nullptr},
     {L"About", cmdAbout, 0, false, nullptr},
 };
-static const int PANEL_INDEX = 9, OUTLINE_INDEX = 10, UPDATE_INDEX = 26;
+static const int PANEL_INDEX = 10, OUTLINE_INDEX = 11, UPDATE_INDEX = 27;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Messages from the server (on Notepad++'s thread)
