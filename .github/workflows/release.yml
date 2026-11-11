@@ -54,9 +54,8 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          sh scripts/install-mingw.sh osslsigncode
-          sh npp-plugin/build.sh
-          node scripts/sea.mjs --require-plugin --targets win-x64,linux-x64
+          npm run build
+          sh scripts/build-native.sh win-x64,linux-x64
           node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64
           grep ' ncdev.exe$' dist-sea/SHA256SUMS.txt > SHA256SUMS.txt
           cp dist-sea/ncdev.exe ncdev.exe

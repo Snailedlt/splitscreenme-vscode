@@ -36,15 +36,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: sh scripts/install-mingw.sh
-      - run: npm run build && sh npp-plugin/build.sh
-      - name: The plugin is ready for Notepad++'s Plugins Admin (DLL versions, zips)
-        run: |
-          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
-          node scripts/npp-plugin-list.mjs
       - uses: actions/cache@v4
         with:
           path: .sea-cache
           key: sea-${{ hashFiles('scripts/sea.mjs') }}
-      - run: node scripts/sea.mjs --require-plugin --targets linux-x64
+      - run: npm run build && sh scripts/build-native.sh linux-x64
+      - name: The plugin is ready for Notepad++'s Plugins Admin (DLL versions, zips)
+        run: |
+          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
+          node scripts/npp-plugin-list.mjs
       - run: node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64
