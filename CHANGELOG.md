@@ -41,6 +41,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **The feedback form fits what you report.** It's for checks and the editor tools, with up-to-date choices under *Where*, and links fill that in from where they are. Workbench and site feedback has its own form in the workbench's repository.
 - **The Notepad++ plugin says its version.** `NcDev.dll` now carries its version and name (Properties › Details in Windows, and what Notepad++'s Plugins Admin reads), ready for a listing there.
 - **Try it never freezes the editor.** It runs in a background thread: a handler stuck in an endless loop is stopped, a new edit cancels the old run, and Test all shows progress and can be cancelled. The same goes for `ncdev lsp`, `ncdev mcp` and the debugger.
 - **Notepad++ stays responsive while ncdev works.** Hub search and download, Install, Package, Test, Update and the API reference run in the background with a timer in the status bar, and a tool that hangs is stopped.

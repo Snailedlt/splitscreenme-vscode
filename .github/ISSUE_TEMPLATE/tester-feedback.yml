@@ -1,20 +1,23 @@
 name: Tester feedback
-description: Something wrong, confusing or missing in the VS Code extension, the Notepad++ plugin, ncdev (and other editors), Try it or the workbench.
+description: Something wrong, confusing or missing in a check, the VS Code extension, the Notepad++ plugin, ncdev or another editor.
 labels: [feedback]
 body:
+  - type: markdown
+    attributes:
+      value: Something in the **browser workbench**, **Learn** or the site's pages? That goes to [the workbench's form](https://github.com/Snailedlt/nucleuscoop-handler-testbench/issues/new?template=feedback.yml).
   - type: dropdown
     id: area
     attributes:
       label: Where
       options:
-        - Linter (a wrong or missing warning)
-        - Try it (what it says Nucleus does is wrong)
-        - Completion / hover / docs
-        - Commands (New Handler, Package, Install, Hub)
-        - Workbench (browser)
+        - Checks (a wrong or missing warning)
+        - Try it or the debugger (what it says Nucleus does is wrong)
+        - Suggestions, hovers or docs
+        - VS Code extension
         - Notepad++ plugin
-        - ncdev (command line, or another editor through ncdev lsp)
-        - AI agent skill (Claude Code plugin)
+        - ncdev (command line)
+        - Another editor (through ncdev lsp)
+        - AI agent kit (Claude Code plugin, MCP)
         - Something else
     validations:
       required: true
@@ -35,7 +38,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The .vsix you installed (e.g. v0.6.0), or "workbench".
+      description: The .vsix you installed (e.g. v0.6.0), or `ncdev --version`.
   - type: textarea
     id: context
     attributes:
