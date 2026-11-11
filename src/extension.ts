@@ -135,12 +135,17 @@ export function activate(context: vscode.ExtensionContext) {
       if (edit) await editor.edit((b) => b.replace(edit.range, edit.newText));
       else vscode.window.setStatusBarMessage('Nucleus: already formatted', 2500);
     }),
-    // Explain This Line (Ctrl+Alt+E, or the link under a hover): the line's explanation, shown as a hover on request.
-    vscode.commands.registerCommand(EXPLAIN, async () => {
+    // Explain This Line (Ctrl+Alt+E, the editor's right-click menu or the palette): the line's explanation as a hover.
+    // `at.line`: a line to explain instead of the cursor's (for other callers); the cursor moves there first.
+    vscode.commands.registerCommand(EXPLAIN, async (at?: { line?: number }) => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !isHandler(editor.document)) {
         vscode.window.showInformationMessage('Open a Nucleus handler to explain a line of it.');
         return;
+      }
+      if (typeof at?.line === 'number' && at.line >= 0 && at.line < editor.document.lineCount) {
+        const p = new vscode.Position(at.line, editor.document.lineAt(at.line).firstNonWhitespaceCharacterIndex);
+        editor.selection = new vscode.Selection(p, p);
       }
       const pos = editor.selection.active;
       const line = editor.document.lineAt(pos.line);
@@ -384,7 +389,7 @@ function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.Com
 function markdown(s: string) {
   const md = new vscode.MarkdownString(s);
   // API names link to the Nucleus Docs panel: that one command may run from a link, nothing else.
-  md.isTrusted = { enabledCommands: [OPEN_DOCS, EXPLAIN] };
+  md.isTrusted = { enabledCommands: [OPEN_DOCS] };
   return md;
 }
 
@@ -400,7 +405,7 @@ function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | u
     if (e) return new vscode.Hover(markdown(e.markdown), doc.lineAt(pos.line).range);
   }
   const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
-  return h && new vscode.Hover(markdown(`${h.markdown}\n\n---\n\n[Explain this line](command:${EXPLAIN} "Ctrl+Alt+E")`), toRange(doc, h.range));
+  return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
 }
 
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {

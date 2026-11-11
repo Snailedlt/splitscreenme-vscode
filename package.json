@@ -184,6 +184,13 @@
       }
     ],
     "menus": {
+      "editor/context": [
+        {
+          "command": "splitscreenme.explainLine",
+          "when": "splitscreenme.isHandler",
+          "group": "1_nucleus@1"
+        }
+      ],
       "explorer/context": [
         {
           "command": "splitscreenme.packageHandler",
