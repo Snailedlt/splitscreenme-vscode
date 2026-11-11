@@ -60,6 +60,8 @@ export function fallbackMarkdown(md: string): string {
   const inline = (t: string) =>
     esc(t)
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${href}">${text}</a>`)
+      // A bare address in the docs ("on https://steamdb.info/"), as a hover shows it: a link (not one already in <a>).
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)"]+[^\s<)".,;:])/g, (_m, pre, url) => `${pre}<a href="${url}">${url}</a>`)
       .replace(/`([^`]+)`/g, (_m, c: string) => `<code>${looksLikeCode(unesc(c)) ? highlightCode(unesc(c)) : c}</code>`)
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])_([^_]+)_(?=$|[\s.,)])/g, '$1<em>$2</em>');
