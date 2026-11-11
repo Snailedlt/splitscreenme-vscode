@@ -419,6 +419,8 @@ Settings (which checks to show, the format style, your Nucleus folder), Fix all,
 
 ## Development
 
+Want to help, with or without code? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```bash
 npm ci
 npm run build      # bundle dist/extension.js and dist/cli.js with esbuild
