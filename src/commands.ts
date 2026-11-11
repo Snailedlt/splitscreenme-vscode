@@ -32,15 +32,32 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
 
   reg('splitscreenme.newHandler', newHandler);
   reg('splitscreenme.packageHandler', (uri?: vscode.Uri) => packageHandler(uri));
-  reg('splitscreenme.installHandler', (uri?: vscode.Uri) => installHandler(uri));
-  reg('splitscreenme.testInNucleus', (uri?: vscode.Uri) => testHandlerInNucleus(context, uri));
+  reg('splitscreenme.installHandler', async (uri?: vscode.Uri) => (await trusted('Installing a handler')) && installHandler(uri));
+  reg('splitscreenme.testInNucleus', async (uri?: vscode.Uri) => (await trusted('Testing in Nucleus Co-op')) && testHandlerInNucleus(context, uri));
   reg('splitscreenme.openNucleusLog', openNucleusLog);
   reg('splitscreenme.browseHub', () => browseHub(context));
   reg('splitscreenme.setupTypes', () => setupTypes(context));
   reg('splitscreenme.openDocs', openDocs);
   reg('splitscreenme.openInWorkbench', openInWorkbench);
   reg('splitscreenme.lintWorkspace', () => lintWorkspace(host));
-  reg('splitscreenme.setupAgents', () => setupAgents(context));
+  reg('splitscreenme.setupAgents', async () => (await trusted('Setting up AI agents')) && setupAgents(context));
+}
+
+/**
+ * In Restricted Mode (a folder VS Code doesn't trust yet) the checks, completion, docs and Try it (sandboxed) all
+ * work, but nothing hands the folder's code to a program that runs it with full access: Nucleus Co-op runs a
+ * handler's code with .NET, and agents run what their config names. Say why and offer to trust the folder.
+ */
+async function trusted(what: string): Promise<boolean> {
+  if (vscode.workspace.isTrusted !== false) return true;
+  const manage = 'Manage Workspace Trust';
+  const pick = await vscode.window.showWarningMessage(
+    `${what} needs a trusted folder: Nucleus Co-op runs the handler's code with full access to your PC. Trust this folder if you know where the handler came from.`,
+    { modal: true },
+    manage,
+  );
+  if (pick === manage) await vscode.commands.executeCommand('workbench.trust.manage');
+  return false;
 }
 
 // ---------------------------------------------------------------------------

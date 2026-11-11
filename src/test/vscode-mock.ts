@@ -137,6 +137,7 @@ export const workspace = {
   applyEdit: async (e: WorkspaceEdit) => (__applied.push(e), true),
   textDocuments: [] as any[],
   workspaceFolders: undefined,
+  isTrusted: true,
   onDidOpenTextDocument: () => disposable,
   onDidChangeTextDocument: () => disposable,
   onDidCloseTextDocument: () => disposable,

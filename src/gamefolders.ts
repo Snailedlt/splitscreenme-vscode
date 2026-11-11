@@ -40,7 +40,7 @@ export function registerGameFolders(context: vscode.ExtensionContext, isHandler:
     const map = { ...(cfg.get<Record<string, string>>(SETTING) ?? {}) };
     if (dir) map[keyOf(doc)] = dir;
     else delete map[keyOf(doc)];
-    await cfg.update(SETTING, map, vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
+    await cfg.update(SETTING, map, vscode.workspace.workspaceFolders?.length && vscode.workspace.isTrusted !== false ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
   };
   const active = () => {
     const doc = vscode.window.activeTextEditor?.document;

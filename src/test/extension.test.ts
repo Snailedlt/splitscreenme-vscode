@@ -30,6 +30,28 @@ test('registers all commands declared in package.json', () => {
   assert.deepEqual(declared.filter((id: string, i: number) => declared.indexOf(id) !== i), [], 'a command declared twice');
 });
 
+test('Restricted Mode: the extension runs, and Install / Test in Nucleus / Set up AI agents ask for trust first', async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  // Without this VS Code switches the whole extension off in a folder it doesn't trust (no checks, no completion).
+  assert.equal(pkg.capabilities?.untrustedWorkspaces?.supported, 'limited');
+  assert.deepEqual(pkg.capabilities.untrustedWorkspaces.restrictedConfigurations, ['splitscreenme.gameFolders']);
+  const w = vscode.workspace as any, win = vscode.window as any, cmds = vscode.commands as any;
+  const warn = win.showWarningMessage, exec = cmds.executeCommand;
+  const shown: string[] = [], ran: string[] = [];
+  w.isTrusted = false;
+  win.showWarningMessage = async (msg: string, opts: any, ...items: string[]) => (shown.push(msg), assert.equal(opts?.modal, true), items[0]);
+  cmds.executeCommand = async (id: string) => { ran.push(id); };
+  try {
+    for (const id of ['splitscreenme.installHandler', 'splitscreenme.testInNucleus', 'splitscreenme.setupAgents'])
+      await m.__registered.commands.find((c: any) => c.id === id).fn();
+  } finally {
+    w.isTrusted = true; win.showWarningMessage = warn; cmds.executeCommand = exec;
+  }
+  assert.equal(shown.length, 3);
+  assert.match(shown[0], /^Installing a handler needs a trusted folder/);
+  assert.deepEqual(ran, ['workbench.trust.manage', 'workbench.trust.manage', 'workbench.trust.manage']);
+});
+
 test('package.json rule settings match the linter rules', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   assert.deepEqual(Object.keys(pkg.contributes.configuration.properties['splitscreenme.lint.rules'].properties).sort(), Object.keys(RULES).sort());

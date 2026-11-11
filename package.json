@@ -41,6 +41,15 @@
   "activationEvents": [
     "onLanguage:javascript"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a folder you don't trust yet, the checks, completion, docs, Format and Try it work. Install, Test in Nucleus Co-op and Set up AI agents ask you to trust the folder first, and a folder's own game folder links (splitscreenme.gameFolders) are ignored.",
+      "restrictedConfigurations": [
+        "splitscreenme.gameFolders"
+      ]
+    }
+  },
   "contributes": {
     "mcpServerDefinitionProviders": [
       {
