@@ -1,0 +1,20 @@
+name: Release titles (one-off)
+# Titles the releases before 0.6.0 "(closed beta)": tester-only builds shared in the Discord thread. From 0.6.0 the
+# Release workflow titles 0.x releases "(beta)" itself. Runs once when pushed; safe to run again (only renames).
+on:
+  push:
+    paths: ['.github/workflows/release-titles.yml']
+permissions:
+  contents: write
+jobs:
+  titles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Title the closed-beta releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for t in v0.1.0-beta.1 v0.1.1-beta.1 v0.2.0-beta.1 v0.3.0-beta.1 v0.3.1-beta.1 v0.4.0-beta.1 v0.5.0-beta.1; do
+            gh release edit "$t" --title "$t (closed beta)" && echo "$t: (closed beta)"
+          done

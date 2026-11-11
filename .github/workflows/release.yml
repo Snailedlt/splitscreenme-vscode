@@ -68,8 +68,10 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
+          # 0.x is the public beta: the title says so (the tag stays plain, so links and update checks don't change).
+          title="$TAG"; case "$TAG" in v0.*) title="$TAG (beta)";; esac
           cp dist/cli.js nucleus.js
-          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" ncdev.exe SHA256SUMS.txt NcDev.zip NcDev-x86.zip nucleus.js workbench.html --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md $pre
+          gh release create "$TAG" "splitscreenme-vscode-$TAG.vsix" ncdev.exe SHA256SUMS.txt NcDev.zip NcDev-x86.zip nucleus.js workbench.html --target "$GITHUB_SHA" --title "$title" --notes-file release-notes.md $pre
       - name: Announce on Discord (when DISCORD_WEBHOOKS is set)
         env:
           TAG: ${{ steps.version.outputs.tag }}
