@@ -59,6 +59,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🐛 Fixed
 
+- **`ncdev setup` suggests the right spelling.** A typo such as `ncdev setup nodepad++` now says *Did you mean: ncdev setup notepad++*.
 - **The extension works in folders VS Code doesn't trust yet (Restricted Mode).** Before, it was switched off there, so a downloaded handler showed no checks and no suggestions. Install, Test in Nucleus Co-op and Set up AI agents ask you to trust the folder first, since Nucleus Co-op runs the handler's code.
 - **Docs links open the name's own page on the site** (`docs/Context.ModifySaveFile/`): from hovers and suggestions in Notepad++, Neovim and the other LSP editors, and from **Open on the web** in VS Code's Nucleus Docs panel. Each page has the 👍/👎 and the report link.
 - **Notepad++ in dark mode: the problem and outline lists' column headers and scroll bars are dark too**, with Windows' own dark themes (the ones Notepad++ uses).

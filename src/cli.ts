@@ -564,7 +564,11 @@ function builtInSkill(): string | undefined {
 
 function cmdSetup(args: Args, json: boolean): number {
   const what = (args.positional[0] ?? '').toLowerCase().replace(/\s+/g, '');
-  if (!['notepad++', 'notepadpp', 'npp'].includes(what)) throw new Usage('setup: only "notepad++" for now, e.g. ncdev setup notepad++');
+  if (!['notepad++', 'notepadpp', 'npp'].includes(what)) {
+    // A typo of it (nodepad++, notepad+) gets the right spelling; anything else, what setup can do.
+    const near = what && /^no[a-z]*pad|^npp|pad\+/i.test(what);
+    throw new Usage(near ? `setup: there is no "${what}". Did you mean: ncdev setup notepad++` : 'setup: only "notepad++" for now, e.g. ncdev setup notepad++');
+  }
   const changing = !has(args, '--check') && !has(args, '--remove');
   // The standalone ncdev copies itself to one known place (%LOCALAPPDATA%\ncdev) and installs the plugin, which runs it.
   const standalone = isStandalone();
