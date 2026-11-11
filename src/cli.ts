@@ -109,7 +109,10 @@ Lint options:
   --hub                       Compare Game.GUID with the version on the Hub (handlers with a Hub.Handler.Id; cached)
 
 Exit code: 1 when lint finds errors, a simulated handler fails to load or run, or a command
-fails; 2 on bad usage.`;
+fails; 2 on bad usage.
+
+Questions? Ask other handler authors: https://discord.gg/XxGMkqCf4r (Discord) or
+https://www.reddit.com/r/nucleuscoop/`;
 
 class Usage extends Error {}
 

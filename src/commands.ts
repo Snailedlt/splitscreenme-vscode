@@ -445,7 +445,8 @@ async function openDocs() {
     { label: 'Handler hub', url: 'https://hub.splitscreen.me/' },
     { label: 'Nucleus Co-op source code', url: 'https://github.com/SplitScreen-Me/splitscreenme-nucleus' },
     { label: 'PCGamingWiki (check input & multiplayer support)', url: 'https://www.pcgamingwiki.com/wiki/Home' },
-    { label: 'r/nucleuscoop', url: 'https://www.reddit.com/r/nucleuscoop/' },
+    { label: 'Ask for help: SplitScreen.Me Discord', url: 'https://discord.gg/XxGMkqCf4r' },
+    { label: 'Ask for help: r/nucleuscoop', url: 'https://www.reddit.com/r/nucleuscoop/' },
   ];
   const pick = await vscode.window.showQuickPick(links.map((l) => ({ label: l.label, detail: l.url, url: l.url })), { title: 'SplitScreen.Me documentation' });
   if (pick) vscode.env.openExternal(vscode.Uri.parse(pick.url));
