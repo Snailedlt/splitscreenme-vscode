@@ -169,7 +169,8 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await vscode.workspace.applyEdit(edit.edit);
-      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
+      const left = lint(editor.document.getText(), { rules: ruleOverrides() }).filter((d) => d.severity === 'error' || d.severity === 'warning').length;
+      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}.${left ? ` ${left} need${left === 1 ? 's' : ''} your decision: see the Problems panel.` : ' Nothing else to fix.'}`);
     }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ',', '"', "'"),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
@@ -289,7 +290,7 @@ function toVsSymbol(doc: vscode.TextDocument, s: SymbolEntry): vscode.DocumentSy
 function pkgDiagnostic(p: PkgProblem, range: vscode.Range): vscode.Diagnostic {
   const v = new vscode.Diagnostic(range, `${p.title}. ${p.why}`, SEVERITY[p.severity]);
   v.source = SOURCE;
-  v.code = 'package';
+  v.code = { value: 'package', target: vscode.Uri.parse(RULES_URL) };
   return v;
 }
 

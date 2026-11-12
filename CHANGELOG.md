@@ -62,6 +62,9 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🐛 Fixed
 
+- **"Fix all" is back in the Ctrl+. menu.** VS Code dropped it from the quick fixes; it now shows next to the single fix whenever more than one problem can be fixed.
+- **Every problem links to its docs.** Package and game-folder problems in VS Code now link to the checks pages, as the others do.
+- **Search finds the obvious name first.** "mutex" lists `Game.KillMutex` before `Game.KillLastInstanceMutex`.
 - **New Handler checks every value.** In the CLI, the MCP server and the language server, a max player count that isn't 1 to 16, a Steam id that isn't digits, an exe that isn't a file name, or an unknown feature is refused with a plain reason, instead of ending up in the handler's code.
 - **Clear answers to wrong input.** The MCP tools say what's wrong (a folder instead of a file, a missing name, players out of range) instead of showing a raw error or quietly changing the value, and `ncdev` names a missing file plainly.
 - **Breakpoints past the end are flagged.** The debugger marks a breakpoint beyond the last line as not set, and `ncdev debug` says it can't be hit.

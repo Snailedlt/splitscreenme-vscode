@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
 import { lint, lineOf, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
+import { quickFixes } from '../core/features';
 import { fixAll } from '../core/fix';
 import { membersOf } from '../core/api';
 import { memberContextAt } from '../core/complete';
@@ -764,4 +765,12 @@ test('lineOf: the same answers as counting newlines, and fast on long files', ()
   run(200);
   const small = run(1000), big = run(4000);
   assert.ok(big < Math.max(small, 50) * 8, `1000 lines: ${small} ms, 4000 lines: ${big} ms`);
+});
+
+test('quick fixes: "Fix all" is a quick fix, so the Ctrl+. menu keeps it', () => {
+  const src = 'Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\nGame.MaxPlayers = "4";\nGame.KillMutex = "m";\n';
+  const ds = lint(src);
+  const all = quickFixes(src, ds).filter((a) => a.title.startsWith('Fix all '));
+  assert.equal(all.length, 1);
+  assert.equal(all[0].kind, 'quickfix');
 });

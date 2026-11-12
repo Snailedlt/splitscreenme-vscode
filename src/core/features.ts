@@ -582,9 +582,11 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
   const eol = eolOf(text);
   for (const diag of diagnostics) {
     for (const fix of diag.fixes ?? []) actions.push({ title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: fix.preferred, diagnostic: diag });
-    if (!actions.some((a) => a.kind === 'source.fixAll') && diag.fixes?.some((f) => f.preferred)) {
+    // A quick fix like the others (VS Code drops a source.fixAll action from the Ctrl+. menu, which asks for quick
+    // fixes only); fixing all on save is fixAllCodeAction's job.
+    if (!actions.some((a) => a.title.startsWith('Fix all ')) && diag.fixes?.some((f) => f.preferred)) {
       const fix = fixAllAction(text, rules);
-      if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'source.fixAll', edits: [fix.edit], diagnostic: diag });
+      if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'quickfix', edits: [fix.edit], diagnostic: diag });
     }
     if (diag.rule in RULES && diag.rule !== 'syntax-error') {
       const start = Math.max(lineStart(text, diag.start), text.startsWith(BOM) ? 1 : 0); // after a BOM
