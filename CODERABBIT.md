@@ -85,7 +85,7 @@ Saved connections reach reviews through **scopes** ([Review scopes](https://docs
    - Connections: for DeepWiki choose **the DeepWiki connection** (not *Inherit from Base Scope*, which would leave it off); everything else can inherit.
    - Save.
 
-Scopes need organization-administrator access in CodeRabbit (you, on your own account) and a plan that includes them. If named scopes aren't offered on your plan, tick DeepWiki in the Base Scope instead: the first line of its guidance keeps it out of reviews that aren't about Nucleus Co-op.
+Scopes need organization-administrator access in CodeRabbit (you, on your own account) and a plan that includes them. If named scopes aren't offered on your plan, you can tick DeepWiki in the Base Scope instead, but know what that means: every repository CodeRabbit reviews (now or added later) can then use it. Its guidance only steers what it looks up; it doesn't restrict where it's available. Fine while CodeRabbit is installed on these two repos only; otherwise leave DeepWiki out until a named scope is possible.
 
 ## 4. Check it on the first pull request
 
