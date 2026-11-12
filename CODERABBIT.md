@@ -24,14 +24,7 @@ Each repo has a `.coderabbit.yaml` (checked against CodeRabbit's schema). A repo
 
 CodeRabbit is free for public repositories.
 
-## 2. Make a scope for the two repos
-
-Connections (like DeepWiki below) apply to every repo in a scope. The **Base Scope** means all your repos, so give these two their own:
-
-1. **Setup › Scopes › New scope**, named for example `Nucleus Co-op tools`.
-2. Add `splitscreenme-vscode` and `nucleuscoop-handler-testbench`.
-
-## 3. Connect DeepWiki
+## 2. Connect DeepWiki
 
 DeepWiki lets reviews look things up in the Nucleus Co-op source and the related repos.
 
@@ -48,7 +41,7 @@ DeepWiki lets reviews look things up in the Nucleus Co-op source and the related
 
 3. **Discover tools**: it lists `read_wiki_structure`, `read_wiki_contents` and `ask_question`. Allow all three.
 4. **Prompt Guidance:** paste the text below.
-5. Add it to the scope from step 2 (not the Base Scope), then **Save**.
+5. Leave *Add this to the Base Scope* unticked, and **Save**. Step 3 decides where it's used.
 
 ```
 Only for Nucleus Co-op / SplitScreen.Me work (handlers, the handler tools). Skip this connection for anything else.
@@ -80,6 +73,19 @@ Facts in a repository's AGENTS.md are verified against Nucleus and Jint: prefer 
 The same list is in both repos' `AGENTS.md` (*Related repositories*): keep the two in step.
 
 DeepWiki only knows public repos it has indexed. If a review says one isn't there, open `https://deepwiki.com/<owner>/<repo>` once in a browser to have it indexed.
+
+## 3. Use DeepWiki only in these two repos (scopes)
+
+Saved connections reach reviews through **scopes** ([Review scopes](https://docs.coderabbit.ai/connections/scopes-review.md)), and none is used until the **Base Scope** exists. The Base Scope covers every repository without a named scope of its own, so keep DeepWiki out of it and give these two repos their own:
+
+1. Open [Review › Scopes](https://app.coderabbit.ai/review/scopes).
+2. **Create the Base Scope.** It starts with every connection ticked: **untick DeepWiki** (and anything else your other repos shouldn't use), then save.
+3. **Create a named scope**, e.g. `Nucleus Co-op tools` ("PR reviews for the Nucleus Co-op handler tools").
+   - Repositories: `splitscreenme-vscode` and `nucleuscoop-handler-testbench` (a repo can be in only one named scope).
+   - Connections: for DeepWiki choose **the DeepWiki connection** (not *Inherit from Base Scope*, which would leave it off); everything else can inherit.
+   - Save.
+
+Scopes need organization-administrator access in CodeRabbit (you, on your own account) and a plan that includes them. If named scopes aren't offered on your plan, tick DeepWiki in the Base Scope instead: the first line of its guidance keeps it out of reviews that aren't about Nucleus Co-op.
 
 ## 4. Check it on the first pull request
 
