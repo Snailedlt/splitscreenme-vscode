@@ -133,3 +133,13 @@ test('dap: by default the handler runs in the simulator worker; requests after l
   const stopped = out.find((m) => m.event === 'stopped');
   assert.equal(stopped.body.reason, 'breakpoint');
 });
+
+test('dap: a breakpoint is checked against the launched source, not the file on disk', (t) => {
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
+  fs.writeFileSync(file, 'Game.GameName = "Demo";\n'); // the saved file is one line; the editor's text is longer
+  const { req } = session();
+  req('initialize', { adapterID: 'nucleus' });
+  req('launch', { program: file, source: HANDLER, players: 1 });
+  const bps = req('setBreakpoints', { source: { path: file }, breakpoints: [{ line: 7 }, { line: 99 }] }).res.body.breakpoints;
+  assert.deepEqual(bps.map((b: any) => b.verified), [true, false]);
+});

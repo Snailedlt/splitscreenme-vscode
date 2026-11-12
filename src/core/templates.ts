@@ -56,10 +56,13 @@ export function validateHandlerInfo(info: { gameName?: unknown; executableName?:
   else if (/[\\/]/.test(info.executableName)) out.push('executableName: a file name only, never a path (the folder goes in Game.BinariesFolder).');
   else if (!/\.exe$/i.test(info.executableName.trim())) out.push('executableName: Nucleus starts an .exe, e.g. "Game.exe".');
   if (info.steamId !== undefined && info.steamId !== '' && !/^\d+$/.test(String(info.steamId))) out.push('steamId: the Steam app id is digits only, e.g. 413150.');
-  if (info.maxPlayers !== undefined && info.maxPlayers !== '') {
-    const n = Number(info.maxPlayers);
+  if (info.maxPlayers !== undefined) {
+    // A number, or digits as text (the CLI's flag); never '' or true, which would end up in the code as written.
+    const m = info.maxPlayers;
+    const n = typeof m === 'number' ? m : typeof m === 'string' && /^\d+$/.test(m.trim()) ? Number(m) : NaN;
     if (!Number.isInteger(n) || n < 1 || n > 16) out.push('maxPlayers: a whole number from 1 to 16.');
   }
+  if (info.steamId !== undefined && typeof info.steamId !== 'string' && typeof info.steamId !== 'number') out.push('steamId: the Steam app id is digits only, e.g. 413150.');
   if (info.features !== undefined) {
     if (!Array.isArray(info.features)) out.push('features: a list of feature ids.');
     else {

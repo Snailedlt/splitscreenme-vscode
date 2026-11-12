@@ -240,3 +240,10 @@ test('New Handler: game names the template can take, and plain reasons for the r
   assert.equal(toGuid('Pokémon Straße Œuvre Ørsted'), 'Pokemon Strasse OEuvre Orsted');
   assert.equal(toGuid('日本'), 'MyGame');
 });
+
+test('validateHandlerInfo: maxPlayers is a whole number 1-16, as a number or digits', async () => {
+  const { validateHandlerInfo } = await import('../core/templates');
+  const bad = (m: unknown) => validateHandlerInfo({ gameName: 'Demo', executableName: 'demo.exe', maxPlayers: m }).some((p) => p.startsWith('maxPlayers'));
+  for (const m of ['', true, '4.5', 0, 17, ' ', 'x']) assert.ok(bad(m), `rejects ${JSON.stringify(m)}`);
+  for (const m of [1, 4, '8', 16]) assert.ok(!bad(m), `accepts ${JSON.stringify(m)}`);
+});

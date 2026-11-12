@@ -5,6 +5,7 @@
 // recording, so Back and Reverse Continue work too. Nothing here imports `vscode`: extension.ts wraps it as an inline
 // adapter, and another editor could run it over stdio.
 import fs from 'node:fs';
+import path from 'node:path';
 import { describeStep, evaluateWatch, callsBefore, nextStop, type Breakpoint, type StepMode, type Trace, type ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
 import { pluginsFor } from './sandbox';
@@ -35,6 +36,8 @@ export class HandlerDebugSession {
   private trace: Trace | undefined;
   private at = -1;
   private program = '';
+  /** The text being debugged (launch's `source`, or the file as it was at launch). */
+  private launched: string | undefined;
   private breakpoints: Breakpoint[] = [];
   private stopOnErrors = true;
   private stopOnEntry = false;
@@ -104,6 +107,7 @@ export class HandlerDebugSession {
         this.program = args.program;
         this.stopOnEntry = !!args.stopOnEntry;
         const src = (args.source ?? fs.readFileSync(args.program, 'utf8')).replace(/^﻿/, '');
+        this.launched = src;
         const players = Math.min(16, Math.max(1, Number(args.players ?? 2) || 2));
         const res = /^(\d+)x(\d+)$/.exec(args.resolution ?? '1920x1080') ?? ['', '1920', '1080'];
         const kb = args.keyboard ?? 1;
@@ -123,7 +127,9 @@ export class HandlerDebugSession {
         this.breakpoints = bps.map((b) => ({ line: b.line, ...(b.condition ? { condition: b.condition } : {}) }));
         // A line past the end of the file can never be hit: say so instead of showing it as set.
         let lines = Infinity;
-        try { if (a.source?.path) lines = fs.readFileSync(a.source.path, 'utf8').split('\n').length; } catch { /* unsaved or unknown: trust the editor */ }
+        // The source being debugged when it's this file (it may be unsaved); else the file on disk.
+        const same = this.launched !== undefined && a.source?.path && path.resolve(a.source.path) === path.resolve(this.program);
+        try { if (same) lines = this.launched!.split('\n').length; else if (a.source?.path) lines = fs.readFileSync(a.source.path, 'utf8').split('\n').length; } catch { /* unknown: trust the editor */ }
         return this.respond(req, {
           breakpoints: bps.map((b) => (b.line >= 1 && b.line <= lines ? { verified: true, line: b.line } : { verified: false, line: b.line, message: `The file has ${lines} lines.` })),
         });

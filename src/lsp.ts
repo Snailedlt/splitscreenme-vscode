@@ -777,7 +777,7 @@ export class Server {
         const out = path.join(dir, `${toHandlerFileName(o.name)}.js`);
         if (fs.existsSync(out)) throw new Error(`${path.basename(out)} already exists there.`);
         const features = (o.features ?? []).filter((f) => FEATURES.some((x) => x.id === f)) as Feature[];
-        fs.writeFileSync(out, renderHandler({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers, features }));
+        fs.writeFileSync(out, renderHandler({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers === undefined ? undefined : Number(o.maxPlayers), features }));
         const uri = pathToFileURL(out).href;
         this.request('window/showDocument', { uri, takeFocus: true });
         return { uri };
