@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit's reviews of this repository. AGENTS.md (the verified facts about Nucleus Co-op that the code relies on)
+# is read automatically as the review guidelines; the skill's docs below add the rules for handler code. The
+# Nucleus Co-op source itself is reachable through the DeepWiki MCP server, connected in CodeRabbit's web app.
+language: en-GB
+tone_instructions: "Plain, short English. Say what breaks and for whom. Facts in AGENTS.md are verified against Nucleus and Jint: don't suggest 'fixing' them."
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # Generated or vendored: never edited by hand (AGENTS.md "Generated files"). Review the generator instead.
+  path_filters:
+    - "!data/nucleus-api.json"
+    - "!data/js-builtins.json"
+    - "!data/window-messages.json"
+    - "!types/nucleus.d.ts"
+    - "!plugin/skills/nucleus-handler/scripts/nucleus.js"
+    - "!plugin/skills/nucleus-handler/reference/api.md"
+    - "!npp-plugin/include/**"
+    - "!**/package-lock.json"
+
+  path_instructions:
+    - path: "src/core/**"
+      instructions: |
+        Shared by the VS Code extension, the CLI, the LSP/MCP servers, the skill and the browser workbench.
+        - No `vscode` import, and no Node or DOM APIs in sim.ts, pkgcheck.ts or gamefolder.ts (the workbench imports them).
+        - A new editor feature goes into features.ts first as plain data, then into every adapter (src/extension.ts, src/lsp.ts; the Notepad++ plugin if it shows something new). Flag one added to a single adapter only.
+        - Nucleus runs handlers with Jint 2.11.58 (ES5 plus let/const acting as var). Behaviour claims about Jint or Nucleus must match AGENTS.md or name the probe/source they come from.
+    - path: "src/core/{lint,jsrules,ruledocs}.ts"
+      instructions: |
+        A rule change needs: tests in src/test/lint.test.ts including a no-false-positive case; the rule listed in package.json (contributes.configuration, splitscreenme.lint.rules.properties) and in the README table; a page in ruledocs.ts whose `bad` example triggers it and `good` doesn't. Published, working Hub handlers must produce no errors: ask how it was checked against them.
+    - path: "src/core/format.ts"
+      instructions: "Format must never move a line break (Nucleus executes a handler line by line) and must re-tokenize and compare with the original, refusing on any difference. Flag anything that weakens that guarantee."
+    - path: "src/{sandbox,sandbox-vm,simworker,sim-sandbox-entry,sim-worker-entry,debugrun}.ts"
+      instructions: "Handler code is untrusted: it may only run inside the vm sandbox (simulateIsolated/traceIsolated or the sim worker), never through simulate() from Node code. Check time and memory limits stay in place; src/test/sim.test.ts tries the known escapes."
+    - path: "src/{hubcache.ts,core/hub.ts}"
+      instructions: "Every Hub read goes through hubcache.ts with hubClientHeaders(tool, feature): no direct Hub API calls, nothing personal in requests, packages once per version, capped retries. The Hub is run by volunteers; keep its load low."
+    - path: "src/{mcp,lsp,dap,cli}.ts"
+      instructions: "Thin adapters over src/core. Logic that other tools also need belongs in src/core. CLI commands and MCP tools that change the user's files or Nucleus folder must say so in their description."
+    - path: "src/core/{templates,snippets,airules}.ts"
+      instructions: "Handler code generated here must be ES5 and lint-clean, and name only real API members (tests check this; flag new code that isn't covered)."
+    - path: "plugin/skills/**/*.md"
+      instructions: "Handler examples must be ES5 and lint-clean and name only real Game.*/Context.* members (a test resolves them). Keep instructions that agents follow precise and short."
+    - path: "data/claude-{docs,param-docs}.json"
+      instructions: "AI-written docs: every entry needs `doc` and `basis` (the Nucleus/Proto Input files and functions it rests on) and states only what that source shows. `checkedBy`/`checkedOn` only for a real person's check."
+    - path: "npp-plugin/**"
+      instructions: "A thin client of `ncdev lsp` (C++17, MinGW). Logic belongs in src/core/features.ts or src/lsp.ts, not here."
+    - path: "package.json"
+      instructions: "Command and setting ids are links people bind keys to: never rename one without a deprecated alias pointing at the new id (AGENTS.md: links live for ever)."
+    - path: "CHANGELOG.md"
+      instructions: "User-visible changes go under the unreleased section in an emoji group (✨ New, 🛠️ Improved, 🐛 Fixed, ⚡ Faster, ⚠️ Changed, 🙏 Thanks), starting with a short bold summary, then one or two plain sentences."
+    - path: "src/test/**"
+      instructions: "Tests run with node:test against the built dist-test files. Prefer real handler code over mocks; vscode-mock.ts stands in for the vscode module."
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "plugin/skills/nucleus-handler/SKILL.md"
+      - "plugin/skills/nucleus-handler/reference/workflow.md"
+      - "plugin/skills/nucleus-handler/reference/troubleshooting.md"
+      - "PORTING.md"
+      - "CONTRIBUTING.md"
+
+chat:
+  auto_reply: true
