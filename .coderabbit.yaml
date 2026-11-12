@@ -62,6 +62,12 @@ reviews:
       instructions: "Tests run with node:test against the built dist-test files. Prefer real handler code over mocks; vscode-mock.ts stands in for the vscode module."
 
 knowledge_base:
+  # MCP servers (DeepWiki, connected in CodeRabbit's web app): 'auto' would turn them off for public repositories.
+  mcp:
+    usage: enabled
+  linked_repositories:
+    - repository: "Snailedlt/nucleuscoop-handler-testbench"
+      instructions: "The browser workbench and site (playground/), which imports this repo's src/core (lint, sim, features, pkgcheck, gamefolder, airules) through its @core alias, and the Jint testbench whose probes record how the real engine behaves. A change to src/core's exports, rule ids or docs URLs can break it."
   code_guidelines:
     enabled: true
     filePatterns:

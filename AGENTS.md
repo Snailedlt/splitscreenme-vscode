@@ -66,7 +66,7 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 - `scripts/issue-bots.mjs`: the issue bots (`doc-review.yml`, `report-details.yml` call it). `src/test/bots.test.ts` checks them on real issue bodies and against the forms in `.github/ISSUE_TEMPLATE/`; rename a form field and that test fails. The details checksum must match the workbench's (`playground/src/checksum.ts` there; both test the same block).
 - `scripts/generate-api.mjs`: builds the API model from the Nucleus C# sources + splitscreen.me docs.
 - `plugin/`: the Claude Code plugin (`.claude-plugin/plugin.json`, `skills/nucleus-handler/`). `.claude-plugin/marketplace.json` at the root publishes it.
-- `.coderabbit.yaml`: CodeRabbit's pull request reviews. It reads this file and the skill's docs as guidelines; its `path_instructions` repeat the rules above per folder (core, rules, format, sandbox, Hub, adapters), so change them together. The Nucleus source reaches it through the DeepWiki MCP server, connected in CodeRabbit's web app.
+- `.coderabbit.yaml`: CodeRabbit's pull request reviews. It reads this file and the skill's docs as guidelines; its `path_instructions` repeat the rules above per folder (core, rules, format, sandbox, Hub, adapters), so change them together. The Nucleus source reaches it through the DeepWiki MCP server, connected in CodeRabbit's web app. [CODERABBIT.md](CODERABBIT.md) has the web app's setup.
 
 ## Docs written by Claude
 
@@ -75,6 +75,15 @@ Run `npm test` and `npm run typecheck` before finishing. Run `npm run build` aft
 ## Generated files: never edit by hand
 
 `data/nucleus-api.json`, `types/nucleus.d.ts` (from `npm run generate`), and `plugin/skills/nucleus-handler/scripts/nucleus.js` and `plugin/skills/nucleus-handler/reference/api.md` (from `npm run build`); the bundle is committed with releases only, see Commands). Fix the generator or the source instead.
+
+## Related repositories
+
+Where to look things up, and which to trust when they disagree (current code first, then these facts, then history). CodeRabbit reaches them through DeepWiki; an agent can clone them next to this repo.
+
+- **Current code:** [SplitScreen-Me/splitscreenme-nucleus](https://github.com/SplitScreen-Me/splitscreenme-nucleus) (Nucleus Co-op, C#: how handlers are loaded and run, every `Game.*` option, the Hub install), [splitscreenme-protoInput](https://github.com/SplitScreen-Me/splitscreenme-protoInput) (Proto Input: input hooks, message filters), [splitscreenme-www](https://github.com/SplitScreen-Me/splitscreenme-www) (the official handler docs), [splitscreenme-hub](https://github.com/SplitScreen-Me/splitscreenme-hub) (hub.splitscreen.me), [splitscreenme-discordbot](https://github.com/SplitScreen-Me/splitscreenme-discordbot) (the bot and its handler templates), [sebastienros/jint](https://github.com/sebastienros/jint) (the engine; Nucleus pins 2.11.58).
+- **Our tools:** [Snailedlt/splitscreenme-vscode](https://github.com/Snailedlt/splitscreenme-vscode) (checks, simulator, API model, editors, CLI, MCP, skill) and [Snailedlt/nucleuscoop-handler-testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench) (the workbench and site, imports the first one's `src/core`; the Jint probes).
+- **History** (why something is the way it is, old handlers; current code wins): [lucasassislar/nucleuscoop](https://github.com/lucasassislar/nucleuscoop) (the original Nucleus Co-op), [distrohelena/nucleuscoop](https://github.com/distrohelena/nucleuscoop) (the community version before SplitScreen.Me), [Ilyaki/ProtoInput](https://github.com/Ilyaki/ProtoInput) (Proto Input before it moved), [UniversalSplitScreen](https://github.com/UniversalSplitScreen/UniversalSplitScreen) (Ilyaki's earlier input-hook split screen).
+- **Related, for ideas only** (never a source for how Nucleus behaves): [partydeck/partydeck](https://github.com/partydeck/partydeck), a split-screen launcher for Linux/SteamOS.
 
 ## Facts the code relies on (verified, don't "fix" them away)
 
