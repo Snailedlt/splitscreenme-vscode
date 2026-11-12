@@ -170,7 +170,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.workspace.applyEdit(edit.edit);
       const left = lint(editor.document.getText(), { rules: ruleOverrides() }).filter((d) => d.severity === 'error' || d.severity === 'warning').length;
-      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}.${left ? ` ${left} need${left === 1 ? 's' : ''} your decision: see the Problems panel.` : ' Nothing else to fix.'}`);
+      // Package and game-folder problems aren't touched by Fix all; count them too, so "nothing else" is true.
+      const other = vscode.languages.getDiagnostics(editor.document.uri).filter((d) => {
+        const code = typeof d.code === 'object' ? d.code.value : d.code;
+        return (code === 'package' || code === 'game-folder') && d.severity <= vscode.DiagnosticSeverity.Warning;
+      }).length;
+      const rest = left + other;
+      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}.${rest ? ` ${rest} need${rest === 1 ? 's' : ''} your decision: see the Problems panel.` : ' Nothing else to fix.'}`);
     }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ',', '"', "'"),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
