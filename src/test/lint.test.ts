@@ -2,7 +2,7 @@ import { blockTarget, wmName } from '../core/wm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
-import { lint, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
+import { lint, lineOf, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
 import { fixAll } from '../core/fix';
 import { membersOf } from '../core/api';
 import { memberContextAt } from '../core/complete';
@@ -745,4 +745,23 @@ test('every diagnostic has a severity (the CLI, VS Code and LSP all need one)', 
       assert.ok(['error', 'warning', 'info', 'hint'].includes(d.severity), `${d.rule}: severity ${String(d.severity)}`);
     }
   assert.ok(n > 5, 'the samples should trigger several rules');
+});
+
+test('lineOf: the same answers as counting newlines, and fast on long files', () => {
+  const text = 'a\nbb\r\n\nccc\n';
+  for (let o = -1; o <= text.length + 2; o++) {
+    let n = 0;
+    for (let i = 0; i < o && i < text.length; i++) if (text[i] === '\n') n++;
+    assert.equal(lineOf(text, o), n, `offset ${o}`);
+  }
+  // Many problems in a long file: the time grows with the number of problems, not with problems × lines.
+  const run = (n: number) => {
+    const t0 = Date.now();
+    const ds = lint('Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\n' + 'Game.KilMutex = "x";\n'.repeat(n));
+    assert.ok(ds.length >= n);
+    return Date.now() - t0;
+  };
+  run(200);
+  const small = run(1000), big = run(4000);
+  assert.ok(big < Math.max(small, 50) * 8, `1000 lines: ${small} ms, 4000 lines: ${big} ms`);
 });

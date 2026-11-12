@@ -1968,10 +1968,21 @@ function templateFix(text: string, n: Node): Fix[] | undefined {
   return [{ title: 'Convert to string concatenation', edits: [{ start: n.start, end: n.end, text: parts.join(' + ') }], preferred: true }];
 }
 
+// Where each line starts, for the last text asked about: lint asks once per problem, and scanning from the start
+// every time made long files (thousands of lines) take seconds.
+let startsOf: { text: string; starts: number[] } | undefined;
 export function lineOf(text: string, offset: number): number {
-  let line = 0;
-  for (let i = 0; i < offset && i < text.length; i++) if (text.charCodeAt(i) === 10) line++;
-  return line;
+  if (startsOf?.text !== text) {
+    const starts = [0];
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+    startsOf = { text, starts };
+  }
+  const { starts } = startsOf;
+  const at = Math.min(Math.max(offset, 0), text.length);
+  // The last line starting at or before `at` (a newline at `at` itself still belongs to the line before).
+  let lo = 0, hi = starts.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= at) lo = mid; else hi = mid - 1; }
+  return lo;
 }
 export function lineStart(text: string, offset: number): number {
   return text.lastIndexOf('\n', offset - 1) + 1;

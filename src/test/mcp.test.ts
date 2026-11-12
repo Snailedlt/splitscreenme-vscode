@@ -43,11 +43,13 @@ test('mcp: simulate runs isolated', async () => {
   assert.equal(escape.result.structuredContent.result.players[0].startArguments, 'undefined undefined');
 });
 
-test('mcp: simulate keeps to its limits; initialize answers a version it speaks', async () => {
-  for (const [players, want] of [[0, 1], [5000, 16], [-3, 1]] as const) {
+test('mcp: simulate refuses players out of range; initialize answers a version it speaks', async () => {
+  for (const players of [0, 5000, -3, 2.5]) {
     const r = await call('nucleus_simulate', { source: HEADER, players });
-    assert.equal(r.result.structuredContent.result.playerCount, want, `players ${players}`);
+    assert.ok(r.result.isError, `players ${players} is refused, as in the CLI`);
+    assert.match(r.result.content[0].text, /players must be a whole number from 1 to 16/);
   }
+  assert.equal((await call('nucleus_simulate', { source: HEADER, players: 16 })).result.structuredContent.result.playerCount, 16);
   const init = async (v: string) => ((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: v } })) as any).result.protocolVersion;
   assert.equal(await init('2025-03-26'), '2025-03-26');
   assert.equal(await init('1999-01-01'), '2025-06-18');
@@ -84,4 +86,27 @@ test('mcp: explain, debug, a check explained, docs links, the hard rules', async
   assert.match(dbg.content[0].text, /w = 1920|w = 960/);
   const init = ((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })) as any).result;
   assert.match(init.instructions, /ES5 JavaScript only[\s\S]*Hub\.\* lines/);
+});
+
+test('mcp: bad input gets a plain answer, never a crash or a silent fix', async () => {
+  const call = async (name: string, args: Record<string, unknown>) => ((await handle({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } })) as any).result;
+  for (const [name, args, re] of [
+    ['nucleus_new_handler', {}, /gameName/],
+    ['nucleus_new_handler', { gameName: 'X', executableName: 'x.exe', maxPlayers: 'abc' }, /maxPlayers/],
+    ['nucleus_new_handler', { gameName: 'X', executableName: 'x.exe', steamId: 'zz' }, /steamId/],
+    ['nucleus_new_handler', { gameName: 'A "b"', executableName: 'x.exe' }, /double quotes/],
+    ['nucleus_new_handler', { gameName: 'X', executableName: 'x.exe', features: ['zzz'] }, /unknown zzz/],
+    ['nucleus_debug', { source: 'Game.GUID = "x";', breakpoints: '5' }, /is a list/],
+    ['nucleus_lint', { path: __dirname }, /is a folder/],
+    ['nucleus_lint', { path: '/nope/x.js' }, /No file at/],
+    ['nucleus_api', {}, /Give a name/],
+    ['nucleus_api_search', { query: 'mutex', limit: 0 }, /limit must be/],
+    ['nucleus_simulate', { source: 'Game.GUID = "x";', players: 17 }, /players must be/],
+  ] as [string, Record<string, unknown>, RegExp][]) {
+    const r = await call(name, args);
+    assert.ok(r.isError, `${name} ${JSON.stringify(args)} is an error`);
+    assert.match(r.content[0].text, re);
+  }
+  const ok = await call('nucleus_new_handler', { gameName: 'X', executableName: 'x.exe', maxPlayers: 4, steamId: 123 });
+  assert.match(ok.content[0].text, /Game\.MaxPlayers = 4;/);
 });

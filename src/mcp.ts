@@ -11,7 +11,7 @@ import { formatHandler } from './core/format';
 import { lookup, search, formatEntry } from './core/lookup';
 import { handlerPageUrl } from './core/hub';
 import { hubHandlers, hubPackage, setHubTool } from './hubcache';
-import { renderHandler, FEATURES, Feature } from './core/templates';
+import { renderHandler, validateHandlerInfo, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
 import { pluginsFor } from './sandbox';
 import { simWorker } from './simworker';
@@ -46,7 +46,12 @@ const SOURCE = {
 };
 function readSource(a: { source?: string; path?: string }): { text: string; file?: string } {
   if (typeof a.source === 'string') return { text: a.source.replace(/^﻿/, '') };
-  if (typeof a.path === 'string') return { text: fs.readFileSync(a.path, 'utf8').replace(/^﻿/, ''), file: path.resolve(a.path) };
+  if (typeof a.path === 'string') {
+    const st = fs.statSync(a.path, { throwIfNoEntry: false });
+    if (!st) throw new Error(`No file at ${a.path}.`);
+    if (st.isDirectory()) throw new Error(`${a.path} is a folder: give one handler .js file.`);
+    return { text: fs.readFileSync(a.path, 'utf8').replace(/^﻿/, ''), file: path.resolve(a.path) };
+  }
   throw new Error('Give the handler as "source" (its text) or "path" (a .js file).');
 }
 const diagnostics = (text: string) =>
@@ -137,11 +142,16 @@ export const TOOLS: Tool[] = [
     run: async (a) => {
       const { text, file } = readSource(a);
       // The schema's limits, enforced (a client may send anything): 1-16 players, a sensible screen.
-      const int = (v: unknown, def: number, min: number, max: number) => (Number.isFinite(Number(v ?? def)) ? Math.min(max, Math.max(min, Math.round(Number(v ?? def)))) : def);
-      const players = int(a.players, 2, 1, 16);
-      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : int(a.keyboardPlayer, 1, 0, players) - 1;
+      // The schema's limits, checked (a client may send anything): out of range is an error, as in the CLI.
+      const int = (v: unknown, def: number, min: number, max: number, name: string) => {
+        const n = Number(v ?? def);
+        if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${name} must be a whole number from ${min} to ${max} (got ${JSON.stringify(v)}).`);
+        return n;
+      };
+      const players = int(a.players, 2, 1, 16, 'players');
+      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : int(a.keyboardPlayer, 1, 0, players, 'keyboardPlayer') - 1;
       // In the simulator's worker, so other calls are answered while it runs.
-      const r = await simWorker().simulate(text, { players, width: int(a.width, 1920, 320, 16384), height: int(a.height, 1080, 200, 16384), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
+      const r = await simWorker().simulate(text, { players, width: int(a.width, 1920, 320, 16384, 'width'), height: int(a.height, 1080, 200, 16384, 'height'), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
       return { text: formatSimulation(r, kb), data: r };
     },
   },
@@ -163,12 +173,15 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true },
     run: (a) => {
       const { text, file } = readSource(a);
+      if (a.breakpoints !== undefined && !Array.isArray(a.breakpoints)) throw new Error('breakpoints is a list, e.g. ["14", "20 if Context.PlayerID == 1"].');
+      if (a.watches !== undefined && !Array.isArray(a.watches)) throw new Error('watches is a list of expressions, e.g. ["Context.Width"].');
       const breakpoints = (a.breakpoints ?? []).map((b: unknown) => {
         const bp = parseBreakpoint(String(b));
         if (!bp) throw new Error(`A breakpoint is a line number, optionally with a condition: "14 if Context.PlayerID == 1" (got "${b}").`);
         return bp;
       });
-      const players = Math.min(16, Math.max(1, Math.round(Number(a.players ?? 2)) || 2));
+      const players = Number(a.players ?? 2);
+      if (!Number.isInteger(players) || players < 1 || players > 16) throw new Error(`players must be a whole number from 1 to 16 (got ${JSON.stringify(a.players)}).`);
       const r = runDebug(text, { players, width: 1920, height: 1080, keyboardPlayer: 0, plugins: file ? pluginsFor(file) : undefined }, { breakpoints, watches: (a.watches ?? []).map(String), step: !!a.step });
       return { text: r.text, data: r.data };
     },
@@ -197,6 +210,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     annotations: { readOnlyHint: true },
     run: (a) => {
+      if (typeof a.query !== 'string' || !a.query.trim()) return { text: 'Give a name to look up, e.g. "Game.KillMutex".', isError: true };
       const r = lookup(String(a.query));
       if (r.kind === 'entries') return { text: r.entries.map((e) => formatEntry(e)).join('\n\n'), data: r.entries.map((e) => ({ path: e.path, ...e.member })) };
       if (r.kind === 'enum') return { text: `enum Nucleus.${r.name}${r.doc ? ` - ${r.doc}` : ''}\n` + Object.entries(r.values).map(([k, v]) => `  Nucleus.${r.name}.${k} = ${v}`).join('\n'), data: r };
@@ -215,7 +229,10 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', default: 20 } }, required: ['query'] },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const hits = search(String(a.query), a.limit ?? 20);
+      if (typeof a.query !== 'string' || !a.query.trim()) return { text: 'Give some words to search for, e.g. "mutex".', isError: true };
+      const limit = Number(a.limit ?? 20);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) return { text: `limit must be a whole number from 1 to 200 (got ${JSON.stringify(a.limit)}).`, isError: true };
+      const hits = search(String(a.query), limit);
       return { text: hits.length ? hits.map((e) => formatEntry(e, false) + (e.member.doc ? `\n  ${e.member.doc.split('\n')[0].slice(0, 160)}` : '')).join('\n') : `No API members match "${a.query}".`, data: hits.map((e) => ({ path: e.path, ...e.member })) };
     },
   },
@@ -236,7 +253,9 @@ export const TOOLS: Tool[] = [
     },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const src = renderHandler({ gameName: a.gameName, executableName: a.executableName, steamId: a.steamId, maxPlayers: a.maxPlayers, features: (a.features ?? []) as Feature[] });
+      const problems = validateHandlerInfo(a);
+      if (problems.length) return { text: problems.join('\n'), isError: true, data: { problems } };
+      const src = renderHandler({ gameName: a.gameName, executableName: a.executableName, steamId: a.steamId === undefined ? undefined : String(a.steamId), maxPlayers: a.maxPlayers === undefined ? undefined : Number(a.maxPlayers), features: (a.features ?? []) as Feature[] });
       return { text: src, data: { source: src } };
     },
   },

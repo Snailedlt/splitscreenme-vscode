@@ -7,7 +7,7 @@ import { nextStop, describeStep, evaluateWatch, callsBefore, type Breakpoint, ty
 /** "14" or "14 if Context.PlayerID == 1"; undefined if it isn't one. */
 export function parseBreakpoint(b: string): Breakpoint | undefined {
   const m = /^\s*(\d+)\s*(?:if\s+(.+))?$/s.exec(b);
-  return m ? { line: Number(m[1]), ...(m[2] ? { condition: m[2].trim() } : {}) } : undefined;
+  return m && Number(m[1]) >= 1 ? { line: Number(m[1]), ...(m[2] ? { condition: m[2].trim() } : {}) } : undefined;
 }
 
 export interface DebugRun {
@@ -20,6 +20,8 @@ export interface DebugRun {
 const MAX_STOPS = 200;
 
 export function runDebug(src: string, opts: TraceOptions, o: { breakpoints: Breakpoint[]; watches: string[]; step?: boolean }): DebugRun {
+  const lineCount = src.split('\n').length;
+  const past = o.breakpoints.filter((b) => b.line > lineCount);
   const trace = traceIsolated(src, opts);
   const mode = o.step ? 'into' : 'continue';
   const stops: Stop[] = [];
@@ -42,6 +44,7 @@ export function runDebug(src: string, opts: TraceOptions, o: { breakpoints: Brea
     for (const w of it.watches) out.push(`  ${w.expr} = ${w.error ? `(${w.error})` : show(w.value!)}`);
     if (it.did.length && !o.step) out.push(`  So far: ${it.did.join('; ')}`);
   }
+  for (const b of past) out.push(`Line ${b.line} is past the end of the handler (${lineCount} lines), so that breakpoint can't be hit.`);
   if (!items.length && !trace.error) out.push(o.breakpoints.length ? `No breakpoint was hit (${trace.steps.length} statements ran).` : `No errors (${trace.steps.length} statements ran). Add a breakpoint to stop somewhere.`);
   if (stops.length >= MAX_STOPS) out.push(`(only the first ${MAX_STOPS} stops are shown)`);
   if (trace.truncated) out.push(`Not every statement was recorded (limits: ${trace.maxSteps} in all, fewer per phase)${trace.truncatedPhases.length ? `: ${trace.truncatedPhases.join('; ')}` : ''}.`);

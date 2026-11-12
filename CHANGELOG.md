@@ -62,6 +62,10 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🐛 Fixed
 
+- **New Handler checks every value.** In the CLI, the MCP server and the language server, a max player count that isn't 1 to 16, a Steam id that isn't digits, an exe that isn't a file name, or an unknown feature is refused with a plain reason, instead of ending up in the handler's code.
+- **Clear answers to wrong input.** The MCP tools say what's wrong (a folder instead of a file, a missing name, players out of range) instead of showing a raw error or quietly changing the value, and `ncdev` names a missing file plainly.
+- **Breakpoints past the end are flagged.** The debugger marks a breakpoint beyond the last line as not set, and `ncdev debug` says it can't be hit.
+- **Long files lint quickly.** Checking a handler with thousands of lines no longer slows down with every problem found.
 - **`ncdev setup` suggests the right spelling.** A typo such as `ncdev setup nodepad++` now says *Did you mean: ncdev setup notepad++*.
 - **The extension works in folders VS Code doesn't trust yet (Restricted Mode).** Before, it was switched off there, so a downloaded handler showed no checks and no suggestions. Install, Test in Nucleus Co-op and Set up AI agents ask you to trust the folder first, since Nucleus Co-op runs the handler's code.
 - **Docs links open the name's own page on the site** (`docs/Context.ModifySaveFile/`): from hovers and suggestions in Notepad++, Neovim and the other LSP editors, and from **Open on the web** in VS Code's Nucleus Docs panel. Each page has the 👍/👎 and the report link.

@@ -29,7 +29,7 @@ import { formatSimulation } from './simformat';
 import { buildPackage } from './core/pkg';
 import { installHandler } from './install';
 import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleusSync, testInNucleus } from './nucleusrun';
-import { FEATURES, Feature, renderHandler, toHandlerFileName, validateGameName } from './core/templates';
+import { FEATURES, Feature, renderHandler, toHandlerFileName, validateHandlerInfo } from './core/templates';
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : '0.0.0';
@@ -771,8 +771,8 @@ export class Server {
         // { name, exe, dir, steamId?, maxPlayers?, features? }: writes <dir>/<name>.js from the template and opens it.
         const o = (args[0] ?? {}) as { name?: string; exe?: string; dir?: string; steamId?: string; maxPlayers?: number; features?: string[] };
         if (!o.name || !o.exe || !o.dir) throw new Error('nucleus.newHandler: give { name, exe, dir } (and optionally steamId, maxPlayers, features).');
-        const badName = validateGameName(o.name);
-        if (badName) throw new Error(`nucleus.newHandler: name: ${badName}`);
+        const problems = validateHandlerInfo({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers, features: o.features });
+        if (problems.length) throw new Error(`nucleus.newHandler: ${problems.join(' ')}`);
         const dir = /^file:/i.test(o.dir) ? fileURLToPath(o.dir) : o.dir;
         const out = path.join(dir, `${toHandlerFileName(o.name)}.js`);
         if (fs.existsSync(out)) throw new Error(`${path.basename(out)} already exists there.`);

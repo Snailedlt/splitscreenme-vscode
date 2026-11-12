@@ -46,6 +46,30 @@ export function validateGameName(name: string): string | undefined {
   return undefined;
 }
 
+/** Every problem with a New Handler request, in plain words (empty when it's fine): the CLI, the MCP server and the
+ *  editors check the same things before writing a handler, so no invalid value ends up in its code. */
+export function validateHandlerInfo(info: { gameName?: unknown; executableName?: unknown; steamId?: unknown; maxPlayers?: unknown; features?: unknown }): string[] {
+  const out: string[] = [];
+  if (typeof info.gameName !== 'string') out.push("gameName: the game's name is required.");
+  else { const bad = validateGameName(info.gameName); if (bad) out.push(`gameName: ${bad}`); }
+  if (typeof info.executableName !== 'string' || !info.executableName.trim()) out.push('executableName: the game\'s .exe file name is required, e.g. "Game.exe".');
+  else if (/[\\/]/.test(info.executableName)) out.push('executableName: a file name only, never a path (the folder goes in Game.BinariesFolder).');
+  else if (!/\.exe$/i.test(info.executableName.trim())) out.push('executableName: Nucleus starts an .exe, e.g. "Game.exe".');
+  if (info.steamId !== undefined && info.steamId !== '' && !/^\d+$/.test(String(info.steamId))) out.push('steamId: the Steam app id is digits only, e.g. 413150.');
+  if (info.maxPlayers !== undefined && info.maxPlayers !== '') {
+    const n = Number(info.maxPlayers);
+    if (!Number.isInteger(n) || n < 1 || n > 16) out.push('maxPlayers: a whole number from 1 to 16.');
+  }
+  if (info.features !== undefined) {
+    if (!Array.isArray(info.features)) out.push('features: a list of feature ids.');
+    else {
+      const bad = info.features.filter((f) => !FEATURES.some((x) => x.id === f));
+      if (bad.length) out.push(`features: unknown ${bad.join(', ')}. Available: ${FEATURES.map((f) => f.id).join(', ')}.`);
+    }
+  }
+  return out;
+}
+
 /** A name that is safe as one file or folder name on Windows and everywhere else: no path separators or characters
  *  Windows forbids, no control characters, no trailing dots or spaces, never "." or ".." (which would point at the
  *  folder itself or its parent) and never a reserved device name (CON, NUL, COM1…). Empty or unusable: the fallback. */

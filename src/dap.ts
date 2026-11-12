@@ -121,7 +121,12 @@ export class HandlerDebugSession {
       case 'setBreakpoints': {
         const bps: { line: number; condition?: string }[] = a.breakpoints ?? [];
         this.breakpoints = bps.map((b) => ({ line: b.line, ...(b.condition ? { condition: b.condition } : {}) }));
-        return this.respond(req, { breakpoints: bps.map((b) => ({ verified: true, line: b.line })) });
+        // A line past the end of the file can never be hit: say so instead of showing it as set.
+        let lines = Infinity;
+        try { if (a.source?.path) lines = fs.readFileSync(a.source.path, 'utf8').split('\n').length; } catch { /* unsaved or unknown: trust the editor */ }
+        return this.respond(req, {
+          breakpoints: bps.map((b) => (b.line >= 1 && b.line <= lines ? { verified: true, line: b.line } : { verified: false, line: b.line, message: `The file has ${lines} lines.` })),
+        });
       }
       case 'setExceptionBreakpoints':
         this.stopOnErrors = (a.filters ?? []).includes('errors');

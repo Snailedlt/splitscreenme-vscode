@@ -15,7 +15,7 @@ import { formatHandler } from './core/format';
 import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
-import { renderHandler, toHandlerFileName, validateGameName, FEATURES, Feature } from './core/templates';
+import { renderHandler, toHandlerFileName, validateHandlerInfo, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
 import { pluginsFor, simulateIsolated } from './sandbox';
 import { parseBreakpoint, runDebug } from './debugrun';
@@ -460,11 +460,9 @@ function cmdNew(args: Args, json: boolean): number {
   const name = flag(args, '--name');
   const exe = flag(args, '--exe');
   if (!name || !exe) throw new Usage('new: --name and --exe are required');
-  const badName = validateGameName(name);
-  if (badName) throw new Usage(`new: --name: ${badName}`);
   const features = (flag(args, '--features') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const bad = features.filter((f) => !FEATURES.some((x) => x.id === f));
-  if (bad.length) throw new Usage(`Unknown feature(s): ${bad.join(', ')}. Available: ${FEATURES.map((f) => f.id).join(', ')}`);
+  const problems = validateHandlerInfo({ gameName: name, executableName: exe, steamId: flag(args, '--steam-id'), maxPlayers: flag(args, '--max-players'), features });
+  if (problems.length) throw new Usage(`new: ${problems.map((p) => p.replace(/^gameName:/, '--name:').replace(/^executableName:/, '--exe:').replace(/^steamId:/, '--steam-id:').replace(/^maxPlayers:/, '--max-players:').replace(/^features:/, '--features:')).join('\n     ')}`);
   const out = flag(args, '--out') ?? `${toHandlerFileName(name)}.js`;
   if (fs.existsSync(out) && !has(args, '--force')) throw new Error(`${out} already exists (use --force to overwrite)`);
   const maxPlayers = flag(args, '--max-players');
@@ -641,7 +639,9 @@ function cmdInitAgent(args: Args, json: boolean): number {
 main(process.argv.slice(2)).then(
   (code) => (process.exitCode = code),
   (e) => {
-    console.error(e instanceof Usage ? `${e.message}\n\nRun "${TOOL} --help" for usage.` : `Error: ${e?.message ?? e}`);
+    // A file that isn't there, or a folder where a file was expected: say so plainly, not with Node's error codes.
+    const fileError = e?.code === 'ENOENT' ? `No such file or folder: ${e.path}` : e?.code === 'EISDIR' ? `${e.path} is a folder: give a file.` : undefined;
+    console.error(e instanceof Usage ? `${e.message}\n\nRun "${TOOL} --help" for usage.` : `Error: ${fileError ?? e?.message ?? e}`);
     process.exitCode = e instanceof Usage ? 2 : 1;
   },
 );
