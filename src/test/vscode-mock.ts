@@ -130,6 +130,7 @@ export const __config: Record<string, any> = {};
 const disposable = { dispose() {} };
 
 export const languages = {
+  getDiagnostics: (): [Uri, Diagnostic[]][] => [...__diagnostics].map(([k, d]) => [Uri.parse(k), d]),
   createDiagnosticCollection: () => ({
     set: (uri: Uri, d: Diagnostic[]) => __diagnostics.set(uri.toString(), d),
     delete: (uri: Uri) => __diagnostics.delete(uri.toString()),

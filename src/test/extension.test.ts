@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as mock from './vscode-mock';
-import { activate, isHandler } from '../extension';
+import { activate, isHandler, problemsBesideLint } from '../extension';
 import { RULES } from '../core/lint';
 
 const m = vscode as unknown as typeof mock;
@@ -227,4 +227,17 @@ test('Game.ProtoInput.BlockedMessages: names on hover, as hints, and suggestions
   assert.equal(items[0].insertText, '0x02a1'); // after a comma: just the number
   const end = at(HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008 |];');
   assert.equal(m.__registered.completion[0].provideCompletionItems(end.doc, end.pos)[0].insertText, ', 0x02a1');
+});
+
+test('Fix all counts the problems it leaves: package and game-folder ones, and those on package files', () => {
+  const W = m.DiagnosticSeverity.Warning, I = m.DiagnosticSeverity.Information;
+  const d = (code: string, sev: number) => Object.assign(new m.Diagnostic(new m.Range(new m.Position(0, 0), new m.Position(0, 1)), 'x', sev), { code: { value: code } });
+  const handler = m.Uri.file('/w/Game.js'), json = m.Uri.file('/w/Game/Config.json'), other = m.Uri.file('/w/Other/x.json');
+  const all: any = [
+    [handler, [d('unknown-member', W), d('package', W), d('game-folder', I)]],
+    [json, [d('package', W)]], // an invalid JSON file in the handler's folder
+    [other, [d('package', W)]], // another handler's package
+  ];
+  assert.equal(problemsBesideLint(handler as any, all, [json as any]), 2);
+  assert.equal(problemsBesideLint(handler as any, all, []), 1);
 });

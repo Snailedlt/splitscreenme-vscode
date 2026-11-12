@@ -35,6 +35,22 @@ export function isHandler(doc: vscode.TextDocument): boolean {
   return isHandlerFile(doc.fileName, doc.getText(), mode);
 }
 
+/** Warnings and errors Fix all leaves alone: package and game-folder problems on the handler, and every problem on
+ *  its package's own files (they show under their own paths). */
+export function problemsBesideLint(handler: vscode.Uri, all: [vscode.Uri, readonly vscode.Diagnostic[]][], files: vscode.Uri[]): number {
+  const own = new Set(files.map((u) => u.toString()));
+  let n = 0;
+  for (const [uri, list] of all) {
+    const key = uri.toString();
+    for (const d of list) {
+      if (d.severity > vscode.DiagnosticSeverity.Warning) continue;
+      const code = typeof d.code === 'object' ? d.code.value : d.code;
+      if (own.has(key) || (key === handler.toString() && (code === 'package' || code === 'game-folder'))) n++;
+    }
+  }
+  return n;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const collection = vscode.languages.createDiagnosticCollection(SOURCE);
   // Package checks on the files in a handler's folder (core/pkgcheck.ts): kept apart, since those files aren't handlers.
@@ -170,12 +186,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await vscode.workspace.applyEdit(edit.edit);
       const left = lint(editor.document.getText(), { rules: ruleOverrides() }).filter((d) => d.severity === 'error' || d.severity === 'warning').length;
-      // Package and game-folder problems aren't touched by Fix all; count them too, so "nothing else" is true.
-      const other = vscode.languages.getDiagnostics(editor.document.uri).filter((d) => {
-        const code = typeof d.code === 'object' ? d.code.value : d.code;
-        return (code === 'package' || code === 'game-folder') && d.severity <= vscode.DiagnosticSeverity.Warning;
-      }).length;
-      const rest = left + other;
+      // Fix all doesn't touch package or game-folder problems: count them too, so "nothing else" is true.
+      const rest = left + problemsBesideLint(editor.document.uri, vscode.languages.getDiagnostics(), pkgUris.get(editor.document.uri.toString()) ?? []);
       vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}.${rest ? ` ${rest} need${rest === 1 ? 's' : ''} your decision: see the Problems panel.` : ' Nothing else to fix.'}`);
     }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ',', '"', "'"),
