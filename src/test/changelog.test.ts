@@ -22,6 +22,6 @@ test('CHANGELOG.md has notes for the next release, each starting with a short bo
   for (const sec of log.split(/^### 🙏.*$/m).slice(1)) for (const l of sec.split(/^##/m)[0].split('\n').filter((x) => x.startsWith('- '))) assert.match(l, /^- \*\*(\[[^\]]+\]\(https:\/\/github\.com\/[\w-]+\)|[^*\[]+)\*\* for /, l);
   // Releases are separated by a --- line, so one doesn't run into the next.
   [...log.matchAll(/\n(.*)\n\n## /g)].slice(1).forEach((m) => assert.equal(m[1], '---', 'a --- line before each release (after the first)'));
-  // Released sections carry their date.
-  for (const h of heads.slice(1)) assert.match(h, /^\d+\.\d+\.\d+ \(beta\) · \d{4}-\d{2}-\d{2}$/, h);
+  // Released sections carry their date ("(beta)" until 0.5.0; 0.6.0 on are plain versions).
+  for (const h of heads.slice(1)) assert.match(h, /^\d+\.\d+\.\d+( \(beta\))? · \d{4}-\d{2}-\d{2}$/, h);
 });
