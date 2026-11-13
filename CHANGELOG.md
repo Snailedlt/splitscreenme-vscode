@@ -28,6 +28,8 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - **No "not defined" errors on top of an arrow function or destructuring.** Names that an arrow function, destructuring, a default or rest parameter, or a class declares counted as undefined, with a wrong "Did you mean" fix. Now there's just the one error about the ES5-only syntax.
 - **Explain quotes a template string as it's written.** It showed `` `-w ${Context.Width}` `` in single quotes; it keeps the backticks now.
 
+---
+
 ## 0.6.0 · 2026-11-13
 
 ### ✨ New
