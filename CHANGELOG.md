@@ -12,7 +12,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
-## 0.6.0 · 2026-11-09
+## 0.6.0 · 2026-11-13
 
 ### ✨ New
 

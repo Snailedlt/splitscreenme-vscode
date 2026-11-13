@@ -115,7 +115,7 @@ Every user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`, i
 
 **Which editors to put work into:** [docs/editor-poll.md](docs/editor-poll.md) has the authors' poll and the priorities it set (Notepad++ first).
 
-**Store listings (prepared, not listed yet; issue #9, task #78).** Both are ready to list when the maintainer decides:
+**Store listings (prepared, not listed yet; issue #9, task #78).** 0.6.0 starts an open beta: gather testers and feedback first (a few weeks to a couple of months), then list. Both are ready to list when the maintainer decides:
 - *VS Code Marketplace / Open VSX:* `package.json` has the store fields (`preview: true` while in beta, `pricing`, `homepage`, `bugs`, `qna`). Run the **Publish to the extension stores** workflow (https://github.com/Snailedlt/splitscreenme-vscode/actions/workflows/publish-stores.yml; inputs: the tag, or empty for the newest release, and the store). It publishes the release's own `.vsix` and needs the `VSCE_PAT` / `OVSX_PAT` secrets (it refuses without them). Decide the publisher name first (`splitscreenme` only with the SplitScreen.Me team's OK).
 - *Notepad++ Plugins Admin:* a pull request to [notepad-plus-plus/nppPluginList](https://github.com/notepad-plus-plus/nppPluginList) adding the two entries the Release workflow's summary prints (`scripts/npp-plugin-list.mjs`: `src/pl.x64.json` and `src/pl.x86.json`). Their validator compares the DLL's FileVersion with the entry, so `npp-plugin/build.sh` writes a version resource (package.json's version as a.b.c.0); CI and the Release workflow run the script and stop if a DLL or zip is wrong. Every release whose plugin changed needs a new pull request there.
 
