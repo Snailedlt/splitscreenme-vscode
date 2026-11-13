@@ -21,6 +21,7 @@ How to write it (people and AI agents read this; the release workflow publishes 
 
 ### 🛠️ Improved
 
+- **Setting up Notepad++ needs no administrator terminal.** Double-click `ncdev.exe` for a short menu and choose *Set up Notepad++*; when Notepad++ is in Program Files, ncdev asks Windows for permission itself (from a terminal too). From a terminal with no arguments, ncdev still just prints its help. Needs a check on real Windows before the release: the beta test plan has the steps.
 - **`ncdev api Game` lists what's on Game.** Looking up an object Nucleus provides (`Game`, `Context`, `Player`, `Game.Hook`, `Nucleus`…) says what it is and lists its members by category, instead of "not part of the API". The MCP tool `nucleus_api` answers the same way.
 
 ### 🐛 Fixed

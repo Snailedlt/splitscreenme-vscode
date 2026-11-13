@@ -24,6 +24,7 @@ import { ruleUrl } from './core/ruledocs';
 import { explainLine } from './core/features';
 import { serveDap } from './dap';
 import { setupNotepadPP } from './setup-npp';
+import { runElevated, runMenu, startedFromExplorer } from './winhelp';
 import { builtIn, installPath, installRelease, installSelf, isStandalone, latestRelease, newer, TOOL, VERSION } from './standalone';
 import os from 'node:os';
 import { EVERY_KEYBOARD } from './core/sim';
@@ -91,7 +92,9 @@ Commands:
                               Set up Notepad++ for handlers: the Nucleus plugin (problems in the
                               code, docs on hover, suggestions, fixes, Try it) with the standalone
                               ncdev, else the names and call tips in its own list; and a Run menu
-                              entry that checks the open handler. --remove undoes it
+                              entry that checks the open handler. --remove undoes it. Asks Windows
+                              for permission when Notepad++ is in Program Files. (Double-clicking
+                              ncdev.exe shows a menu with this.)
   update [--check]            Update ncdev to the newest release (the standalone ncdev replaces
                               itself, checked against the release's SHA-256 sums). --check only
                               says whether there is one (exit code 10 if so)
@@ -124,7 +127,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '--restart', '--status', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--elevated', '--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '--restart', '--status', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -142,7 +145,25 @@ const flag = (a: Args, k: string) => a.flags.get(k)?.at(-1);
 const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
+/** The arguments as given (the elevated setup passes them on). */
+let rawArgs: string[] = [];
+
 async function main(argv: string[]): Promise<number> {
+  rawArgs = [...argv];
+  // Double-clicked in Explorer: a short menu that waits for a key (its window closes when ncdev exits). From a
+  // terminal, no arguments still print the help and exit; only the no-arguments case takes the moment to tell.
+  if (!argv.length && isStandalone() && startedFromExplorer()) {
+    const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      return await runMenu(
+        { ask: (q) => new Promise((res) => rl.question(q, res)), say: (t) => console.log(t) },
+        { setup: () => cmdSetup(parseArgs(['notepad++']), false), update: () => cmdUpdate(parseArgs([]), false), help: () => console.log(HELP) },
+        VERSION,
+      );
+    } finally {
+      rl.close();
+    }
+  }
   const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'test', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'explain', 'update', 'version'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
   if (!cmd && (argv[0] === '--version' || argv[0] === '-v')) cmd = 'version';
@@ -576,8 +597,19 @@ function cmdSetup(args: Args, json: boolean): number {
   const tool = standalone && changing ? installSelf() : standalone ? installPath() : undefined;
   const plugins = standalone ? { x64: builtIn('NcDev.dll'), x86: builtIn('NcDev-x86.dll') } : undefined;
   const runCommand = tool ? `cmd /k ""${tool}" lint "$(FULL_CURRENT_PATH)""` : `cmd /k ""${process.execPath}" "${path.resolve(process.argv[1])}" lint "$(FULL_CURRENT_PATH)""`;
-  const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand, plugins, toolPath: tool });
-  if (tool && changing && r.ok) r.lines.unshift(`ncdev is in ${path.dirname(tool)} (ncdev update keeps it current).`);
+  let r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand, plugins, toolPath: tool });
+  // Notepad++ in Program Files needs administrator rights: ask Windows for them (its permission prompt) and run this
+  // same setup again in an elevated copy, rather than sending people to an administrator terminal. That copy writes
+  // what it did to a file (its own window closes), and it never asks again.
+  const resultFile = flag(args, '--result-file');
+  if (r.denied && process.platform === 'win32' && !has(args, '--elevated')) {
+    const self = isStandalone() ? [] : [path.resolve(process.argv[1])];
+    const again = runElevated(process.execPath, [...self, 'setup', ...rawArgs.slice(rawArgs.indexOf('setup') + 1).filter((a) => a !== '--json')]);
+    if (again.ran) r = { ok: !!again.ok, lines: again.lines ?? [] };
+    else r.lines.unshift("Windows didn't give ncdev permission to write to Notepad++'s folder (the prompt was declined, or couldn't be shown).");
+  }
+  if (tool && changing && r.ok && !has(args, '--elevated')) r.lines.unshift(`ncdev is in ${path.dirname(tool)} (ncdev update keeps it current).`);
+  if (resultFile) fs.writeFileSync(resultFile, JSON.stringify(r));
   print(json, r, () => r.lines.join('\n'));
   return r.ok ? 0 : 1;
 }

@@ -339,14 +339,16 @@ Most people are best served by **VS Code**, **[Notepad++](#notepad)** or the **[
 ### Notepad++
 
 1. Download `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases).
-2. Close Notepad++. Open a terminal as administrator (Notepad++ is in Program Files) where `ncdev.exe` is, and run:
-
-   ```
-   ncdev setup notepad++
-   ```
-
-   A portable Notepad++ needs no administrator: add `--path "C:\path\to\Notepad++"`.
+2. Close Notepad++, double-click `ncdev.exe` and choose **1 Set up Notepad++**. When Windows asks for permission (Notepad++ is in Program Files), allow it.
 3. Start Notepad++ and open a handler.
+
+From a terminal instead, in the folder with `ncdev.exe` (it asks for the same permission when it needs it):
+
+```
+ncdev setup notepad++
+```
+
+A portable Notepad++ needs no permission: add `--path "C:\path\to\Notepad++"`.
 
 This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALAPPDATA%\ncdev`, where the plugin finds it. In a handler:
 
