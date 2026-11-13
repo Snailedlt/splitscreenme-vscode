@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { HandlerDebugSession } from '../dap';
+import { tmpdir } from './tmp';
+import { traceIsolated } from '../sandbox';
 
 const HANDLER = [
   'Game.GameName = "Demo";',
@@ -20,7 +22,7 @@ const HANDLER = [
 
 function session() {
   const out: any[] = [];
-  const s = new HandlerDebugSession((m) => out.push(m));
+  const s = new HandlerDebugSession((m) => out.push(m), traceIsolated); // synchronous here; the worker below
   let seq = 1;
   const req = (command: string, args: unknown = {}) => {
     const n = out.length;
@@ -31,8 +33,8 @@ function session() {
   return { req };
 }
 
-test('dap: breakpoint, stack, scopes, variables, evaluate, stepping back and on to the end', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dap-')), 'Demo.js');
+test('dap: breakpoint, stack, scopes, variables, evaluate, stepping back and on to the end', (t) => {
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
   fs.writeFileSync(file, HANDLER);
   const { req } = session();
   const init = req('initialize', { adapterID: 'nucleus' });
@@ -75,9 +77,9 @@ test('dap: an error stops where it ends the run; unsaved text is debugged as it 
   assert.equal(req('launch', {}).res.success, false, 'no program, a clear error');
 });
 
-test('dap: `nucleus dap` speaks the protocol on stdio', async () => {
+test('dap: `nucleus dap` speaks the protocol on stdio', async (t) => {
   const { spawn } = await import('node:child_process');
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-dap-')), 'Demo.js');
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
   fs.writeFileSync(file, HANDLER);
   const proc = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'cli.js'), 'dap'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const got: any[] = [];
@@ -110,4 +112,34 @@ test('dap: `nucleus dap` speaks the protocol on stdio', async () => {
   send('disconnect');
   const code = await new Promise((r) => proc.on('exit', r));
   assert.equal(code, 0);
+});
+
+test('dap: by default the handler runs in the simulator worker; requests after launch wait for it', async (t) => {
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
+  fs.writeFileSync(file, HANDLER);
+  const out: any[] = [];
+  const s = new HandlerDebugSession((m) => out.push(m));
+  let seq = 1;
+  const send = (command: string, args: unknown = {}) => s.handle({ seq: seq++, type: 'request', command, arguments: args });
+  send('initialize', { adapterID: 'nucleus' });
+  const launch = send('launch', { program: file, players: 2 });
+  assert.ok(launch instanceof Promise, 'launch is answered asynchronously');
+  assert.equal(out.filter((m) => m.command === 'launch').length, 0);
+  send('setBreakpoints', { source: { path: file }, breakpoints: [{ line: 7 }] });
+  const done = send('configurationDone');
+  await done;
+  const order = out.filter((m) => m.type === 'response').map((m) => m.command);
+  assert.deepEqual(order, ['initialize', 'launch', 'setBreakpoints', 'configurationDone']);
+  const stopped = out.find((m) => m.event === 'stopped');
+  assert.equal(stopped.body.reason, 'breakpoint');
+});
+
+test('dap: a breakpoint is checked against the launched source, not the file on disk', (t) => {
+  const file = path.join(tmpdir(t, 'nucleus-dap-'), 'Demo.js');
+  fs.writeFileSync(file, 'Game.GameName = "Demo";\n'); // the saved file is one line; the editor's text is longer
+  const { req } = session();
+  req('initialize', { adapterID: 'nucleus' });
+  req('launch', { program: file, source: HANDLER, players: 1 });
+  const bps = req('setBreakpoints', { source: { path: file }, breakpoints: [{ line: 7 }, { line: 99 }] }).res.body.breakpoints;
+  assert.deepEqual(bps.map((b: any) => b.verified), [true, false]);
 });

@@ -11,15 +11,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Generated skill files are committed
-        run: git diff --exit-code -- plugin/
+      # The skill's bundle (scripts/nucleus.js, 2.6 MB) is committed only with a release, so the history doesn't
+      # grow by a bundle per change; the Release workflow checks it then. Its API reference is checked here.
+      - name: Generated skill reference is committed
+        run: git diff --exit-code -- plugin/ ':!plugin/skills/nucleus-handler/scripts/nucleus.js'
       - run: npx vsce package --no-dependencies -o splitscreenme-vscode.vsix
       - uses: actions/upload-artifact@v4
         with:
           name: vsix
           path: splitscreenme-vscode.vsix
+
+  standalone:
+    # ncdev (#18) with the Notepad++ plugin inside (#19): the plugin compiles, and the Linux build passes the smoke test.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .sea-cache
+          key: sea-${{ hashFiles('scripts/sea.mjs') }}
+      - run: npm run build && sh scripts/build-native.sh linux-x64
+      - name: The plugin is ready for Notepad++'s Plugins Admin (DLL versions, zips)
+        run: |
+          (cd dist-sea && zip -q -X ../NcDev.zip NcDev.dll && mkdir -p x86 && cp NcDev-x86.dll x86/NcDev.dll && cd x86 && zip -q -X ../../NcDev-x86.zip NcDev.dll)
+          node scripts/npp-plugin-list.mjs
+      - run: node scripts/smoke-standalone.mjs dist-sea/ncdev-linux-x64

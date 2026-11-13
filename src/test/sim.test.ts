@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { simulate, sessionSummary, parsePluginsInfo, groupIgnored, hubFolderName } from '../core/sim';
 import { simulateIsolated } from '../sandbox';
+import { tmpdir } from './tmp';
 
 const HEADER = 'Game.GUID = "My Game";\nGame.GameName = "My Game";\nGame.ExecutableName = "game.exe";\n';
 const OPTS = { players: 2, width: 1920, height: 1080, keyboardPlayer: 0 };
@@ -80,8 +81,8 @@ test('simulateIsolated: a handler that never finishes times out, and the next ru
   assert.equal(simulateIsolated(HEADER + 'Game.Play = function () { Context.StartArguments = "ok"; };\n', OPTS).players[0].startArguments, 'ok');
 });
 
-test('nucleus simulate (CLI)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-sim-'));
+test('nucleus simulate (CLI)', (t) => {
+  const dir = tmpdir(t, 'nucleus-sim-');
   const ok = path.join(dir, 'ok.js');
   fs.writeFileSync(ok, HEADER + 'Game.Play = function () { Context.StartArguments = "-p " + Context.PlayerID; };\n');
   const bad = path.join(dir, 'bad.js');
@@ -144,7 +145,7 @@ test('simulate: Context values as Nucleus computes them', () => {
   assert.equal(v('Context.Options["name"]', 'Game.AddOption("Name", "", "name", []);\n'), '');
 });
 
-test('simulate: plugin globals from pluginsInfo.txt record their calls', () => {
+test('simulate: plugin globals from pluginsInfo.txt record their calls', (t) => {
   assert.deepEqual(parsePluginsInfo('#TriggerFix#HLT.dll#XToKey.Sender|#Other#o.dll#A.B#A.C'), { TriggerFix: ['Sender'], Other: ['B', 'C'] });
   const src = HEADER + 'Game.Play = function () { TriggerFix.Sender.PushKey("k"); };\n';
   assert.match(simulateIsolated(src, OPTS).players[0].error!, /TriggerFix is not defined/);
@@ -152,7 +153,7 @@ test('simulate: plugin globals from pluginsInfo.txt record their calls', () => {
   assert.equal(r.players[0].error, undefined);
   assert.ok(r.players[0].calls.includes('TriggerFix.Sender.PushKey("k")'), r.players[0].calls.join(' | '));
   // the CLI reads <handler>/pluginsInfo.txt next to the handler file
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-plugin-'));
+  const dir = tmpdir(t, 'nucleus-plugin-');
   fs.writeFileSync(path.join(dir, 'Game.js'), src);
   fs.mkdirSync(path.join(dir, 'Game'));
   fs.writeFileSync(path.join(dir, 'Game', 'pluginsInfo.txt'), '#TriggerFix#HLT.dll#XToKey.Sender');
@@ -255,4 +256,14 @@ Game.Play = function () {
 test('Game.Folder is the Hub install folder: handlers\\<GameName> without / : * ? " < > |', () => {
   assert.equal(hubFolderName('Game.GUID = "x";\nGame.GameName = "Halo: The Master Chief Collection";\n'), 'Halo The Master Chief Collection');
   assert.equal(hubFolderName('Game.GUID = "x";\n'), 'MyHandler');
+});
+
+test('sandbox: one handler changing the built-ins never changes the next handler\'s run', () => {
+  const clean = HEADER + 'Game.AddOption("Mode", "", "mode", ["A", "B"]);\nGame.AddOption("Size", "", "size", ["S", "L"]);\n';
+  const before = simulateIsolated(clean, OPTS);
+  assert.ok(before.options.length >= 2);
+  simulateIsolated(HEADER + 'Array.prototype.push = function () { return 0; };\nString.prototype.replace = function () { return "x"; };\n', OPTS);
+  const after = simulateIsolated(clean, OPTS);
+  assert.deepEqual(after.options, before.options);
+  assert.equal(after.loaded, true);
 });

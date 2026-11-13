@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import path from 'node:path';
 import { checkAgainstFolder, folderLists, folderSummary, pickerOptions, type FolderFix } from './core/gamefolder';
 import { folderAt, forgetFolder, readGameFolder } from './gamefolder-node';
+import { RULES_URL } from './core/features';
 export { readGameFolder };
 
 const SETTING = 'gameFolders';
@@ -28,7 +29,7 @@ export function gameFolderDiagnostics(doc: vscode.TextDocument, source: string, 
   return checkAgainstFolder(doc.getText(), folder).map((p) => {
     const d = new vscode.Diagnostic(new vscode.Range(doc.positionAt(p.start), doc.positionAt(Math.max(p.end, p.start))), `${p.title}. ${p.why}`, severity[p.severity]);
     d.source = source;
-    d.code = 'game-folder';
+    d.code = { value: 'game-folder', target: vscode.Uri.parse(RULES_URL) };
     if (p.fix) fixOf.set(d, p.fix);
     return d;
   });
@@ -40,7 +41,7 @@ export function registerGameFolders(context: vscode.ExtensionContext, isHandler:
     const map = { ...(cfg.get<Record<string, string>>(SETTING) ?? {}) };
     if (dir) map[keyOf(doc)] = dir;
     else delete map[keyOf(doc)];
-    await cfg.update(SETTING, map, vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
+    await cfg.update(SETTING, map, vscode.workspace.workspaceFolders?.length && vscode.workspace.isTrusted !== false ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
   };
   const active = () => {
     const doc = vscode.window.activeTextEditor?.document;

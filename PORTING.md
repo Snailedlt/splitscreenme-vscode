@@ -2,7 +2,7 @@
 
 How to bring the SplitScreen.Me / Nucleus Co-op handler features (checks with quick fixes, hover docs, completion, signature help, Format Document, window-message hints, "Try it") to an editor other than VS Code. Written for people and for AI agents doing the port.
 
-**Short version:** run `nucleus lsp` as a Language Server for JavaScript files. Every editor with an LSP client gets almost everything the VS Code extension has. Snippets for each editor are [below](#wiring-nucleus-lsp-into-an-editor).
+**Short version:** run `ncdev lsp` (`nucleus lsp` is the old name and still works) as a Language Server for JavaScript files. Every editor with an LSP client gets almost everything the VS Code extension has. Snippets for each editor are [below](#wiring-ncdev-lsp-into-an-editor).
 
 ## Architecture
 
@@ -10,7 +10,7 @@ How to bring the SplitScreen.Me / Nucleus Co-op handler features (checks with qu
 src/core/          editor-agnostic logic, plain data, no vscode and no Node APIs
   lint.ts          the checks (RULES) -> Diagnostic { rule, severity, message, start, end, fixes, tags }
   fix.ts           "Fix all": every safe (preferred) fix, repeated until stable
-  format.ts        Format Document: indentation and spacing only, refuses when unsure
+  format.ts        Format Document: indentation, spacing, quotes, semicolons; refuses when unsure
   complete.ts      text-based resolution at a cursor (works on unfinished code)
   features.ts      the editor features, built on the above (hover, completion, ... see the table)
   api.ts, wm.ts    the API model, the window-message table
@@ -18,9 +18,10 @@ src/core/          editor-agnostic logic, plain data, no vscode and no Node APIs
 
 adapters           convert core results to an editor's types, nothing more
   src/extension.ts VS Code
-  src/lsp.ts       Language Server Protocol (`nucleus lsp`), for every other editor
-  src/mcp.ts       MCP server (`nucleus mcp`), for AI agents
-  src/cli.ts       the `nucleus` command line
+  src/lsp.ts       Language Server Protocol (`ncdev lsp`), for every other editor
+  src/mcp.ts       MCP server (`ncdev mcp`), for AI agents
+  src/cli.ts       the `ncdev` command line (old name `nucleus`)
+  npp-plugin/      the Notepad++ plugin: a small client of `ncdev lsp` (C++)
 ```
 
 Positions in core are offsets into the text, counted in UTF-16 code units (what JavaScript strings index, and LSP's default `positionEncoding`). An adapter converts them to its line/column type. A new feature goes into `src/core/features.ts` first, then every adapter converts it.
@@ -37,18 +38,28 @@ Positions in core are offsets into the text, counted in UTF-16 code units (what 
 | Value suggestions after `=` (enum values, `true`/`false`, `function () {}`) | `completionsAt()` (via `valueContextAt()`) | same | same |
 | Signature help (overloads, active parameter) | `signatureHelpAt()` | SignatureHelpProvider | `textDocument/signatureHelp` |
 | Format Document | `formatEdits()` (`core/format.ts`) | DocumentFormattingEditProvider | `textDocument/formatting`; a refusal is a `window/showMessage` warning and no edits |
+| Package (.nc), Install to Nucleus Co-op | `buildPackage()` (`core/pkg.ts`), `installHandler()` (`src/install.ts`) | **Nucleus: Package** / **Install** commands | source code actions `source.nucleus.package`, `source.nucleus.install` (Install once `nucleus.nucleusPath` is set), and `workspace/executeCommand` `nucleus.package` / `nucleus.install` with `{ uri }` |
+| Test in Nucleus Co-op (Windows) | `testInNucleus()` (`src/nucleusrun.ts`) | **Nucleus: Test in Nucleus Co-op** | `nucleus.testInNucleus` with `{ uri, restart?, debugLog? }`; answers `{ started: false, running: true }` when Nucleus is open, so the editor can ask, then call again with `restart: true` |
+| New handler | `renderHandler()` (`core/templates.ts`) | **Nucleus: New Handler** | `nucleus.newHandler` with `{ name, exe, dir }` (writes the file, then `window/showDocument`); in an empty file, the `handler` suggestion inserts the whole template |
+| Format Selection, format on type | `rangeFormatEdits()` | DocumentRangeFormattingEditProvider, OnTypeFormattingEditProvider (`}` `;` Enter) | `textDocument/rangeFormatting`, `textDocument/onTypeFormatting`; style from settings `nucleus.format.quotes` (`double`/`single`/`keep`) and `nucleus.format.semicolons` (`add`/`keep`) |
 | Outline, breadcrumbs, Go to Symbol (settings by object, callbacks with what they set, the handler's own names) | `documentSymbols()` | DocumentSymbolProvider | `textDocument/documentSymbol` (hierarchical) |
 | Package checks (the files in `<Name>/`) | `checkPackage()` (`core/pkgcheck.ts`) + `packageFilesFor()` (`src/pkgfiles.ts`) | Problems on the handler and on those files | `publishDiagnostics` for the handler and for each of those files |
 | Checks against the game's install folder | `checkAgainstFolder()` (`core/gamefolder.ts`) + `folderAt()` (`src/gamefolder-node.ts`) | **Link the Game's Folder…**, problems, quick fixes, file suggestions in the lists | the `gameFolders` setting; problems with the fix in `data`, `quickfix` code actions, completion inside the lists |
 | Window-message names after `0x0008` | `inlayHints()` | InlayHintsProvider | `textDocument/inlayHint` |
+| Go to definition, find references | `definitionAt()`, `referencesAt()` (`core/definition.ts`) | F12 (with VS Code's own JavaScript support) | `textDocument/definition`, `textDocument/references` |
+| Rename the handler's own names | `renameTargetAt()`, `renameEdits()` (`core/definition.ts`) | VS Code's own JavaScript support | `textDocument/prepareRename`, `textDocument/rename` |
+| Links from API names to their docs | `{ docsLink }` on `hoverAt`/`completionsAt`/`signatureHelpAt`; the pages: `docsPage()` (`core/docspage.ts`) | command links to the **Nucleus Docs** panel (`src/docspanel.ts`) | links to the workbench's `#docs-<name>` (`workbenchDocsUrl()`, `?ref=` the client's name) |
+| The handler's own functions, variables and options | `visibleNames()`, `addedOptions()` (`core/ownsymbols.ts`), in completion, hover and signature help | `Context.Options` keys and values only (`{ own: false }`: VS Code's JavaScript support does the rest) | in `textDocument/completion` (names once a letter is typed, or on request), `hover`, `signatureHelp` |
+| Open in the browser workbench | `workbenchLink()` (`core/sharelink.ts`), `workbenchLinkFor()` (`src/workbenchlink.ts`) | **Nucleus: Open in the Browser Workbench** | `workspace/executeCommand` `nucleus.workbenchLink` `{ uri, ref }`, returns `{ url, withHandler }` |
 | Try it (what each player gets) | `simulateIsolated()` (`src/sandbox.ts`) + `formatSimulation()` (`src/simformat.ts`) | **Nucleus: Try It** panel | `workspace/executeCommand` `nucleus.tryIt`, returns the text |
 | Is this file a handler? | `isHandlerFile()` | `isHandler()` | same, plus the `handlerGlobs` setting |
 
 ## Getting the server
 
-`nucleus lsp` is a subcommand of the `nucleus` CLI. It needs Node.js 18 or later and nothing else. Any of these work:
+`ncdev lsp` is a subcommand of the `ncdev` CLI. Any of these work:
 
-- **One file, no install:** [`plugin/skills/nucleus-handler/scripts/nucleus.js`](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/plugin/skills/nucleus-handler/scripts/nucleus.js) is the whole CLI bundled. Save it anywhere and run `node /path/to/nucleus.js lsp`.
+- **Standalone, nothing to install (Windows):** `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases), then `ncdev lsp` (`ncdev update` keeps it current). In the snippets, use `ncdev` in place of `node /path/to/nucleus.js`.
+- **One file, with Node.js 18+:** [`plugin/skills/nucleus-handler/scripts/nucleus.js`](https://raw.githubusercontent.com/Snailedlt/splitscreenme-vscode/main/plugin/skills/nucleus-handler/scripts/nucleus.js) is the whole CLI bundled. Save it anywhere and run `node /path/to/nucleus.js lsp`.
 - **From a clone:** `npm ci && npm run build`, then `node dist/cli.js lsp`.
 - **With the VS Code extension installed:** its `dist/cli.js` (in `~/.vscode/extensions/splitscreenme.*/dist/`).
 
@@ -72,13 +83,13 @@ Send them as `initializationOptions`, or later as `workspace/didChangeConfigurat
 - `handlerGlobs`: paths that always count as handlers (`**` any folders, `*` any name part, matched against the end of the path).
 - `lint.rules`: per-rule severity, `error`, `warning`, `info`, `hint` or `off` (`nucleus rules` lists them).
 - `lint.compareWithHub`: for a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub's version (downloads it once, cached; the problem list updates when it arrives). `false` keeps the server offline.
-- `lint.workspace`: check every handler in the workspace folders, opened or not (default `true`), and re-check files that change on disk (when the client supports watched files).
+- `lint.workspace`: check every handler in the workspace folders, opened or not (default `true`), and re-check files that change on disk (when the client supports watched files: the server asks to watch `**/*.js` and each handler's `<Name>/` folder, not the whole workspace, and ignores `node_modules` and dot folders).
 - `gameFolders`: the game's install folder per handler file name. The handler is then checked against the real files (`ExecutableName`, `BinariesFolder`, the symlink and copy lists…), each problem's fix comes as a quick fix, and completion inside those lists offers the game's own files. Only names and sizes are read.
-- `completion.enable`: hover, completion, signature help and inlay hints. Turn it off if TypeScript provides them (the `.d.ts` in `types/`).
+- `completion.enable`: hover, completion, signature help, inlay hints and semantic tokens (Nucleus names coloured by what they are). Turn it off if TypeScript provides them (the `.d.ts` in `types/`).
 
 The same names as the VS Code settings, without the `splitscreenme.` prefix; a `splitscreenme` key is accepted too.
 
-## Wiring `nucleus lsp` into an editor
+## Wiring `ncdev lsp` into an editor
 
 Handlers are JavaScript, so attach the server to JavaScript buffers. It ignores files that aren't handlers, so it can run next to your usual JavaScript/TypeScript server.
 
@@ -206,15 +217,17 @@ Kate allows one server per language; this replaces its JavaScript server for `.j
 
 ### Notepad++
 
-No LSP (the NppLspClient plugin is experimental and not in Plugins Admin). Instead `nucleus setup notepad++` merges the API names and call tips into Notepad++'s own `autoCompletion/javascript.xml` (`core/notepadpp.ts`, `src/setup-npp.ts`) and adds a Run-menu entry that runs `nucleus lint`. Tried in Notepad++ 8.9.9.
+Notepad++ has no general LSP client in Plugins Admin, so we ship our own small one: the **Nucleus Co-op handlers** plugin (`npp-plugin/`, C++ built with MinGW by `npp-plugin/build.sh`). It starts `ncdev lsp` and shows its answers the Notepad++ way: problems as Scintilla indicators (squiggles) and in a docked Problems panel, hover and parameter hints as call tips, completion as Scintilla's auto-completion list (filtered to the typed word, details in the status bar), quick fixes in a menu at the caret (Alt+Enter), Fix all, Format, Try it in a new tab, linked game folders in `plugins\Config\NcDev.ini` (sent as the `gameFolders` setting). All the logic stays in `ncdev`; the plugin should rarely change.
+
+`ncdev setup notepad++` (the standalone ncdev, which carries the DLL) installs it into `plugins\NcDev\` and copies ncdev to `%LOCALAPPDATA%\ncdev\`; NcDev.ini says where. Without the standalone ncdev, the setup merges the API names and call tips into Notepad++'s own `autoCompletion/javascript.xml` instead (`core/notepadpp.ts`). If ncdev is missing, the plugin offers to download it (the newest release's `ncdev.exe`, checked against `SHA256SUMS.txt`). Tried in Notepad++ 8.9.9 (x64, under Wine). Set `NCDEV_PLUGIN_LOG` to a file path to log the LSP traffic.
 
 ### Anything else
 
 Any LSP client: run `node /path/to/nucleus.js lsp` over stdio for JavaScript files. The server advertises what it supports in `initialize`.
 
-## Debugging: `nucleus dap`
+## Debugging: `ncdev dap`
 
-`nucleus dap` is a Debug Adapter (DAP, stdio) over the same debugger as VS Code's Run and Debug (`src/dap.ts`): breakpoints (conditional too), step over/into/out, step back, variables (Context, Player, the options set so far, what Nucleus would have done), hover and console evaluation. The handler runs simulated, as Try it runs it. Launch arguments: `program` (the handler), and optionally `players` (default 2), `keyboard` (a player number, `"all"` or `"none"`), `resolution` (`"1920x1080"`), `stopOnEntry`.
+`ncdev dap` is a Debug Adapter (DAP, stdio) over the same debugger as VS Code's Run and Debug (`src/dap.ts`): breakpoints (conditional too), step over/into/out, step back, variables (Context, Player, the options set so far, what Nucleus would have done), hover and console evaluation. The handler runs simulated, as Try it runs it. Launch arguments: `program` (the handler), and optionally `players` (default 2), `keyboard` (a player number, `"all"` or `"none"`), `resolution` (`"1920x1080"`), `stopOnEntry`.
 
 Neovim ([nvim-dap](https://github.com/mfussenegger/nvim-dap)):
 
@@ -247,7 +260,7 @@ Unsaved buffers (no `file:` URI) count when the client calls them `javascript` a
 | **Package** / **Install** | `nucleus package MyGame.js` (a `.nc` for the Hub); to install, copy `MyGame.js` and its `MyGame/` folder into Nucleus' `handlers` folder |
 | **Lint all handlers** | `nucleus lint path/to/handlers` (`--fix` applies the safe fixes) |
 | **Set Up Type Definitions** | Point your TypeScript server at `types/nucleus.d.ts` |
-| **Debugging** (Run and Debug) | `nucleus dap` in an editor with DAP support ([above](#debugging-nucleus-dap)), or `nucleus debug MyGame.js --break 14 --watch Context.PlayerID` in a terminal. |
+| **Debugging** (Run and Debug) | `nucleus dap` in an editor with DAP support ([above](#debugging-ncdev-dap)), or `nucleus debug MyGame.js --break 14 --watch Context.PlayerID` in a terminal. |
 | **What's New** | `CHANGELOG.md` |
 | Agent tools for Copilot | `nucleus mcp` for any MCP client (README, "AI agents") |
 
@@ -267,12 +280,12 @@ Unsaved buffers (no `file:` URI) count when the client calls them `javascript` a
 
   and check: a warning on `ForceFocuss` with the quick fix "Change to `ForceFocus`"; fix all turns `"M"` into `["M"]`; typing `Game.` lists the options; hovering `KillMutex` shows its docs; `WM_KILLFOCUS` appears after `0x0008`; Format Document indents a `Game.Play` body.
 - **The log:** the server writes errors to stderr (your editor's LSP log). It catches every failure per request, so broken or half-typed code never stops it.
-- **An adapter in another language** (a JetBrains plugin, a Zed extension in Rust): don't port the logic; start `nucleus lsp`, or call the CLI with `--json`. Porting `src/core` means keeping two linters in step.
+- **An adapter in another language** (a JetBrains plugin, a Zed extension in Rust): don't port the logic; start `ncdev lsp`, or call the CLI with `--json`. Porting `src/core` means keeping two linters in step.
 
 ## If you're an AI porting this
 
 1. Read `AGENTS.md` (commands, layout, the facts the code relies on) and this file.
-2. Prefer wiring `nucleus lsp` over writing new code. Most editors need only the config snippet above.
+2. Prefer wiring `ncdev lsp` over writing new code. Most editors need only the config snippet above.
 3. If an editor needs something the server doesn't offer, add it to `src/core/features.ts` as a function returning plain data (offsets, strings, Markdown), then convert it in `src/lsp.ts` **and** `src/extension.ts`. Never put feature logic in an adapter, and keep `src/core` free of `vscode` and Node imports.
 4. Never run handler code yourself: only through `simulateIsolated()` (`src/sandbox.ts`).
 5. Don't change behaviour while porting: `src/test/extension.test.ts` and `src/test/lsp.test.ts` must keep passing. Add tests for anything new.

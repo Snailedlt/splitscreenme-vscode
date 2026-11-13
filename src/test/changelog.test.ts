@@ -10,6 +10,10 @@ test('CHANGELOG.md has notes for the next release, each starting with a short bo
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   const heads = [...log.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   assert.ok(heads[0] === 'Unreleased' || heads[0].startsWith(version), `the first section should be "Unreleased" or "${version}", not "${heads[0]}"`);
+  // The "how to write it" comment holds the template only: a change written into it is never published.
+  const comment = log.slice(0, log.indexOf('-->'));
+  const stray = comment.split('\n').filter((l) => /^- \*\*/.test(l));
+  assert.deepEqual(stray, [], 'a change line inside the comment at the top (move it under the release heading)');
   const first = log.split(/^## .+$/m)[1];
   for (const line of first.split('\n').filter((l) => l.startsWith('- '))) assert.match(line, /^- \*\*.+?\*\*/, `start with a **short summary**: ${line.slice(0, 80)}`);
   // Groups people (and agents) can scan: the emoji headings listed at the top of the file.

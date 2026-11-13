@@ -10,12 +10,22 @@ import { fixAll } from './core/fix';
 import { formatHandler } from './core/format';
 import { lookup, search, formatEntry } from './core/lookup';
 import { handlerPageUrl } from './core/hub';
-import { hubHandlers, hubPackage } from './hubcache';
-import { renderHandler, FEATURES, Feature } from './core/templates';
+import { hubHandlers, hubPackage, setHubTool } from './hubcache';
+import { renderHandler, validateHandlerInfo, FEATURES, Feature } from './core/templates';
 import { findSkillDir } from './core/pkg';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { pluginsFor } from './sandbox';
+import { simWorker } from './simworker';
 import { EVERY_KEYBOARD } from './core/sim';
+
+/** MCP protocol versions this server speaks, newest first. */
+const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 import { formatSimulation } from './simformat';
+import { explainLine } from './core/features';
+import { aiHardRulesText, ruleDocText } from './core/airules';
+import { ruleUrl } from './core/ruledocs';
+import { checkPackage } from './core/pkgcheck';
+import { packageFilesFor } from './pkgfiles';
+import { parseBreakpoint, runDebug } from './debugrun';
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : '0.0.0';
@@ -36,7 +46,12 @@ const SOURCE = {
 };
 function readSource(a: { source?: string; path?: string }): { text: string; file?: string } {
   if (typeof a.source === 'string') return { text: a.source.replace(/^﻿/, '') };
-  if (typeof a.path === 'string') return { text: fs.readFileSync(a.path, 'utf8').replace(/^﻿/, ''), file: path.resolve(a.path) };
+  if (typeof a.path === 'string') {
+    const st = fs.statSync(a.path, { throwIfNoEntry: false });
+    if (!st) throw new Error(`No file at ${a.path}.`);
+    if (st.isDirectory()) throw new Error(`${a.path} is a folder: give one handler .js file.`);
+    return { text: fs.readFileSync(a.path, 'utf8').replace(/^﻿/, ''), file: path.resolve(a.path) };
+  }
   throw new Error('Give the handler as "source" (its text) or "path" (a .js file).');
 }
 const diagnostics = (text: string) =>
@@ -47,7 +62,13 @@ const diagnostics = (text: string) =>
     rule: d.rule,
     message: d.message,
     fixes: (d.fixes ?? []).map((f) => f.title),
+    docs: ruleUrl(d.rule, 'mcp'),
   }));
+/** Problems in the handler's own folder (<Name>/ next to <Name>.js), as it goes into the .nc package. */
+const packageProblems = (text: string, file?: string) => {
+  const files = file ? packageFilesFor(file, 0) : undefined;
+  return (files ? checkPackage(text, files) : []).map((p) => ({ file: p.file ?? null, line: p.line ?? (p.start !== undefined ? lineOf(text, p.start) + 1 : null), severity: p.severity, message: `${p.title}. ${p.why}` }));
+};
 const summary = (ds: ReturnType<typeof diagnostics>) =>
   ds.length
     ? ds.map((d) => `${d.line}:${d.column} ${d.severity} ${d.message} [${d.rule}]${d.fixes.length ? ` (fix: ${d.fixes[0]})` : ''}`).join('\n')
@@ -58,14 +79,17 @@ export const TOOLS: Tool[] = [
     name: 'nucleus_lint',
     title: 'Check a handler',
     description:
-      'Check a Nucleus Co-op handler the way Nucleus runs it (Jint 2.11.58: ES5 only, first-letter-only case matching, silent unknown options, Hub-install line scanning, Context outside callbacks, ...). Returns every problem with line, severity, rule and available fixes. Errors stop Nucleus loading or running the handler; warnings are lines Nucleus ignores or that do something other than they look.',
+      'Check a Nucleus Co-op handler the way Nucleus runs it (Jint 2.11.58: ES5 only, first-letter-only case matching, silent unknown options, Hub-install line scanning, Context outside callbacks, ...). Returns every problem with line, severity, rule, available fixes and a docs link; nucleus_rules with a rule id explains one. With path, also checks the files in the handler\'s <Name>/ folder (as they go into the .nc package). Errors stop Nucleus loading or running the handler; warnings are lines Nucleus ignores or that do something other than they look.',
     inputSchema: { type: 'object', properties: SOURCE },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const { text } = readSource(a);
+      const { text, file } = readSource(a);
       const ds = diagnostics(text);
-      const errors = ds.filter((d) => d.severity === 'error').length;
-      return { text: `${errors} error(s), ${ds.filter((d) => d.severity === 'warning').length} warning(s)\n${summary(ds)}`, data: { errors, diagnostics: ds } };
+      const pkg = packageProblems(text, file);
+      const errors = ds.filter((d) => d.severity === 'error').length + pkg.filter((p) => p.severity === 'error').length;
+      const warnings = ds.filter((d) => d.severity === 'warning').length + pkg.filter((p) => p.severity === 'warning').length;
+      const pkgText = pkg.length ? `\nPackage files:\n${pkg.map((p) => `${p.file ?? 'handler'}${p.line ? `:${p.line}` : ''} ${p.severity} ${p.message}`).join('\n')}` : '';
+      return { text: `${errors} error(s), ${warnings} warning(s)\n${summary(ds)}${pkgText}`, data: { errors, diagnostics: ds, ...(pkg.length ? { package: pkg } : {}) } };
     },
   },
   {
@@ -115,12 +139,67 @@ export const TOOLS: Tool[] = [
       },
     },
     annotations: { readOnlyHint: true },
+    run: async (a) => {
+      const { text, file } = readSource(a);
+      // The schema's limits, enforced (a client may send anything): 1-16 players, a sensible screen.
+      // The schema's limits, checked (a client may send anything): out of range is an error, as in the CLI.
+      const int = (v: unknown, def: number, min: number, max: number, name: string) => {
+        const n = Number(v ?? def);
+        if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${name} must be a whole number from ${min} to ${max} (got ${JSON.stringify(v)}).`);
+        return n;
+      };
+      const players = int(a.players, 2, 1, 16, 'players');
+      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : int(a.keyboardPlayer, 1, 0, players, 'keyboardPlayer') - 1;
+      // In the simulator's worker, so other calls are answered while it runs.
+      const r = await simWorker().simulate(text, { players, width: int(a.width, 1920, 320, 16384, 'width'), height: int(a.height, 1080, 200, 16384, 'height'), keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
+      return { text: formatSimulation(r, kb), data: r };
+    },
+  },
+  {
+    name: 'nucleus_debug',
+    title: 'Debug a handler (simulated)',
+    description:
+      'Step through the handler as nucleus_simulate runs it: stop at breakpoints (a line, optionally with a condition such as "14 if Context.PlayerID == 1") and on errors, with the variables, call stack, watched expressions and what the handler did so far at each stop. step: true stops at every statement. Isolated like nucleus_simulate: nothing on this computer is touched.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...SOURCE,
+        breakpoints: { type: 'array', items: { type: 'string' }, description: 'Lines to stop at: "14", or "14 if Context.PlayerID == 1".' },
+        watches: { type: 'array', items: { type: 'string' }, description: 'Expressions to show at each stop, e.g. "Context.Width".' },
+        step: { type: 'boolean', default: false, description: 'Stop at every statement (long output; prefer breakpoints).' },
+        players: { type: 'integer', minimum: 1, maximum: 16, default: 2 },
+      },
+    },
+    annotations: { readOnlyHint: true },
     run: (a) => {
       const { text, file } = readSource(a);
-      const players = a.players ?? 2;
-      const kb = a.keyboardPlayer === -1 ? EVERY_KEYBOARD : (a.keyboardPlayer ?? 1) - 1;
-      const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
-      return { text: formatSimulation(r, kb), data: r };
+      if (a.breakpoints !== undefined && !Array.isArray(a.breakpoints)) throw new Error('breakpoints is a list, e.g. ["14", "20 if Context.PlayerID == 1"].');
+      if (a.watches !== undefined && !Array.isArray(a.watches)) throw new Error('watches is a list of expressions, e.g. ["Context.Width"].');
+      const breakpoints = (a.breakpoints ?? []).map((b: unknown) => {
+        const bp = parseBreakpoint(String(b));
+        if (!bp) throw new Error(`A breakpoint is a line number, optionally with a condition: "14 if Context.PlayerID == 1" (got "${b}").`);
+        return bp;
+      });
+      const players = Number(a.players ?? 2);
+      if (!Number.isInteger(players) || players < 1 || players > 16) throw new Error(`players must be a whole number from 1 to 16 (got ${JSON.stringify(a.players)}).`);
+      const r = runDebug(text, { players, width: 1920, height: 1080, keyboardPlayer: 0, plugins: file ? pluginsFor(file) : undefined }, { breakpoints, watches: (a.watches ?? []).map(String), step: !!a.step });
+      return { text: r.text, data: r.data };
+    },
+  },
+  {
+    name: 'nucleus_explain',
+    title: 'Explain a line',
+    description: 'What one line of a handler does, in plain words: each Nucleus name on it with its docs, and the problems the checks find on it. No AI: from the API model and the linter. Good for learning an unfamiliar handler.',
+    inputSchema: { type: 'object', properties: { ...SOURCE, line: { type: 'integer', minimum: 1, description: '1-based line number.' } }, required: ['line'] },
+    annotations: { readOnlyHint: true },
+    run: (a) => {
+      const { text } = readSource(a);
+      const lines = text.split('\n');
+      const n = Math.round(Number(a.line));
+      if (!(n >= 1 && n <= lines.length)) return { text: `The handler has ${lines.length} lines; give a line from 1 to ${lines.length}.`, isError: true };
+      const offset = lines.slice(0, n - 1).reduce((o, l) => o + l.length + 1, 0) + (lines[n - 1].length - lines[n - 1].trimStart().length);
+      const e = explainLine(text, offset);
+      return e ? { text: e.markdown, data: { line: n, text: e.text, markdown: e.markdown } } : { text: `Line ${n} is empty.`, data: { line: n, text: '' } };
     },
   },
   {
@@ -131,6 +210,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     annotations: { readOnlyHint: true },
     run: (a) => {
+      if (typeof a.query !== 'string' || !a.query.trim()) return { text: 'Give a name to look up, e.g. "Game.KillMutex".', isError: true };
       const r = lookup(String(a.query));
       if (r.kind === 'entries') return { text: r.entries.map((e) => formatEntry(e)).join('\n\n'), data: r.entries.map((e) => ({ path: e.path, ...e.member })) };
       if (r.kind === 'enum') return { text: `enum Nucleus.${r.name}${r.doc ? ` - ${r.doc}` : ''}\n` + Object.entries(r.values).map(([k, v]) => `  Nucleus.${r.name}.${k} = ${v}`).join('\n'), data: r };
@@ -149,7 +229,10 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', default: 20 } }, required: ['query'] },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const hits = search(String(a.query), a.limit ?? 20);
+      if (typeof a.query !== 'string' || !a.query.trim()) return { text: 'Give some words to search for, e.g. "mutex".', isError: true };
+      const limit = Number(a.limit ?? 20);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) return { text: `limit must be a whole number from 1 to 200 (got ${JSON.stringify(a.limit)}).`, isError: true };
+      const hits = search(String(a.query), limit);
       return { text: hits.length ? hits.map((e) => formatEntry(e, false) + (e.member.doc ? `\n  ${e.member.doc.split('\n')[0].slice(0, 160)}` : '')).join('\n') : `No API members match "${a.query}".`, data: hits.map((e) => ({ path: e.path, ...e.member })) };
     },
   },
@@ -170,7 +253,9 @@ export const TOOLS: Tool[] = [
     },
     annotations: { readOnlyHint: true },
     run: (a) => {
-      const src = renderHandler({ gameName: a.gameName, executableName: a.executableName, steamId: a.steamId, maxPlayers: a.maxPlayers, features: (a.features ?? []) as Feature[] });
+      const problems = validateHandlerInfo(a);
+      if (problems.length) return { text: problems.join('\n'), isError: true, data: { problems } };
+      const src = renderHandler({ gameName: a.gameName, executableName: a.executableName, steamId: a.steamId === undefined ? undefined : String(a.steamId), maxPlayers: a.maxPlayers === undefined ? undefined : Number(a.maxPlayers), features: (a.features ?? []) as Feature[] });
       return { text: src, data: { source: src } };
     },
   },
@@ -182,7 +267,7 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true, openWorldHint: true },
     run: async (a) => {
       const words = String(a.query).toLowerCase().split(/\s+/).filter(Boolean);
-      const hits = (await hubHandlers())
+      const hits = (await hubHandlers({ feature: 'hub-search' }))
         .map((h) => ({ h, score: words.reduce((n, w) => n + (`${h.title} ${h.gameName}`.toLowerCase().includes(w) ? 2 : `${h.ownerName} ${h.description ?? ''}`.toLowerCase().includes(w) ? 1 : 0), 0) }))
         .filter((x) => x.score > 0)
         .sort((x, y) => y.score - x.score || (y.h.downloadCount ?? 0) - (x.h.downloadCount ?? 0))
@@ -199,10 +284,10 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Handler id from nucleus_hub_search' } }, required: ['id'] },
     annotations: { readOnlyHint: true, openWorldHint: true },
     run: async (a) => {
-      const h = (await hubHandlers()).find((x) => x._id === a.id);
+      const h = (await hubHandlers({ feature: 'hub-fetch' })).find((x) => x._id === a.id);
       if (!h) return { text: `No Hub handler with id ${a.id}.`, isError: true };
       if (!h.verified) return { text: `${h.title} is not verified on the Hub; only verified handlers are offered as examples.`, isError: true };
-      const entry = (await hubPackage(h)).find((e) => e.name === 'handler.js');
+      const entry = (await hubPackage(h, { feature: 'hub-fetch' })).find((e) => e.name === 'handler.js');
       if (!entry?.data) return { text: `${h.title}: the package has no handler.js.`, isError: true };
       const src = Buffer.from(entry.data).toString('utf8').replace(/^﻿/, '');
       return { text: `// ${h.title} v${h.currentVersion} by ${h.ownerName} (${handlerPageUrl(h._id)})\n${src}`, data: { id: h._id, title: h.title, version: h.currentVersion, source: src } };
@@ -211,10 +296,16 @@ export const TOOLS: Tool[] = [
   {
     name: 'nucleus_rules',
     title: 'List the checks',
-    description: 'Every lint rule with its default severity and what it checks.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Every lint rule with its default severity and what it checks. With rule (an id from nucleus_lint, e.g. "type-mismatch"), that check explained: why Nucleus cares, the fix, a wrong and a right example, and its page.',
+    inputSchema: { type: 'object', properties: { rule: { type: 'string', description: 'A rule id, to explain that one check.' } } },
     annotations: { readOnlyHint: true },
-    run: () => ({ text: Object.entries(RULES).map(([id, r]) => `${id} (${r.severity}): ${r.description}`).join('\n'), data: RULES }),
+    run: (a) => {
+      if (a.rule) {
+        const t = ruleDocText(String(a.rule), 'mcp');
+        return t ? { text: t, data: { id: a.rule, ...(RULES as any)[a.rule], docs: ruleUrl(String(a.rule), 'mcp') } } : { text: `No check called "${a.rule}". nucleus_rules without a rule lists them.`, isError: true };
+      }
+      return { text: Object.entries(RULES).map(([id, r]) => `${id} (${r.severity}): ${r.description}`).join('\n'), data: RULES };
+    },
   },
 ];
 
@@ -225,6 +316,7 @@ function guide(): string | undefined {
 }
 
 export async function handle(msg: any): Promise<unknown | undefined> {
+  setHubTool('ncdev-mcp'); // Hub requests say they come from the MCP server
   const { id, method, params } = msg ?? {};
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id, result });
   const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -232,11 +324,12 @@ export async function handle(msg: any): Promise<unknown | undefined> {
   switch (method) {
     case 'initialize':
       return reply({
-        protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : '2025-06-18',
+        // The client's version when we speak it, else our newest (the client then decides whether to go on).
+        protocolVersion: PROTOCOL_VERSIONS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSIONS[0],
         capabilities: { tools: {}, prompts: {} },
         serverInfo: { name: 'nucleus', title: 'Nucleus Co-op handler tools', version: VERSION },
         instructions:
-          'Tools for Nucleus Co-op game handlers (the JavaScript files Nucleus uses to run games split-screen). Handlers must be ES5 (Jint 2.11.58). After writing or editing a handler, run nucleus_lint and fix every error; use nucleus_api before using an option you are not sure exists; nucleus_simulate shows what each player gets. The nucleus-handler prompt has the full guide.',
+          `Tools for Nucleus Co-op game handlers (the JavaScript files Nucleus uses to run games split-screen). After writing or editing a handler, run nucleus_lint and fix every error (nucleus_fix applies the safe fixes; nucleus_rules with a rule id explains a check); use nucleus_api before using an option you are not sure exists; nucleus_simulate shows what each player gets, nucleus_debug stops inside it, nucleus_explain explains a line. The nucleus-handler prompt has the full guide.\n\n${aiHardRulesText()}`,
       });
     case 'ping':
       return reply({});

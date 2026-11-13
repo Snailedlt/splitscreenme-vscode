@@ -1,9 +1,11 @@
 import { test, before, after } from 'node:test';
+import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../core/features';
 import assert from 'node:assert/strict';
 import { spawn, ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { globToRegExp, isHandlerFile } from '../core/features';
 import { snippetToPlain } from '../lsp';
+import { tmpdir } from './tmp';
 
 // The real server: `node dist/cli.js lsp`, spoken to over stdio like an editor would.
 const HEADER = 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\n';
@@ -67,6 +69,7 @@ before(async () => {
   assert.equal(caps.textDocumentSync.change, 1);
   assert.deepEqual(caps.completionProvider.triggerCharacters, ['.', '=', ' ', '[', ',', '"']);
   assert.ok(caps.hoverProvider && caps.documentFormattingProvider && caps.inlayHintProvider && caps.signatureHelpProvider);
+  assert.deepEqual(caps.semanticTokensProvider, { legend: { tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS] }, full: true });
   assert.ok(caps.executeCommandProvider.commands.includes('nucleus.tryIt'));
   notify('initialized', {});
 });
@@ -87,7 +90,7 @@ test('lsp: diagnostics with codes, links and tags; quick fixes and fix all', asy
   assert.deepEqual(unknown.range.start, { line: 3, character: 10 });
   assert.equal(unknown.severity, 2);
   assert.equal(unknown.source, 'nucleus');
-  assert.match(unknown.codeDescription.href, /#lint-rules$/);
+  assert.match(unknown.codeDescription.href, /\/rules\/unknown-member\/\?ref=[a-z0-9-]+$/); // the check's own page
   assert.ok(params.diagnostics.some((d: any) => d.tags?.includes(2)), 'deprecated tag');
 
   const actions = (await request('textDocument/codeAction', { textDocument: { uri: URI }, range: unknown.range, context: { diagnostics: [unknown] } })).result;
@@ -119,6 +122,8 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   const hover = (await request('textDocument/hover', { textDocument: doc, position: { line: 3, character: 14 } })).result;
   assert.equal(hover.contents.kind, 'markdown');
   assert.match(hover.contents.value, /Game\.Hook\.ForceFocus: boolean/);
+  // The name's docs in the workbench, one click away (no clientInfo: tagged "lsp").
+  assert.ok(hover.contents.value.includes('[Open in Docs](https://snailedlt.github.io/nucleuscoop-handler-testbench/docs/Game.Hook.ForceFocus/?ref=lsp)'), hover.contents.value);
 
   const completion = (await request('textDocument/completion', { textDocument: doc, position: { line: 4, character: 12 } })).result;
   const sym = completion.items.find((i: any) => i.label === 'SymlinkGame');
@@ -140,11 +145,30 @@ test('lsp: hover, completion, value suggestions, signature help, inlay hints', a
   assert.deepEqual(hints.map((h: any) => h.label), ['WM_KILLFOCUS']);
   assert.deepEqual(hints[0].position, { line: 6, character: 41 });
 
+  // Semantic tokens: the legend, then five numbers a token, relative to the one before.
+  const st = (await request('textDocument/semanticTokens/full', { textDocument: doc })).result.data as number[];
+  const decoded: string[] = [];
+  for (let i = 0, line = 0, ch = 0; i < st.length; i += 5) {
+    line += st[i];
+    ch = st[i] ? st[i + 1] : ch + st[i + 1];
+    decoded.push(`${text.split('\n')[line].slice(ch, ch + st[i + 2])}:${SEMANTIC_TOKEN_TYPES[st[i + 3]]}`);
+  }
+  assert.deepEqual(decoded.slice(decoded.indexOf('Hook:namespace') - 1, decoded.indexOf('Hook:namespace') + 2), ['Game:namespace', 'Hook:namespace', 'ForceFocus:property']);
+
   const symbols = (await request('textDocument/documentSymbol', { textDocument: doc })).result;
   // (This handler is half-typed, so it gets the line-by-line outline.)
   assert.ok(symbols.some((s: any) => s.name === 'Game.Hook.ForceFocus' && s.kind === 7 && s.detail === '= true'), 'the settings');
   assert.ok(symbols.some((s: any) => s.name === 'Game.Play' && s.kind === 12), 'the callbacks');
   assert.ok(symbols.every((s: any) => s.range && s.selectionRange));
+
+  // Go to definition and references: the handler's own function.
+  const defUri = 'file:///tmp/Def.js';
+  notify('textDocument/didOpen', { textDocument: { uri: defUri, languageId: 'javascript', version: 1, text: HEADER + 'function helper() {}\nGame.Play = function () {\n  helper();\n};\n' } });
+  const hl = HEADER.split('\n').length - 1;
+  const def = (await request('textDocument/definition', { textDocument: { uri: defUri }, position: { line: hl + 2, character: 3 } })).result;
+  assert.deepEqual(def, { uri: defUri, range: { start: { line: hl, character: 9 }, end: { line: hl, character: 15 } } });
+  const refs = (await request('textDocument/references', { textDocument: { uri: defUri }, position: { line: hl + 2, character: 3 }, context: { includeDeclaration: true } })).result;
+  assert.deepEqual(refs.map((r: any) => r.range.start.line), [hl, hl + 2]);
 
   // A request on a file that isn't open, or garbage params, doesn't crash the server.
   assert.equal((await request('textDocument/hover', { textDocument: { uri: 'file:///nope.js' }, position: { line: 0, character: 0 } })).result, null);
@@ -165,6 +189,19 @@ test('lsp: formatting, and refusing code that is not ES5', async () => {
   assert.match(msg.params.message, /^Nucleus: /);
 });
 
+test('lsp: Explain this line is a code action and a command', async () => {
+  const uri = URI.replace('Test', 'Explain');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { };\n' } });
+  const line = HEADER.split('\n').length - 1;
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: { start: { line, character: 0 }, end: { line, character: 0 } }, context: { diagnostics: [] } })).result;
+  const a = actions.find((x: any) => x.title === 'Nucleus: Explain this line');
+  assert.ok(a, 'offered on a line with code');
+  const r = (await request('workspace/executeCommand', a.command)).result;
+  assert.match(r.markdown, /once for each player/);
+  const msg = await nextNotification((m) => m.method === 'window/showMessage');
+  assert.doesNotMatch(msg.params.message, /\*\*/);
+});
+
 test('lsp: Try it returns the simulation text', async () => {
   const uri = URI.replace('Test', 'TryIt');
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { Context.StartArguments = "-w " + Context.Width; };\n' } });
@@ -174,6 +211,24 @@ test('lsp: Try it returns the simulation text', async () => {
   // handler code stays in the sandbox
   const escape = (await request('workspace/executeCommand', { command: 'nucleus.tryIt', arguments: [{ source: HEADER + 'Game.Play = function () { Context.StartArguments = typeof process + "/" + typeof require; };\n' }] })).result;
   assert.match(escape, /undefined\/undefined/);
+});
+
+test('lsp: a looping handler in Try it does not block the server, and can be cancelled', async () => {
+  const uri = URI.replace('Test', 'Loop');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: HEADER + 'Game.Play = function () { while (true) {} };\n' } });
+  const id = nextId; // the id request() is about to use
+  const looping = request('workspace/executeCommand', { command: 'nucleus.tryIt', arguments: [{ uri }] });
+  // Answered while the handler loops in the simulator's worker.
+  const t0 = Date.now();
+  const hover = await request('textDocument/hover', { textDocument: { uri }, position: { line: 0, character: 2 } });
+  assert.ok(hover.result, 'hover answered');
+  assert.ok(Date.now() - t0 < 1000, `hover took ${Date.now() - t0} ms`);
+  notify('$/cancelRequest', { id });
+  const r = await looping;
+  assert.equal(r.error?.code, -32800, JSON.stringify(r));
+  // And the next run works.
+  const ok = (await request('workspace/executeCommand', { command: 'nucleus.tryIt', arguments: [{ source: HEADER + 'Game.Play = function () { Context.StartArguments = "-ok"; };\n' }] })).result;
+  assert.match(ok, /-ok/);
 });
 
 test('lsp: only handlers get features', async () => {
@@ -207,11 +262,11 @@ test('snippets become plain text for clients without snippet support', () => {
   assert.equal(snippetToPlain('function () {\n\t$0\n}'), 'function () {\n\t\n}');
 });
 
-test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async () => {
+test('lsp: package problems on the files in <Name>/, and the linked game folder (problems, fixes, suggestions)', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const { pathToFileURL } = await import('node:url');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-pkg-'));
+  const dir = tmpdir(t, 'nucleus-lsp-pkg-');
   const js = path.join(dir, 'Pkg.js');
   fs.mkdirSync(path.join(dir, 'Pkg'));
   fs.writeFileSync(path.join(dir, 'Pkg', 'Config.json'), '{ bad');
@@ -238,12 +293,12 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
   assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
 });
 
-test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async () => {
+test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const { pathToFileURL } = await import('node:url');
   const { spawn } = await import('node:child_process');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-lsp-ws-'));
+  const root = tmpdir(t, 'nucleus-lsp-ws-');
   fs.mkdirSync(path.join(root, 'handlers'));
   const a = path.join(root, 'handlers', 'A.js');
   fs.writeFileSync(a, 'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.KillMutex = "M";\n');
@@ -294,4 +349,86 @@ test('lsp: every handler in the workspace is checked, opened or not, and files c
   assert.ok(!again.params.diagnostics.some((d: any) => d.code === 'type-mismatch'), 'fixed on disk, re-checked');
   send({ jsonrpc: '2.0', id: 2, method: 'shutdown' });
   send({ jsonrpc: '2.0', method: 'exit' });
+});
+
+test('lsp: rename the handler\'s own names; suggestions for them only when typing or asked', async () => {
+  const text = HEADER + 'var savePath = "x";\nGame.Play = function () {\n  var p = savePath;\n  sa\n};\n';
+  const uri = URI.replace('Test', 'Rename');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const doc = { uri };
+  const prep = (await request('textDocument/prepareRename', { textDocument: doc, position: { line: 5, character: 12 } })).result;
+  assert.equal(prep.placeholder, 'savePath');
+  const r = (await request('textDocument/rename', { textDocument: doc, position: { line: 5, character: 12 }, newName: 'saveDir' })).result;
+  assert.equal(r.changes[uri].length, 2);
+  const bad = await request('textDocument/rename', { textDocument: doc, position: { line: 5, character: 12 }, newName: 'var' });
+  assert.match(bad.error.message, /reserved/);
+  const typed = (await request('textDocument/completion', { textDocument: doc, position: { line: 6, character: 4 }, context: { triggerKind: 1 } })).result;
+  assert.ok(typed.items.some((i: any) => i.label === 'savePath' && i.kind === 6));
+  const space = (await request('textDocument/completion', { textDocument: doc, position: { line: 5, character: 9 }, context: { triggerKind: 2, triggerCharacter: ' ' } })).result;
+  assert.equal(space, null);
+  const hl = (await request('textDocument/documentHighlight', { textDocument: doc, position: { line: 5, character: 12 } })).result;
+  assert.deepEqual(hl.map((h: any) => [h.range.start.line, h.kind]), [[3, 3], [5, 2]]);
+});
+
+test('lsp: range and on-type formatting, with the style settings', async () => {
+  const text = "var a = 'x'\nvar b = 'y'\n";
+  const uri = URI.replace('Test', 'Style');
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const doc = { uri };
+  const opts = { insertSpaces: true, tabSize: 2 };
+  let r = (await request('textDocument/rangeFormatting', { textDocument: doc, range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } }, options: opts })).result;
+  assert.deepEqual(r.map((e: any) => [e.range.start.line, e.newText]), [[1, 'var b = "y";']]);
+  r = (await request('textDocument/onTypeFormatting', { textDocument: doc, position: { line: 1, character: 0 }, ch: '\n', options: opts })).result;
+  assert.deepEqual(r.map((e: any) => e.newText), ['var a = "x";']);
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'keep', semicolons: 'keep' } } } });
+  r = (await request('textDocument/formatting', { textDocument: doc, options: opts })).result;
+  assert.deepEqual(r, []);
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { format: { quotes: 'double', semicolons: 'add' } } } });
+});
+
+test('lsp: Package, Install and New handler, as commands and source actions', async (t) => {
+  const fsx = require('node:fs') as typeof import('node:fs');
+  const os = require('node:os') as typeof import('node:os');
+  const dir = tmpdir(t, 'nucleus-lsp-cmd-');
+  const refused = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'A\\B', exe: 'game.exe', dir }] });
+  assert.match(refused.error?.message ?? '', /backslash/, 'a game name that breaks the Hub install');
+  const r = await request('workspace/executeCommand', { command: 'nucleus.newHandler', arguments: [{ name: 'My Game', exe: 'game.exe', dir }] });
+  const file = path.join(dir, 'My Game.js');
+  assert.ok(fsx.existsSync(file), JSON.stringify(r));
+  const uri = require('node:url').pathToFileURL(file).href;
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text: fsx.readFileSync(file, 'utf8') } });
+  const nucleus = path.join(dir, 'Nucleus');
+  fsx.mkdirSync(path.join(nucleus, 'handlers'), { recursive: true });
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: nucleus } } });
+  const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, context: { diagnostics: [], only: ['source'] } })).result;
+  assert.deepEqual(actions.map((a: any) => a.kind), ['source.nucleus.package', 'source.nucleus.install']);
+  await request('workspace/executeCommand', actions[0].command);
+  assert.ok(fsx.existsSync(path.join(dir, 'My Game.nc')));
+  await request('workspace/executeCommand', actions[1].command);
+  assert.ok(fsx.existsSync(path.join(nucleus, 'handlers', 'My Game.js')));
+  notify('workspace/didChangeConfiguration', { settings: { nucleus: { nucleusPath: '' } } });
+});
+
+test('lsp: quick fixes in a CRLF document insert CRLF (no mixed line endings)', async () => {
+  const uri = 'file:///tmp/nucleus-lsp-test/handlers/Crlf.js';
+  const text = 'Game.GameName = "Crlf";\r\nGame.ExecutableName = "a.exe";\r\nGame.Hook.ForceFocuss = true;\r\nGame.KillMutex = "M";\r\n';
+  notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
+  const { params } = await diagnosticsFor(uri, 1);
+  assert.ok(params.diagnostics.some((d: any) => d.code === 'missing-required'), 'Game.GUID missing');
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const off = (p: { line: number; character: number }) => starts[p.line] + p.character;
+  let applied = 0;
+  for (const d of params.diagnostics) {
+    const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: d.range, context: { diagnostics: [d] } })).result;
+    for (const a of actions) {
+      const edits = [...(a.edit?.changes?.[uri] ?? [])].sort((x: any, y: any) => off(y.range.start) - off(x.range.start));
+      let t = text;
+      for (const e of edits) t = t.slice(0, off(e.range.start)) + e.newText + t.slice(off(e.range.end));
+      assert.ok(!/(?<!\r)\n|\r(?!\n)/.test(t), `${a.title}: ${JSON.stringify(t)}`);
+      applied++;
+    }
+  }
+  assert.ok(applied >= 4, `${applied} quick fixes tried`);
+  notify('textDocument/didClose', { textDocument: { uri } });
 });

@@ -12,6 +12,7 @@ import { DOTNET_OBJECTS } from './dotnet';
 import { lint, MISSING_GLOBALS, MISSING_METHODS, MISSING_STATIC } from './lint';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
+import { hubGameName } from './hubscan';
 
 /** SimOptions.keyboardPlayer: every player has their own keyboard and mouse. */
 export const EVERY_KEYBOARD = -2;
@@ -406,7 +407,7 @@ export function sessionSummary(r: SimResult): string {
     return `Setup fails for player ${p}, so Nucleus ends the session: it shows an error and closes the games it started.${rest}`;
   }
   if (r.sessionEnded) return `All ${plural(n)} are set up, but Game.OnFinishedSetup fails, so Nucleus ends the session.`;
-  return `Nucleus would set up all ${plural(n)}.${r.hasPlay ? '' : ' The handler has no Game.Play, so every player gets the same setup.'}`;
+  return `Nucleus would set up ${n === 1 ? 'the one player' : `all ${plural(n)}`}.${r.hasPlay ? '' : ' The handler has no Game.Play, so every player gets the same setup.'}`;
 }
 
 /** The `Handler` global (GenericGameHandler): the members handlers use, first letter case-insensitive. */
@@ -489,18 +490,10 @@ function engineError(e: any): string {
   return `${e?.name ?? 'Error'}: ${msg}`;
 }
 
-/** The folder a Hub install gives the handler (DownloadPrompt.ExtractHandler): `handlers\<GameName>`, from the
- *  first raw line starting with game.gamename, between its first and last ", minus / : * ? " < > |.
+/** The folder a Hub install gives the handler (DownloadPrompt.ExtractHandler, core/hubscan.ts): `handlers\<GameName>`.
  *  A handler copied by hand into handlers\ gets its .js file name instead. */
 export function hubFolderName(src: string): string {
-  for (const line of src.split(/\r?\n/)) {
-    if (!line.toLowerCase().startsWith('game.gamename')) continue;
-    const a = line.indexOf('"');
-    const b = line.lastIndexOf('"');
-    const name = a >= 0 && b > a ? line.slice(a + 1, b).replace(/[\/:*?"<>|]/g, '') : '';
-    return name || 'MyHandler';
-  }
-  return 'MyHandler';
+  return hubGameName(src) || 'MyHandler';
 }
 
 /** Runs the handler. `hooks` is for the debugger (core/debug.ts traceHandler); the result is the same with or without. */

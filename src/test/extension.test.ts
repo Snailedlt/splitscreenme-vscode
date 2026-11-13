@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as mock from './vscode-mock';
-import { activate, isHandler } from '../extension';
+import { activate, isHandler, problemsBesideLint } from '../extension';
 import { RULES } from '../core/lint';
 
 const m = vscode as unknown as typeof mock;
@@ -25,6 +25,31 @@ test('registers all commands declared in package.json', () => {
   const declared = pkg.contributes.commands.map((c: any) => c.command).sort();
   const registered = m.__registered.commands.map((c: any) => c.id).sort();
   assert.deepEqual(registered, declared);
+  // VS Code refuses a second registration of an id, and the whole extension then fails to activate.
+  assert.deepEqual(registered.filter((id: string, i: number) => registered.indexOf(id) !== i), [], 'a command registered twice');
+  assert.deepEqual(declared.filter((id: string, i: number) => declared.indexOf(id) !== i), [], 'a command declared twice');
+});
+
+test('Restricted Mode: the extension runs, and Install / Test in Nucleus / Set up AI agents ask for trust first', async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  // Without this VS Code switches the whole extension off in a folder it doesn't trust (no checks, no completion).
+  assert.equal(pkg.capabilities?.untrustedWorkspaces?.supported, 'limited');
+  assert.deepEqual(pkg.capabilities.untrustedWorkspaces.restrictedConfigurations, ['splitscreenme.gameFolders']);
+  const w = vscode.workspace as any, win = vscode.window as any, cmds = vscode.commands as any;
+  const warn = win.showWarningMessage, exec = cmds.executeCommand;
+  const shown: string[] = [], ran: string[] = [];
+  w.isTrusted = false;
+  win.showWarningMessage = async (msg: string, opts: any, ...items: string[]) => (shown.push(msg), assert.equal(opts?.modal, true), items[0]);
+  cmds.executeCommand = async (id: string) => { ran.push(id); };
+  try {
+    for (const id of ['splitscreenme.installHandler', 'splitscreenme.testInNucleus', 'splitscreenme.setupAgents'])
+      await m.__registered.commands.find((c: any) => c.id === id).fn();
+  } finally {
+    w.isTrusted = true; win.showWarningMessage = warn; cmds.executeCommand = exec;
+  }
+  assert.equal(shown.length, 3);
+  assert.match(shown[0], /^Installing a handler needs a trusted folder/);
+  assert.deepEqual(ran, ['workbench.trust.manage', 'workbench.trust.manage', 'workbench.trust.manage']);
 });
 
 test('package.json rule settings match the linter rules', () => {
@@ -144,6 +169,10 @@ test('Try it panel: simulates the active handler, no scripts, settings via comma
   assert.match(panel.webview.html, /Player 4/);
   await run('splitscreenme.tryItSet', { keyboardPlayer: 7 }); // out of range: ignored
   assert.match(panel.webview.html, /all 4 players/);
+  // Test all: in the worker, with progress.
+  await run('splitscreenme.tryItTestAll');
+  assert.match(panel.webview.html, /All \d+ combinations work/);
+  assert.match(m.window.__progress.at(-1)!.message!, /^(\d+) of \1$/);
   m.window.activeTextEditor = undefined;
 });
 
@@ -171,6 +200,19 @@ test("what's new: highlights of the version's CHANGELOG section", async () => {
   assert.deepEqual(highlights(log, '9.9.9'), []);
 });
 
+test('semantic tokens: Nucleus names in the theme\'s colours; unknown names and other files get none', () => {
+  const semantic = [(m.__registered as any).semantic.at(-1)];
+  assert.deepEqual(semantic[0].legend.tokenTypes, ['namespace', 'class', 'enum', 'enumMember', 'property', 'method']);
+  const doc = m.makeDocument(HEADER + 'Game.wrongName = 1;\nGame.Play = function () {\n  var p = Context.GetFolder(Nucleus.Folder.InstancedGameFolder);\n  var w = Context.Width;\n};\n');
+  const toks = semantic[0].p.provideDocumentSemanticTokens(doc).tokens.map((t: any) => `${doc.getText(t.range)}:${t.type}${t.modifiers.length ? '.' + t.modifiers.join('.') : ''}`);
+  for (const want of ['Game:namespace.defaultLibrary', 'Play:property', 'GetFolder:method', 'Folder:enum', 'InstancedGameFolder:enumMember', 'Width:property.readonly']) assert.ok(toks.includes(want), `${want} in ${toks.join(' ')}`);
+  assert.ok(!toks.some((t: string) => t.startsWith('wrongName')), 'an unknown name keeps the plain colour (its underline explains)');
+  // A local variable named like a Nucleus object isn't Nucleus'.
+  const own = m.makeDocument(HEADER + 'var Context = {};\nContext.Width = 1;\n');
+  assert.ok(!semantic[0].p.provideDocumentSemanticTokens(own).tokens.some((t: any) => own.getText(t.range) === 'Width'));
+  assert.equal(semantic[0].p.provideDocumentSemanticTokens(m.makeDocument('var x = 1;\n', '/work/src/app.js')), undefined);
+});
+
 test('Game.ProtoInput.BlockedMessages: names on hover, as hints, and suggestions inside the brackets', () => {
   const src = HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008, 0x02a3, |];';
   const { doc, pos } = at(src);
@@ -185,4 +227,17 @@ test('Game.ProtoInput.BlockedMessages: names on hover, as hints, and suggestions
   assert.equal(items[0].insertText, '0x02a1'); // after a comma: just the number
   const end = at(HEADER + 'Game.ProtoInput.BlockedMessages = [0x0008 |];');
   assert.equal(m.__registered.completion[0].provideCompletionItems(end.doc, end.pos)[0].insertText, ', 0x02a1');
+});
+
+test('Fix all counts the problems it leaves: package and game-folder ones, and those on package files', () => {
+  const W = m.DiagnosticSeverity.Warning, I = m.DiagnosticSeverity.Information;
+  const d = (code: string, sev: number) => Object.assign(new m.Diagnostic(new m.Range(new m.Position(0, 0), new m.Position(0, 1)), 'x', sev), { code: { value: code } });
+  const handler = m.Uri.file('/w/Game.js'), json = m.Uri.file('/w/Game/Config.json'), other = m.Uri.file('/w/Other/x.json');
+  const all: any = [
+    [handler, [d('unknown-member', W), d('package', W), d('game-folder', I)]],
+    [json, [d('package', W)]], // an invalid JSON file in the handler's folder
+    [other, [d('package', W)]], // another handler's package
+  ];
+  assert.equal(problemsBesideLint(handler as any, all, [json as any]), 2);
+  assert.equal(problemsBesideLint(handler as any, all, []), 1);
 });

@@ -1,0 +1,61 @@
+# Lists a release's extension on the VS Code Marketplace and/or Open VSX. Manual only: nothing is published until
+# the maintainer runs this, with the store's token saved as a repository secret:
+#   VSCE_PAT  an Azure DevOps personal access token (Marketplace › Manage scope) for the publisher in package.json
+#   OVSX_PAT  an Open VSX access token, after signing the Eclipse publisher agreement and claiming the namespace
+# It publishes the .vsix the Release workflow attached to the release (the same file testers got), not a new build.
+# The Notepad++ plugin is listed differently: a pull request to notepad-plus-plus/nppPluginList with the entries the
+# Release workflow's summary shows (scripts/npp-plugin-list.mjs).
+name: Publish to the extension stores
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.6.0; empty: the newest release)'
+        required: false
+      store:
+        description: 'Where'
+        type: choice
+        options: [both, marketplace, openvsx]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download the release's .vsix
+        id: vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tag="${TAG:-$(gh release view --json tagName -q .tagName)}"
+          gh release download "$tag" --pattern '*.vsix' --dir vsix
+          echo "file=$(ls vsix/*.vsix)" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: VS Code Marketplace
+        if: inputs.store != 'openvsx'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          [ -n "$VSCE_PAT" ] || { echo "::error::Add a VSCE_PAT secret first (Settings › Secrets and variables › Actions)."; exit 1; }
+          npx vsce publish --packagePath "${{ steps.vsix.outputs.file }}"
+      - name: Open VSX
+        if: inputs.store != 'marketplace'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          [ -n "$OVSX_PAT" ] || { echo "::error::Add an OVSX_PAT secret first (Settings › Secrets and variables › Actions)."; exit 1; }
+          npx --yes ovsx@1.3.0 publish "${{ steps.vsix.outputs.file }}" -p "$OVSX_PAT"
+      - name: Summary
+        run: echo "Published ${{ steps.vsix.outputs.tag }} (${{ inputs.store }})." >> "$GITHUB_STEP_SUMMARY"

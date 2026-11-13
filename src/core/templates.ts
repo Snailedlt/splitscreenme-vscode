@@ -18,14 +18,72 @@ export const FEATURES: { id: Feature; label: string; detail: string }[] = [
   { id: 'options', label: 'User options', detail: 'Example Game.AddOption prompt read back with Context.Options.' },
 ];
 
-/** Nucleus uses GUID as a folder name: keep letters, digits and spaces. */
+/** Letters with accents and a few others, spelt in plain Latin letters (Ü → U, ß → ss, Ø → O). */
+const LATIN: Record<string, string> = { ß: 'ss', Æ: 'AE', æ: 'ae', Ø: 'O', ø: 'o', Œ: 'OE', œ: 'oe', Đ: 'D', đ: 'd', Ł: 'L', ł: 'l', Þ: 'Th', þ: 'th', Ð: 'D', ð: 'd', ı: 'i' };
+
+/** Nucleus uses GUID as a folder name (GameManager: `Path.Combine(<content folder>, GUID)`, also the backups and the
+ *  `NucleusCoop.exe <GUID>` argument) that games run from, and old games break on paths outside plain ASCII: keep
+ *  letters, digits and spaces, with accented letters spelt plainly ("Pokémon" → "Pokemon"). */
 export function toGuid(name: string): string {
-  return name.replace(/[^A-Za-z0-9 ]/g, '').replace(/\s+/g, ' ').trim() || 'MyGame';
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x00-\x7f]/g, (c) => LATIN[c] ?? '')
+    .replace(/[^A-Za-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'MyGame';
 }
 
-/** Nucleus names the installed handler file after GameName with these characters removed. */
+/** Why a game name can't go into a new handler as it is, in plain words, or undefined when it can. The Hub install
+ *  reads `Game.GameName` from between the first and last double quote on its line and names the handler's file and
+ *  folder after it, removing only / : * ? " < > | (core/hubscan.ts). */
+export function validateGameName(name: string): string | undefined {
+  if (!name.trim()) return "Enter the game's name.";
+  if (name.includes('"')) return 'Leave out double quotes: when Nucleus installs a handler from the Hub, it reads the game name from between the first and last double quote on its line.';
+  if (name.includes('\\')) return "Leave out backslashes: Nucleus names the handler's file and folder after the game name and keeps a backslash, which breaks the install.";
+  if (/[\u0000-\u001f\u007f\u2028\u2029]/.test(name)) return 'Keep the name on one line, without tabs or other control characters: Nucleus reads the handler line by line.';
+  if (!name.replace(/[\/:*?"<>|]/g, '').trim()) return 'Use some letters or digits: Nucleus removes / : * ? " < > | from the name it gives the handler\'s file and folder.';
+  return undefined;
+}
+
+/** Every problem with a New Handler request, in plain words (empty when it's fine): the CLI, the MCP server and the
+ *  editors check the same things before writing a handler, so no invalid value ends up in its code. */
+export function validateHandlerInfo(info: { gameName?: unknown; executableName?: unknown; steamId?: unknown; maxPlayers?: unknown; features?: unknown }): string[] {
+  const out: string[] = [];
+  if (typeof info.gameName !== 'string') out.push("gameName: the game's name is required.");
+  else { const bad = validateGameName(info.gameName); if (bad) out.push(`gameName: ${bad}`); }
+  if (typeof info.executableName !== 'string' || !info.executableName.trim()) out.push('executableName: the game\'s .exe file name is required, e.g. "Game.exe".');
+  else if (/[\\/]/.test(info.executableName)) out.push('executableName: a file name only, never a path (the folder goes in Game.BinariesFolder).');
+  else if (!/\.exe$/i.test(info.executableName.trim())) out.push('executableName: Nucleus starts an .exe, e.g. "Game.exe".');
+  if (info.steamId !== undefined && info.steamId !== '' && !/^\d+$/.test(String(info.steamId))) out.push('steamId: the Steam app id is digits only, e.g. 413150.');
+  if (info.maxPlayers !== undefined) {
+    // A number, or digits as text (the CLI's flag); never '' or true, which would end up in the code as written.
+    const m = info.maxPlayers;
+    const n = typeof m === 'number' ? m : typeof m === 'string' && /^\d+$/.test(m.trim()) ? Number(m) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > 16) out.push('maxPlayers: a whole number from 1 to 16.');
+  }
+  if (info.steamId !== undefined && typeof info.steamId !== 'string' && typeof info.steamId !== 'number') out.push('steamId: the Steam app id is digits only, e.g. 413150.');
+  if (info.features !== undefined) {
+    if (!Array.isArray(info.features)) out.push('features: a list of feature ids.');
+    else {
+      const bad = info.features.filter((f) => !FEATURES.some((x) => x.id === f));
+      if (bad.length) out.push(`features: unknown ${bad.join(', ')}. Available: ${FEATURES.map((f) => f.id).join(', ')}.`);
+    }
+  }
+  return out;
+}
+
+/** A name that is safe as one file or folder name on Windows and everywhere else: no path separators or characters
+ *  Windows forbids, no control characters, no trailing dots or spaces, never "." or ".." (which would point at the
+ *  folder itself or its parent) and never a reserved device name (CON, NUL, COM1…). Empty or unusable: the fallback. */
+export function safeFileName(name: string, fallback = 'handler'): string {
+  const s = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().replace(/[. ]+$/, '');
+  if (!s || /^\.+$/.test(s)) return fallback;
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(s) ? `_${s}` : s;
+}
+/** Nucleus names the installed handler file after GameName with Windows' forbidden characters removed; made safe here too. */
 export function toHandlerFileName(gameName: string): string {
-  return gameName.replace(/[\\/:*?"<>|]/g, '').trim() || 'handler';
+  return safeFileName(gameName);
 }
 
 const q = (s: string) => JSON.stringify(s);

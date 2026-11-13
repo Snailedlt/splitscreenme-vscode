@@ -1,5 +1,8 @@
-// `nucleus`: command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
-// `nucleus-lint <paths>` is kept as a shortcut for `nucleus lint <paths>`.
+// `ncdev` (Nucleus Co-op dev tools): command-line tools for Nucleus Co-op handlers, for people, CI and AI agents.
+// Also a standalone .exe (#18, scripts/sea.mjs). `nucleus` is its old name and still works; `nucleus-lint <paths>`
+// is kept as a shortcut for `ncdev lint <paths>`.
+import { installHandler } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleus, testInNucleus } from './nucleusrun';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
 import { packageFilesFor } from './pkgfiles';
@@ -12,26 +15,33 @@ import { formatHandler } from './core/format';
 import { lookup, search, formatEntry, markdownReference } from './core/lookup';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
-import { renderHandler, toHandlerFileName, FEATURES, Feature } from './core/templates';
+import { renderHandler, toHandlerFileName, validateHandlerInfo, FEATURES, Feature } from './core/templates';
 import { buildPackage, extractEntries, findSkillDir, installAgentKit } from './core/pkg';
-import { pluginsFor, simulateIsolated, traceIsolated } from './sandbox';
-import { nextStop, describeStep, evaluateWatch, callsBefore } from './core/debug';
+import { pluginsFor, simulateIsolated } from './sandbox';
+import { parseBreakpoint, runDebug } from './debugrun';
+import { ruleDocText } from './core/airules';
+import { ruleUrl } from './core/ruledocs';
+import { explainLine } from './core/features';
 import { serveDap } from './dap';
 import { setupNotepadPP } from './setup-npp';
-import type { Stop, ValueView } from './core/debug';
+import { builtIn, installPath, installRelease, installSelf, isStandalone, latestRelease, newer, TOOL, VERSION } from './standalone';
+import os from 'node:os';
 import { EVERY_KEYBOARD } from './core/sim';
 import { formatSimulation } from './simformat';
 import { serve } from './mcp';
 import { serve as serveLsp } from './lsp';
 
-const HELP = `Usage: nucleus <command> [options]
+const HELP = `ncdev ${VERSION}: Nucleus Co-op dev tools (\`nucleus\` is the old name and still works)
+
+Usage: ncdev <command> [options]
 
 Commands:
   lint <file|dir>...          Check handlers for problems (default command)
-  format <file|dir>... [--write | --check]
-                              Indentation and spacing only (no line moves, tokens unchanged).
-                              Prints the result for one file; --write saves, --check lists the
-                              files that aren't formatted and exits 1
+  format <file|dir>... [--write | --check] [--quotes double|single|keep] [--semicolons add|keep]
+                              Indentation, spacing, double quotes and semicolons (no line moves;
+                              the program parses the same, or nothing changes). Prints the result
+                              for one file; --write saves, --check lists the files that aren't
+                              formatted and exits 1
   api <name>                  Show the type and docs of an API member, e.g. "Game.KillMutex",
                               "Context.ModifySaveFile", "KillMutex", "Nucleus.Folder"
   api --search <words>        Search API names and docs, e.g. "api --search mutex"
@@ -48,16 +58,27 @@ Commands:
                               breakpoint (e.g. --break "14 if Context.PlayerID == 1"), and where an
                               error ends a phase, with the variables, the call stack and the
                               --watch values. --step prints every line it runs instead
-  hub search <words>          Search handlers on hub.splitscreen.me
+  hub search <words>          Search handlers on hub.splitscreen.me (--popular: the most downloaded)
   hub fetch <id> [--out dir]  Download a Hub handler package and extract it (default ./hub-handlers/<title>)
   new --name <game> --exe <file.exe> [--steam-id N] [--max-players N]
       [--features ${FEATURES.map((f) => f.id).join(',')}] [--out file.js] [--force]
-                              Create a handler from a template
+                              Create a handler from a template (--list-features: the features)
+  test <handler.js> --nucleus <folder> [--restart] [--debug-log on|off] [--force] [--status]
+                              Test in Nucleus Co-op (Windows): install the handler, then start
+                              Nucleus with its game selected. --restart closes a running Nucleus
+                              first (it reads handlers when it starts); --debug-log sets Nucleus'
+                              debug log; --status only says whether it's running and the log's on
+  install <handler.js> --nucleus <folder> [--force]
+                              Copy the handler (and its <Name>/ folder) into Nucleus Co-op's
+                              handlers folder. --force replaces an installed one and installs
+                              despite errors
   package <handler.js> [--out file.nc] [--force]
                               Build a Hub package (handler.js + the <Name>/ asset folder)
   init-agent [dir]            Install AI agent instructions and this tool into a handler folder
                               (AGENTS.md, CLAUDE.md, .claude/skills/nucleus-handler/)
-  rules                       List lint rules
+  rules [<id>]                List lint rules; with an id, that check explained (why, fix, examples)
+  explain <handler.js> --line N
+                              What line N does, in plain words: its names' docs and its problems
   workbench [--out file.html] [--force]
                               Save the browser workbench as one offline HTML file (from the newest
                               release), to open locally or host yourself
@@ -67,8 +88,14 @@ Commands:
   lsp [--stdio]               Run as a Language Server (stdio) for other editors: Neovim, Helix,
                               Zed, Sublime Text, Emacs, JetBrains (LSP4IJ), Kate, ... (PORTING.md)
   setup notepad++ [--path <folder>] [--check] [--remove]
-                              Add Nucleus names and call tips to Notepad++, and a Run menu entry
-                              that checks the open handler (keeps a backup; --remove restores it)
+                              Set up Notepad++ for handlers: the Nucleus plugin (problems in the
+                              code, docs on hover, suggestions, fixes, Try it) with the standalone
+                              ncdev, else the names and call tips in its own list; and a Run menu
+                              entry that checks the open handler. --remove undoes it
+  update [--check]            Update ncdev to the newest release (the standalone ncdev replaces
+                              itself, checked against the release's SHA-256 sums). --check only
+                              says whether there is one (exit code 10 if so)
+  --version                   Show the version
   dap                         Run as a Debug Adapter (stdio) for editors with DAP support: nvim-dap,
                               Helix, Zed, JetBrains, Emacs (dape) (PORTING.md, "Debugging")
 
@@ -86,7 +113,10 @@ Lint options:
   --hub                       Compare Game.GUID with the version on the Hub (handlers with a Hub.Handler.Id; cached)
 
 Exit code: 1 when lint finds errors, a simulated handler fails to load or run, or a command
-fails; 2 on bad usage.`;
+fails; 2 on bad usage.
+
+Questions? Ask other handler authors: https://discord.gg/XxGMkqCf4r (Discord) or
+https://www.reddit.com/r/nucleuscoop/`;
 
 class Usage extends Error {}
 
@@ -94,7 +124,7 @@ interface Args {
   positional: string[];
   flags: Map<string, string[]>;
 }
-const BOOL_FLAGS = new Set(['--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '-h', '--help']);
+const BOOL_FLAGS = new Set(['--version', '-v', '--from-notepad++', '--step', '--json', '--stdio', '--all', '--quiet', '--verbose', '--force', '--search', '--markdown', '--fix', '--fix-dry-run', '--hub', '--write', '--check', '--remove', '--list-features', '--popular', '--restart', '--status', '-h', '--help']);
 function parseArgs(argv: string[]): Args {
   const a: Args = { positional: [], flags: new Map() };
   for (let i = 0; i < argv.length; i++) {
@@ -113,8 +143,9 @@ const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
 async function main(argv: string[]): Promise<number> {
-  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug'];
+  const commands = ['lint', 'format', 'simulate', 'api', 'hub', 'new', 'install', 'test', 'package', 'init-agent', 'rules', 'mcp', 'lsp', 'dap', 'setup', 'workbench', 'debug', 'explain', 'update', 'version'];
   let cmd = argv[0] && commands.includes(argv[0]) ? argv.shift()! : undefined;
+  if (!cmd && (argv[0] === '--version' || argv[0] === '-v')) cmd = 'version';
   if (path.basename(process.argv[1] ?? '').startsWith('nucleus-lint')) cmd ??= 'lint';
   if (argv.includes('--list-rules')) cmd = 'rules';
   const args = parseArgs(argv);
@@ -130,6 +161,12 @@ async function main(argv: string[]): Promise<number> {
     case 'lint':
       return cmdLint(args, json);
     case 'rules':
+      if (args.positional[0]) {
+        const t = ruleDocText(args.positional[0], 'ncdev');
+        if (!t) throw new Usage(`rules: no check called "${args.positional[0]}" (ncdev rules lists them)`);
+        print(json, { id: args.positional[0], ...(RULES as any)[args.positional[0]], docs: ruleUrl(args.positional[0], 'ncdev') }, () => t);
+        return 0;
+      }
       print(json, RULES, () => Object.entries(RULES).map(([id, r]) => `${id.padEnd(22)} ${r.severity.padEnd(8)} ${r.description}`).join('\n'));
       return 0;
     case 'format':
@@ -138,12 +175,18 @@ async function main(argv: string[]): Promise<number> {
       return cmdSimulate(args, json);
     case 'debug':
       return cmdDebug(args, json);
+    case 'explain':
+      return cmdExplain(args, json);
     case 'api':
       return cmdApi(args, json);
     case 'hub':
       return cmdHub(args, json);
     case 'new':
       return cmdNew(args, json);
+    case 'install':
+      return cmdInstall(args, json);
+    case 'test':
+      return cmdTest(args, json);
     case 'package':
       return cmdPackage(args, json);
     case 'init-agent':
@@ -153,15 +196,12 @@ async function main(argv: string[]): Promise<number> {
     case 'lsp':
       // Exit when the client says so, even with a Hub lookup or a lint timer still pending.
       return serveLsp().then((code) => process.exit(code));
-    case 'setup': {
-      const what = (args.positional[0] ?? '').toLowerCase().replace(/\s+/g, '');
-      if (!['notepad++', 'notepadpp', 'npp'].includes(what)) throw new Usage('setup: only "notepad++" for now, e.g. nucleus setup notepad++');
-      // The Run menu entry runs this same CLI with the Node that runs it now.
-      const runCommand = `cmd /k ""${process.execPath}" "${path.resolve(process.argv[1])}" lint "$(FULL_CURRENT_PATH)""`;
-      const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand });
-      print(json, r, () => r.lines.join('\n'));
-      return r.ok ? 0 : 1;
-    }
+    case 'setup':
+      return cmdSetup(args, json);
+    case 'version':
+      return cmdVersion(json);
+    case 'update':
+      return cmdUpdate(args, json);
     case 'dap':
       // A Debug Adapter on stdio, for editors with DAP support (nvim-dap, Helix, Zed, JetBrains, Emacs dape).
       return serveDap().then((code) => process.exit(code));
@@ -264,7 +304,11 @@ function cmdFormat(args: Args, json: boolean): number {
   const results: { file: string; ok: boolean; changed?: boolean; reason?: string }[] = [];
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
-    const r = formatHandler(text);
+    const quotes = flag(args, '--quotes');
+    const semicolons = flag(args, '--semicolons');
+    if (quotes && !['double', 'single', 'keep'].includes(quotes)) throw new Usage('--quotes: double, single or keep');
+    if (semicolons && !['add', 'keep'].includes(semicolons)) throw new Usage('--semicolons: add or keep');
+    const r = formatHandler(text, { quotes: quotes as 'double' | 'single' | 'keep' | undefined, semicolons: semicolons as 'add' | 'keep' | undefined });
     if (!r.ok) {
       results.push({ file, ok: false, reason: r.reason });
       continue;
@@ -307,44 +351,29 @@ function cmdSimulate(args: Args, json: boolean): number {
   return failed ? 1 : 0;
 }
 
+function cmdExplain(args: Args, json: boolean): number {
+  const file = args.positional[0];
+  const n = Number(flag(args, '--line'));
+  if (!file || args.positional.length > 1 || !Number.isInteger(n) || n < 1) throw new Usage('explain: give one handler file and --line N');
+  const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  const lines = text.split('\n');
+  if (n > lines.length) throw new Usage(`explain: ${file} has ${lines.length} lines`);
+  const offset = lines.slice(0, n - 1).reduce((o, l) => o + l.length + 1, 0) + (lines[n - 1].length - lines[n - 1].trimStart().length);
+  const e = explainLine(text, offset);
+  print(json, { file, line: n, text: e?.text ?? '', markdown: e?.markdown ?? '' }, () => e?.markdown ?? `Line ${n} is empty.`);
+  return 0;
+}
+
 function cmdDebug(args: Args, json: boolean): number {
   const { file, src, opts } = simArgs(args, 'debug');
   const breakpoints = (args.flags.get('--break') ?? []).map((b) => {
-    const m = /^\s*(\d+)\s*(?:if\s+(.+))?$/s.exec(b);
-    if (!m) throw new Usage(`--break must be a line number, optionally with a condition: --break "14 if Context.PlayerID == 1" (got "${b}")`);
-    return { line: Number(m[1]), ...(m[2] ? { condition: m[2].trim() } : {}) };
+    const bp = parseBreakpoint(b);
+    if (!bp) throw new Usage(`--break must be a line number, optionally with a condition: --break "14 if Context.PlayerID == 1" (got "${b}")`);
+    return bp;
   });
-  const watches = args.flags.get('--watch') ?? [];
-  const trace = traceIsolated(src, opts);
-  const stops: Stop[] = [];
-  const MAX_STOPS = 200;
-  for (let s = nextStop(trace, -1, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true }); s && stops.length < MAX_STOPS; ) {
-    stops.push(s);
-    s = nextStop(trace, s.index, { mode: has(args, '--step') ? 'into' : 'continue', breakpoints, stopOnErrors: true });
-  }
-  const show = (v: ValueView) => `${v.text}${v.type === '.NET' || v.type === 'function' || v.type === 'null' || v.type === 'undefined' || v.type === 'default' ? '' : ` (${v.type})`}`;
-  const items = stops.map((s) => {
-    const step = trace.steps[s.index];
-    return { ...s, step, description: describeStep(step), watches: watches.map((w) => ({ expr: w, ...evaluateWatch(trace, s.index, w) })), did: callsBefore(trace, s.index).filter((c) => c.effect).map((c) => c.effect!) };
-  });
-  print(json, { file, stops: items, steps: trace.steps.length, truncated: trace.truncated, truncatedPhases: trace.truncatedPhases, error: trace.error, result: trace.result }, () => {
-    const out: string[] = [];
-    if (trace.error && !trace.steps.length) out.push(trace.error);
-    for (const it of items) {
-      out.push(`${it.description}${it.conditionError ? ` (the breakpoint's condition failed: ${it.conditionError})` : ''}`);
-      const locals = Object.entries(it.step.locals);
-      if (locals.length) out.push(`  Variables: ${locals.map(([k, v]) => `${k} = ${show(v)}`).join(', ')}`);
-      if (it.step.stack.length > 1) out.push(`  Call stack: ${it.step.stack.map((f) => `${f.name} (line ${f.line})`).join(' < ')}`);
-      for (const w of it.watches) out.push(`  ${w.expr} = ${w.error ? `(${w.error})` : show(w.value!)}`);
-      if (it.did.length && !has(args, '--step')) out.push(`  So far: ${it.did.join('; ')}`);
-    }
-    if (!items.length && !trace.error) out.push(breakpoints.length ? `No breakpoint was hit (${trace.steps.length} statements ran).` : `No errors (${trace.steps.length} statements ran). Add --break <line> to stop somewhere.`);
-    if (stops.length >= MAX_STOPS) out.push(`(only the first ${MAX_STOPS} stops are shown)`);
-    if (trace.truncated) out.push(`Not every statement was recorded (limits: ${trace.maxSteps} in all, fewer per phase)${trace.truncatedPhases.length ? `: ${trace.truncatedPhases.join('; ')}` : ''}.`);
-    if (trace.error && trace.steps.length) out.push(trace.error);
-    return out.join('\n');
-  });
-  return trace.error || items.some((i) => i.reason === 'error') ? 1 : 0;
+  const r = runDebug(src, opts, { breakpoints, watches: args.flags.get('--watch') ?? [], step: has(args, '--step') });
+  print(json, { file, ...r.data }, () => r.text);
+  return r.failed ? 1 : 0;
 }
 
 function cmdApi(args: Args, json: boolean): number {
@@ -353,7 +382,7 @@ function cmdApi(args: Args, json: boolean): number {
     return 0;
   }
   const q = args.positional.join(' ');
-  if (!q) throw new Usage('api: give a name, e.g. "nucleus api Game.KillMutex", or --search <words>');
+  if (!q) throw new Usage('api: give a name, e.g. "ncdev api Game.KillMutex", or --search <words>');
   const doSearch = (words: string) => {
     const hits = search(words, Number(flag(args, '--limit') ?? 20));
     print(json, hits.map((e) => ({ path: e.path, ...e.member })), () =>
@@ -382,16 +411,17 @@ function cmdApi(args: Args, json: boolean): number {
 
 async function cmdHub(args: Args, json: boolean): Promise<number> {
   const [sub, ...rest] = args.positional;
-  const list = await hubHandlers();
+  const feature = sub === 'fetch' ? 'hub-fetch' : sub === 'search' ? (has(args, '--popular') && !rest.length ? 'hub-popular' : 'hub-search') : 'hub-list';
+  const list = await hubHandlers({ feature });
   if (sub === 'search') {
     const words = rest.join(' ').toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) throw new Usage('hub search: give some words, e.g. "hub search halo"');
+    if (!words.length && !has(args, '--popular')) throw new Usage('hub search: give some words, e.g. "hub search halo" (or --popular for the most downloaded)');
     // Rank by how many words match (title/game name count double), then popularity.
     const hits = list
       .map((h) => {
         const title = `${h.title} ${h.gameName}`.toLowerCase();
         const rest = `${h.ownerName} ${h.description ?? ''}`.toLowerCase();
-        const score = words.reduce((n, w) => n + (title.includes(w) ? 2 : rest.includes(w) ? 1 : 0), 0);
+        const score = words.length ? words.reduce((n, w) => n + (title.includes(w) ? 2 : rest.includes(w) ? 1 : 0), 0) : 1;
         return { h, score };
       })
       .filter((x) => x.score > 0)
@@ -404,18 +434,18 @@ async function cmdHub(args: Args, json: boolean): Promise<number> {
       () =>
         hits.length
           ? hits.map((h) => `${h._id}  ${h.title}${h.verified ? ' (verified)' : ''} - by ${h.ownerName}, ${h.downloadCount ?? 0} downloads${h.playableMultiMouseKeyboard ? ', multi KB/M' : ''}`).join('\n') +
-            '\n\nFetch one with: nucleus hub fetch <id>'
+            '\n\nFetch one with: ncdev hub fetch <id>'
           : 'No handlers found.',
     );
     return hits.length ? 0 : 1;
   }
   if (sub === 'fetch') {
     const key = rest.join(' ');
-    if (!key) throw new Usage('hub fetch: give a handler id (from "nucleus hub search")');
+    if (!key) throw new Usage('hub fetch: give a handler id (from "ncdev hub search")');
     const h: HubHandler | undefined = list.find((x) => x._id === key) ?? list.find((x) => x.title.toLowerCase() === key.toLowerCase());
     if (!h) throw new Error(`No handler with id or title "${key}"`);
     const out = flag(args, '--out') ?? path.join('hub-handlers', toHandlerFileName(h.title));
-    const files = extractEntries(await hubPackage(h), out);
+    const files = extractEntries(await hubPackage(h, { feature: 'hub-fetch' }), out);
     print(json, { id: h._id, title: h.title, dir: path.resolve(out), files }, () => `Extracted ${h.title} v${h.currentVersion} to ${path.resolve(out)}:\n` + files.map((f) => `  ${f}`).join('\n'));
     return 0;
   }
@@ -423,12 +453,16 @@ async function cmdHub(args: Args, json: boolean): Promise<number> {
 }
 
 function cmdNew(args: Args, json: boolean): number {
+  if (has(args, '--list-features')) {
+    print(json, FEATURES, () => FEATURES.map((f) => `${f.id.padEnd(16)}${f.label}: ${f.detail}`).join('\n'));
+    return 0;
+  }
   const name = flag(args, '--name');
   const exe = flag(args, '--exe');
   if (!name || !exe) throw new Usage('new: --name and --exe are required');
   const features = (flag(args, '--features') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const bad = features.filter((f) => !FEATURES.some((x) => x.id === f));
-  if (bad.length) throw new Usage(`Unknown feature(s): ${bad.join(', ')}. Available: ${FEATURES.map((f) => f.id).join(', ')}`);
+  const problems = validateHandlerInfo({ gameName: name, executableName: exe, steamId: flag(args, '--steam-id'), maxPlayers: flag(args, '--max-players'), features });
+  if (problems.length) throw new Usage(`new: ${problems.map((p) => p.replace(/^gameName:/, '--name:').replace(/^executableName:/, '--exe:').replace(/^steamId:/, '--steam-id:').replace(/^maxPlayers:/, '--max-players:').replace(/^features:/, '--features:')).join('\n     ')}`);
   const out = flag(args, '--out') ?? `${toHandlerFileName(name)}.js`;
   if (fs.existsSync(out) && !has(args, '--force')) throw new Error(`${out} already exists (use --force to overwrite)`);
   const maxPlayers = flag(args, '--max-players');
@@ -437,11 +471,51 @@ function cmdNew(args: Args, json: boolean): number {
   return 0;
 }
 
+function cmdInstall(args: Args, json: boolean): number {
+  const file = args.positional[0];
+  if (!file?.endsWith('.js')) throw new Usage('install: give the handler .js file');
+  const nucleus = flag(args, '--nucleus');
+  if (!nucleus) throw new Usage('install: --nucleus <folder> is required (the Nucleus Co-op folder, with NucleusCoop.exe and handlers)');
+  const errors = lint(fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error');
+  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s), so Nucleus may not load it; fix them or pass --force. Run "ncdev lint ${file}".`);
+  const { dest, assets } = installHandler(file, nucleus, { overwrite: has(args, '--force') });
+  print(json, { file: dest, assetCount: assets }, () => `Installed ${path.basename(dest)}${assets ? ` and ${assets} asset file(s)` : ''} to ${path.dirname(dest)}. Restart Nucleus Co-op (or re-add the game) to pick it up.`);
+  return 0;
+}
+
+async function cmdTest(args: Args, json: boolean): Promise<number> {
+  const nucleus = flag(args, '--nucleus');
+  if (!nucleus) throw new Usage('test: --nucleus <folder> is required (the Nucleus Co-op folder, with NucleusCoop.exe and handlers)');
+  const status = nucleusStatus(nucleus);
+  if (has(args, '--status')) {
+    print(json, status, () => `${status.canStart ? (status.running ? 'Nucleus Co-op is running.' : 'Nucleus Co-op is not running.') : status.why}\nDebug log: ${status.debugLog === undefined ? 'no Settings.ini yet' : status.debugLog ? 'on' : 'off'}`);
+    return 0;
+  }
+  const file = args.positional[0];
+  if (!file?.endsWith('.js')) throw new Usage('test: give the handler .js file');
+  if (!status.canStart) throw new Error(status.why);
+  const errors = lint(fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error');
+  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s), so Nucleus may not load it; fix them or pass --force. Run "ncdev lint ${file}".`);
+  if (status.running) {
+    if (!has(args, '--restart')) {
+      if (json) print(json, { started: false, running: true }, () => '');
+      else console.error('Nucleus Co-op is running and only reads handlers when it starts: close it, or pass --restart.');
+      return 3;
+    }
+    await stopNucleus();
+  }
+  const log = flag(args, '--debug-log');
+  if (log === 'on' || log === 'off') setDebugLog(nucleus, log === 'on');
+  const r = testInNucleus(file, nucleus);
+  print(json, { started: true, file: r.dest, guid: r.guid, debugLog: debugLogOn(nucleus), log: debugLogPath(nucleus) }, () => `${AFTER_START}\nDebug log: ${debugLogOn(nucleus) ? debugLogPath(nucleus) : 'off (--debug-log on turns it on)'}`);
+  return 0;
+}
+
 function cmdPackage(args: Args, json: boolean): number {
   const file = args.positional[0];
   if (!file?.endsWith('.js')) throw new Usage('package: give the handler .js file');
   const errors = lint(fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error');
-  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s); fix them or pass --force. Run "nucleus lint ${file}".`);
+  if (errors.length && !has(args, '--force')) throw new Error(`${file} has ${errors.length} lint error(s); fix them or pass --force. Run "ncdev lint ${file}".`);
   const out = flag(args, '--out') ?? file.replace(/\.js$/, '.nc');
   const { zip, assetCount } = buildPackage(file);
   fs.writeFileSync(out, zip);
@@ -473,9 +547,80 @@ async function cmdWorkbench(args: Args, json: boolean): Promise<number> {
   return 0;
 }
 
+/** The standalone ncdev carries the skill's files: unpacked into a temporary folder for `init-agent`. */
+function builtInSkill(): string | undefined {
+  const raw = builtIn('skill.json');
+  if (!raw) return undefined;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ncdev-skill-'));
+  for (const [rel, b64] of Object.entries(JSON.parse(raw.toString('utf8')) as Record<string, string>)) {
+    const f = path.join(dir, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, Buffer.from(b64, 'base64'));
+  }
+  return dir;
+}
+
+function cmdSetup(args: Args, json: boolean): number {
+  const what = (args.positional[0] ?? '').toLowerCase().replace(/\s+/g, '');
+  if (!['notepad++', 'notepadpp', 'npp'].includes(what)) {
+    // A typo of it (nodepad++, notepad+) gets the right spelling; anything else, what setup can do.
+    const near = what && /^no[a-z]*pad|^npp|pad\+/i.test(what);
+    throw new Usage(near ? `setup: there is no "${what}". Did you mean: ncdev setup notepad++` : 'setup: only "notepad++" for now, e.g. ncdev setup notepad++');
+  }
+  const changing = !has(args, '--check') && !has(args, '--remove');
+  // The standalone ncdev copies itself to one known place (%LOCALAPPDATA%\ncdev) and installs the plugin, which runs it.
+  const standalone = isStandalone();
+  const tool = standalone && changing ? installSelf() : standalone ? installPath() : undefined;
+  const plugins = standalone ? { x64: builtIn('NcDev.dll'), x86: builtIn('NcDev-x86.dll') } : undefined;
+  const runCommand = tool ? `cmd /k ""${tool}" lint "$(FULL_CURRENT_PATH)""` : `cmd /k ""${process.execPath}" "${path.resolve(process.argv[1])}" lint "$(FULL_CURRENT_PATH)""`;
+  const r = setupNotepadPP({ path: flag(args, '--path'), remove: has(args, '--remove'), check: has(args, '--check'), runCommand, plugins, toolPath: tool });
+  if (tool && changing && r.ok) r.lines.unshift(`ncdev is in ${path.dirname(tool)} (ncdev update keeps it current).`);
+  print(json, r, () => r.lines.join('\n'));
+  return r.ok ? 0 : 1;
+}
+
+async function cmdVersion(json: boolean): Promise<number> {
+  // Only what's already known (a check at most once a day happens in `update --check`), so this stays instant.
+  const latest = await latestRelease(false, (() => Promise.reject(new Error('offline'))) as unknown as typeof fetch).catch(() => undefined);
+  const update = latest && newer(latest.version, VERSION) ? latest : undefined;
+  print(json, { version: VERSION, standalone: isStandalone(), update: update?.tag }, () => `${TOOL} ${VERSION}${update ? `\n${update.tag} is out: run ${TOOL} update` : ''}`);
+  return 0;
+}
+
+async function cmdUpdate(args: Args, json: boolean): Promise<number> {
+  const check = has(args, '--check');
+  const quiet = has(args, '--quiet');
+  const latest = await latestRelease(!check);
+  if (!latest) {
+    if (!quiet) print(json, { error: latest === null ? 'none' : 'unreachable' }, () => (latest === null ? `No release has a standalone ${TOOL} yet; ${TOOL} ${VERSION} is what there is.` : 'Couldn\'t reach GitHub to check for a newer version. Try again later.'));
+    return check || latest === null ? 0 : 1;
+  }
+  const isNewer = newer(latest.version, VERSION);
+  if (check) {
+    if (isNewer || !quiet) print(json, { version: VERSION, latest: latest.tag, update: isNewer }, () => (isNewer ? latest.tag : `${TOOL} ${VERSION} is the newest.`));
+    return isNewer ? 10 : 0;
+  }
+  if (!isNewer) {
+    print(json, { version: VERSION, latest: latest.tag, updated: false }, () => `${TOOL} ${VERSION} is the newest (${latest.tag}).`);
+    return 0;
+  }
+  if (!isStandalone()) {
+    print(json, { version: VERSION, latest: latest.tag, updated: false }, () =>
+      [`${latest.tag} is out (${latest.url}).`, 'This copy runs on Node.js: update it the way you installed it (VS Code updates the extension; or download nucleus.js or ncdev from the release page).'].join('\n'),
+    );
+    return 0;
+  }
+  const target = process.execPath;
+  await installRelease(latest, target);
+  print(json, { version: VERSION, latest: latest.tag, updated: true, path: target }, () =>
+    [`Updated ${TOOL} ${VERSION} → ${latest.tag} (${target}).`, has(args, '--from-notepad++') ? 'Notepad++ uses it for the next handler you open.' : '', `What's new: ${latest.url}`].filter(Boolean).join('\n'),
+  );
+  return 0;
+}
+
 function cmdInitAgent(args: Args, json: boolean): number {
   const target = path.resolve(args.positional[0] ?? '.');
-  const skillDir = findSkillDir(__dirname);
+  const skillDir = findSkillDir(__dirname) ?? builtInSkill();
   if (!skillDir) throw new Error('Could not find the nucleus-handler skill files next to this tool.');
   if (path.resolve(skillDir).startsWith(path.join(target, '.claude', 'skills'))) throw new Error('Already installed here.');
   const r = installAgentKit(skillDir, target);
@@ -494,7 +639,9 @@ function cmdInitAgent(args: Args, json: boolean): number {
 main(process.argv.slice(2)).then(
   (code) => (process.exitCode = code),
   (e) => {
-    console.error(e instanceof Usage ? `${e.message}\n\nRun "nucleus --help" for usage.` : `Error: ${e?.message ?? e}`);
+    // A file that isn't there, or a folder where a file was expected: say so plainly, not with Node's error codes.
+    const fileError = e?.code === 'ENOENT' ? `No such file or folder: ${e.path}` : e?.code === 'EISDIR' ? `${e.path} is a folder: give a file.` : undefined;
+    console.error(e instanceof Usage ? `${e.message}\n\nRun "${TOOL} --help" for usage.` : `Error: ${fileError ?? e?.message ?? e}`);
     process.exitCode = e instanceof Usage ? 2 : 1;
   },
 );

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as gf from '../core/gamefolder';
+import { tmpdir } from './tmp';
 
 const mk = (name, paths) => {
   const files = [], dirs = new Set();
@@ -44,6 +45,14 @@ test('wrong ExecutableName: warning with did-you-mean and a fix', () => {
   // Engine facts are in the folder summary, not problems.
   assert.ok(!ps.some((x) => x.title.startsWith('Game folder:')));
   assert.deepEqual(gf.engineFacts(unreal).map((f) => f.id).sort(), ['steam', 'unreal', 'xinput']);
+});
+
+test('wrong ExecutableName, not a near spelling: the one exe with the same start is offered (Unreal -Shipping)', () => {
+  const h = 'Game.ExecutableName = "ShooterGame-Win64.exe";\n';
+  const p = gf.checkAgainstFolder(h, unreal).find((x) => x.title === 'The executable is not in the game folder');
+  assert.equal(p.fix?.text, 'ShooterGame-Win64-Shipping.exe');
+  const none = gf.checkAgainstFolder('Game.ExecutableName = "Other.exe";\n', unreal).find((x) => x.title === 'The executable is not in the game folder');
+  assert.ok(!none.fix || !/Other/.test(none.fix.text), 'no guess when nothing matches and there are several exes');
 });
 
 test('exe in a subfolder without BinariesFolder: info + fix; with it: root is the picked folder', () => {
@@ -170,12 +179,12 @@ test('Unity facts and the folder summary', () => {
   assert.equal(gf.engineFacts(mk('X', ['X.exe', 'Game_Data/readme.txt'])).length, 0);
 });
 
-test('readGameFolder: files and folders from disk, relative with "/", skipping .git', async () => {
+test('readGameFolder: files and folders from disk, relative with "/", skipping .git', async (t) => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
   const { readGameFolder } = await import('../gamefolders');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-game-'));
+  const dir = tmpdir(t, 'nucleus-game-');
   fs.mkdirSync(path.join(dir, 'Binaries', 'Win64'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.git'));
   fs.writeFileSync(path.join(dir, 'Binaries', 'Win64', 'Game.exe'), 'xx');

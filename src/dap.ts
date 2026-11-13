@@ -1,12 +1,16 @@
 // A Debug Adapter (DAP) for handlers (splitscreenme-vscode#11): VS Code's own Run and Debug view, breakpoints, stepping,
 // Variables, Watch and the Debug Console, over the debugger the workbench and `nucleus debug` use (core/debug.ts).
-// The handler runs once, in the sandbox (traceIsolated), recording every statement; stepping then moves through that
+// The handler runs once, in the sandbox (in the simulator's worker thread, src/simworker.ts, so a looping handler
+// never blocks the editor), recording every statement; stepping then moves through that
 // recording, so Back and Reverse Continue work too. Nothing here imports `vscode`: extension.ts wraps it as an inline
 // adapter, and another editor could run it over stdio.
 import fs from 'node:fs';
+import path from 'node:path';
 import { describeStep, evaluateWatch, callsBefore, nextStop, type Breakpoint, type StepMode, type Trace, type ValueView } from './core/debug';
 import { EVERY_KEYBOARD } from './core/sim';
-import { pluginsFor, traceIsolated } from './sandbox';
+import { pluginsFor } from './sandbox';
+import { simWorker } from './simworker';
+import type { TraceOptions } from './core/debug';
 
 /** launch.json for `"type": "nucleus"`. */
 export interface LaunchArgs {
@@ -32,6 +36,8 @@ export class HandlerDebugSession {
   private trace: Trace | undefined;
   private at = -1;
   private program = '';
+  /** The text being debugged (launch's `source`, or the file as it was at launch). */
+  private launched: string | undefined;
   private breakpoints: Breakpoint[] = [];
   private stopOnErrors = true;
   private stopOnEntry = false;
@@ -39,7 +45,14 @@ export class HandlerDebugSession {
   private refs = new Map<number, Record<string, ValueView>>();
   private nextRef = 1000;
 
-  constructor(private readonly send: (msg: unknown) => void) {}
+  /** While a request is answered asynchronously (launch), the ones after it wait their turn. */
+  private busy: Promise<void> | undefined;
+
+  /** `tracer`: how to run the handler; the simulator's worker by default (tests may pass the synchronous traceIsolated). */
+  constructor(
+    private readonly send: (msg: unknown) => void,
+    private readonly tracer: (src: string, opts: TraceOptions) => Trace | Promise<Trace> = (src, opts) => simWorker().trace(src, opts),
+  ) {}
 
   private respond(req: Msg, body: unknown = {}, error?: string) {
     this.send({ seq: this.seq++, type: 'response', request_seq: req.seq, command: req.command, success: !error, ...(error ? { message: error } : {}), body });
@@ -51,15 +64,30 @@ export class HandlerDebugSession {
     this.event('output', { category, output: text.endsWith('\n') ? text : `${text}\n` });
   }
 
-  handle(req: Msg) {
+  /** Handles one request, in order: returns a promise while an earlier or this request is still being answered. */
+  handle(req: Msg): void | Promise<void> {
+    if (this.busy) return this.queue(this.busy.then(() => this.handleNow(req)));
+    return this.handleNow(req);
+  }
+
+  private queue(p: Promise<void>): Promise<void> {
+    const mine = (this.busy = p.finally(() => {
+      if (this.busy === mine) this.busy = undefined;
+    }));
+    return mine;
+  }
+
+  private handleNow(req: Msg): void | Promise<void> {
+    const fail = (e: any) => this.respond(req, {}, String(e?.message ?? e));
     try {
-      this.dispatch(req);
+      const r = this.dispatch(req);
+      if (r instanceof Promise) return this.queue(r.catch(fail));
     } catch (e: any) {
-      this.respond(req, {}, String(e?.message ?? e));
+      fail(e);
     }
   }
 
-  private dispatch(req: Msg) {
+  private dispatch(req: Msg): void | Promise<void> {
     const a = req.arguments ?? {};
     switch (req.command) {
       case 'initialize':
@@ -79,19 +107,32 @@ export class HandlerDebugSession {
         this.program = args.program;
         this.stopOnEntry = !!args.stopOnEntry;
         const src = (args.source ?? fs.readFileSync(args.program, 'utf8')).replace(/^﻿/, '');
+        this.launched = src;
         const players = Math.min(16, Math.max(1, Number(args.players ?? 2) || 2));
         const res = /^(\d+)x(\d+)$/.exec(args.resolution ?? '1920x1080') ?? ['', '1920', '1080'];
         const kb = args.keyboard ?? 1;
         const keyboardPlayer = kb === 'none' ? -1 : kb === 'all' ? EVERY_KEYBOARD : Math.min(players, Math.max(1, Number(kb) || 1)) - 1;
-        this.trace = traceIsolated(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(args.program) });
-        this.output(`Simulated: the handler runs the way Nucleus runs it (${players} player${players === 1 ? '' : 's'}, ${res[1]}×${res[2]}), but files, the registry and the game are pretend. ${this.trace.steps.length} statements recorded.`);
-        if (this.trace.truncated) this.output(`Not every statement was recorded${this.trace.truncatedPhases.length ? `: ${this.trace.truncatedPhases.join('; ')}` : ''}.`, 'important');
-        return this.respond(req);
+        const launched = (trace: Trace) => {
+          this.trace = trace;
+          this.output(`Simulated: the handler runs the way Nucleus runs it (${players} player${players === 1 ? '' : 's'}, ${res[1]}×${res[2]}), but files, the registry and the game are pretend. ${this.trace.steps.length} statements recorded.`);
+          if (this.trace.truncated) this.output(`Not every statement was recorded${this.trace.truncatedPhases.length ? `: ${this.trace.truncatedPhases.join('; ')}` : ''}.`, 'important');
+          this.respond(req);
+        };
+        const t = this.tracer(src, { players, width: Number(res[1]), height: Number(res[2]), keyboardPlayer, plugins: pluginsFor(args.program) });
+        if (t instanceof Promise) return t.then(launched);
+        return launched(t);
       }
       case 'setBreakpoints': {
         const bps: { line: number; condition?: string }[] = a.breakpoints ?? [];
         this.breakpoints = bps.map((b) => ({ line: b.line, ...(b.condition ? { condition: b.condition } : {}) }));
-        return this.respond(req, { breakpoints: bps.map((b) => ({ verified: true, line: b.line })) });
+        // A line past the end of the file can never be hit: say so instead of showing it as set.
+        let lines = Infinity;
+        // The source being debugged when it's this file (it may be unsaved); else the file on disk.
+        const same = this.launched !== undefined && a.source?.path && path.resolve(a.source.path) === path.resolve(this.program);
+        try { if (same) lines = this.launched!.split('\n').length; else if (a.source?.path) lines = fs.readFileSync(a.source.path, 'utf8').split('\n').length; } catch { /* unknown: trust the editor */ }
+        return this.respond(req, {
+          breakpoints: bps.map((b) => (b.line >= 1 && b.line <= lines ? { verified: true, line: b.line } : { verified: false, line: b.line, message: `The file has ${lines} lines.` })),
+        });
       }
       case 'setExceptionBreakpoints':
         this.stopOnErrors = (a.filters ?? []).includes('errors');

@@ -6,7 +6,12 @@
 // (src/sandbox.ts). Logs go to stderr; stdout carries only protocol messages.
 import { fileURLToPath } from 'node:url';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
-import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt } from './core/features';
+import { definitionAt, referencesAt, renameEdits, renameTargetAt } from './core/definition';
+import { workbenchLinkFor } from './workbenchlink';
+import { rangeFormatEdits } from './core/features';
+import { docsPageUrl } from './core/docspage';
+import { CodeActionEntry, CompletionEntry, documentSymbols, SymbolEntry, CompletionKind, completionsAt, explainLine, fixAllCodeAction, formatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt } from './core/features';
+import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { EVERY_KEYBOARD } from './core/sim';
 import { lintPluginsFor } from './plugins';
 import { checkPackage } from './core/pkgcheck';
@@ -17,8 +22,14 @@ import { folderAt } from './gamefolder-node';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { publishedNow } from './published';
-import { pluginsFor, simulateIsolated } from './sandbox';
+import { setHubTool } from './hubcache';
+import { pluginsFor } from './sandbox';
+import { simWorker, isCancelled } from './simworker';
 import { formatSimulation } from './simformat';
+import { buildPackage } from './core/pkg';
+import { installHandler } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleusSync, testInNucleus } from './nucleusrun';
+import { FEATURES, Feature, renderHandler, toHandlerFileName, validateHandlerInfo } from './core/templates';
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : '0.0.0';
@@ -34,16 +45,20 @@ export interface LspSettings {
   completion: { enable: boolean };
   /** The game's install folder per handler file name, e.g. { "MyGame.js": "C:\\Games\\MyGame" }: checks against the real files. */
   gameFolders: Record<string, string>;
+  /** Formatting style (core/format.ts): quotes "double" (default) | "single" | "keep", semicolons "add" (default) | "keep". */
+  format: { quotes: 'double' | 'single' | 'keep'; semicolons: 'add' | 'keep' };
+  /** The Nucleus Co-op folder (with NucleusCoop.exe and `handlers`), for Install. */
+  nucleusPath?: string;
 }
-const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {} };
+const DEFAULTS: LspSettings = { detection: 'auto', handlerGlobs: [], lint: { enable: true, rules: {}, compareWithHub: true, workspace: true }, completion: { enable: true }, gameFolders: {}, format: { quotes: 'double', semicolons: 'add' } };
 
-export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll' } as const;
+export const COMMANDS = { tryIt: 'nucleus.tryIt', fixAll: 'nucleus.fixAll', workbenchLink: 'nucleus.workbenchLink', package: 'nucleus.package', install: 'nucleus.install', newHandler: 'nucleus.newHandler', testInNucleus: 'nucleus.testInNucleus', explainLine: 'nucleus.explainLine' } as const;
 const FIX_ALL_KIND = 'source.fixAll.nucleus';
 
 // LSP enums (numbers in the protocol)
 const SEVERITY: Record<Severity, number> = { error: 1, warning: 2, info: 3, hint: 4 };
 const TAG = { unnecessary: 1, deprecated: 2 } as const;
-const KIND: Record<CompletionKind, number> = { method: 2, field: 5, variable: 6, class: 7, module: 9, property: 10, value: 12, enum: 13, snippet: 15, enumMember: 20, constant: 21 };
+const KIND: Record<CompletionKind, number> = { method: 2, function: 3, keyword: 14, field: 5, variable: 6, class: 7, module: 9, property: 10, value: 12, enum: 13, snippet: 15, enumMember: 20, constant: 21 };
 
 interface Position {
   line: number;
@@ -105,7 +120,8 @@ export function snippetToPlain(s: string): string {
   return s
     .replace(/\$\{\d+\|([^,|}]*)[^}]*\|\}/g, '$1')
     .replace(/\$\{\d+:([^}]*)\}/g, '$1')
-    .replace(/\$\{?\d+\}?/g, '');
+    .replace(/\$\{?\d+\}?/g, '')
+    .replace(/\\([\\$}])/g, '$1');
 }
 
 type Send = (msg: unknown) => void;
@@ -117,10 +133,16 @@ export class Server {
   private settings: LspSettings = structuredClone(DEFAULTS);
   private timers = new Map<string, NodeJS.Timeout>();
   private snippets = true;
+  private docsLink?: (path: string) => string;
   private shutdown = false;
   private nextId = 1;
   private roots: string[] = [];
   private canWatch = false;
+  private relativeWatch = false;
+  /** <Name>/ folders of the handlers seen so far: their files are watched for the package checks. */
+  private handlerDirs = new Set<string>();
+  private watching: { id: string; key: string } | undefined;
+  private watchTimer: NodeJS.Timeout | undefined;
   /** Package files that have problems published, per handler, so they can be cleared. */
   private pkgUris = new Map<string, Set<string>>();
   constructor(private send: Send, private log: (s: string) => void = (s) => process.stderr.write(`[nucleus lsp] ${s}\n`)) {}
@@ -144,7 +166,14 @@ export class Server {
     if (typeof l.compareWithHub === 'boolean') d.lint.compareWithHub = l.compareWithHub;
     if (typeof l.workspace === 'boolean') d.lint.workspace = l.workspace;
     if (typeof s.completion?.enable === 'boolean') d.completion.enable = s.completion.enable;
+    if (['double', 'single', 'keep'].includes(s.format?.quotes)) d.format.quotes = s.format.quotes;
+    if (['add', 'keep'].includes(s.format?.semicolons)) d.format.semicolons = s.format.semicolons;
+    if (typeof s.nucleusPath === 'string') d.nucleusPath = s.nucleusPath || undefined;
     if (s.gameFolders && typeof s.gameFolders === 'object') d.gameFolders = Object.fromEntries(Object.entries(s.gameFolders).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
+  }
+
+  private formatStyle(o: any) {
+    return { insertSpaces: o?.insertSpaces !== false, tabSize: typeof o?.tabSize === 'number' ? o.tabSize : 4, ...this.settings.format };
   }
 
   private isHandler(d: Doc): boolean {
@@ -169,6 +198,7 @@ export class Server {
       this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       return;
     }
+    this.watchFolderOf(pathOf(uri));
     const lines = linesOf(d);
     const diagnostics = this.lintDoc(d, closed ? undefined : () => this.schedule(uri, 0)).map((x) => toLspDiagnostic(lines, x));
     // Package checks on the handler's folder: the ones about the handler's own text (a file it uses that isn't there).
@@ -218,19 +248,37 @@ export class Server {
     );
   }
 
-  /** Handle one message; returns the response for requests (undefined for notifications). */
-  handle(msg: any): unknown | undefined {
+  /** Requests still being answered (Try it runs in the simulator's worker), by id, so $/cancelRequest can stop them. */
+  private running = new Map<string | number, AbortController>();
+  private current: AbortSignal | undefined; // the signal of the request being dispatched
+
+  /** Handle one message; returns the response for requests (undefined for notifications), or a promise of it
+   *  for the few requests answered off the main thread. */
+  handle(msg: any): unknown | Promise<unknown> | undefined {
     const { id, method, params } = msg ?? {};
     if (method === undefined) return undefined; // a response to one of our requests (applyEdit)
     const isRequest = id !== undefined && id !== null;
-    try {
-      const result = this.dispatch(method, params ?? {});
+    const failed = (e: any) => {
+      if (isCancelled(e)) return isRequest ? { jsonrpc: '2.0', id, error: { code: -32800, message: 'Request cancelled' } } : undefined;
+      this.log(`${method} failed: ${e?.stack ?? e}`);
+      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+    };
+    const answer = (result: unknown) => {
       if (!isRequest) return undefined;
       if (result === NOT_FOUND) return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
       return { jsonrpc: '2.0', id, result: result ?? null };
+    };
+    const ac = isRequest ? new AbortController() : undefined;
+    this.current = ac?.signal;
+    try {
+      const result = this.dispatch(method, params ?? {});
+      if (!(result instanceof Promise)) return answer(result);
+      this.running.set(id, ac!);
+      return result.then(answer, failed).finally(() => this.running.delete(id));
     } catch (e: any) {
-      this.log(`${method} failed: ${e?.stack ?? e}`);
-      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message ?? e) } } : undefined;
+      return failed(e);
+    } finally {
+      this.current = undefined;
     }
   }
 
@@ -244,19 +292,34 @@ export class Server {
       case 'initialize': {
         this.applySettings(p.initializationOptions);
         this.snippets = p.capabilities?.textDocument?.completion?.completionItem?.snippetSupport !== false;
+        // API names in hovers, hints and suggestion docs link to their docs pages on the site (docs/<name>/), tagged with the
+        // editor's name for the anonymous visit counts (clientInfo: "Neovim", "Zed"…; "lsp" when it says none).
+        const ref = String(p.clientInfo?.name ?? 'lsp').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'lsp';
+        this.docsLink = (path: string) => docsPageUrl(path, ref);
+        linkRef = ref;
+        // Hub requests (the guid-changed check) name the server and the editor, not the person.
+        setHubTool(p.clientInfo?.name ? `ncdev-lsp/${ref}` : 'ncdev-lsp');
         this.roots = (Array.isArray(p.workspaceFolders) && p.workspaceFolders.length ? p.workspaceFolders.map((f: any) => f.uri) : p.rootUri ? [p.rootUri] : []).map((u: string) => pathOf(u)).filter((x: string | undefined): x is string => !!x);
         this.canWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.dynamicRegistration;
+        this.relativeWatch = !!p.capabilities?.workspace?.didChangeWatchedFiles?.relativePatternSupport;
         return {
           capabilities: {
             positionEncoding: 'utf-16',
             textDocumentSync: { openClose: true, change: 1 /* full */ },
             hoverProvider: true,
             documentSymbolProvider: true,
+            definitionProvider: true,
+            referencesProvider: true,
+            renameProvider: { prepareProvider: true },
+            documentHighlightProvider: true,
             completionProvider: { triggerCharacters: ['.', '=', ' ', '[', ',', '"'], resolveProvider: false },
             signatureHelpProvider: { triggerCharacters: ['(', ','] },
             codeActionProvider: { codeActionKinds: ['quickfix', FIX_ALL_KIND] },
             documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
+            documentOnTypeFormattingProvider: { firstTriggerCharacter: "}", moreTriggerCharacter: [";", "\n"] },
             inlayHintProvider: true,
+            semanticTokensProvider: { legend: { tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS] }, full: true },
             executeCommandProvider: { commands: Object.values(COMMANDS) },
           },
           serverInfo: { name: 'nucleus', version: VERSION },
@@ -264,13 +327,15 @@ export class Server {
       }
       case 'initialized':
         // Every handler in the workspace, opened or not (like VS Code's Lint All Handlers), and on-disk changes.
-        if (this.canWatch) this.request('client/registerCapability', { registrations: [{ id: 'nucleus-files', method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers: [{ globPattern: '**/*' }] } }] });
+        this.updateWatchers(0);
         setTimeout(() => this.scanWorkspace(), 0);
         return undefined;
       case 'workspace/didChangeWatchedFiles':
         for (const c of p.changes ?? []) this.fileChanged(String(c.uri), c.type);
         return undefined;
       case '$/cancelRequest':
+        this.running.get(p.id)?.abort();
+        return undefined;
       case '$/setTrace':
         return undefined;
       case 'shutdown':
@@ -312,6 +377,41 @@ export class Server {
       case 'textDocument/didSave':
         return undefined;
 
+      case 'textDocument/definition': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const d = definitionAt(doc.text, l.offset(p.position));
+        return d ? { uri: doc.uri, range: l.range(d) } : null;
+      }
+      case 'textDocument/references': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const at = l.offset(p.position);
+        const refs = referencesAt(doc.text, at);
+        const decl = definitionAt(doc.text, at);
+        return refs.filter((r) => p.context?.includeDeclaration !== false || !decl || r.start !== decl.start).map((r) => ({ uri: doc.uri, range: l.range(r) }));
+      }
+      case 'textDocument/documentHighlight': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const at = l.offset(p.position);
+        const decl = definitionAt(doc.text, at);
+        // 3 = write (the declaration), 2 = read
+        return referencesAt(doc.text, at).map((r) => ({ range: l.range(r), kind: decl && r.start === decl.start ? 3 : 2 }));
+      }
+      case 'textDocument/prepareRename': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const span = renameTargetAt(doc.text, l.offset(p.position));
+        return span ? { range: l.range(span), placeholder: doc.text.slice(span.start, span.end) } : null;
+      }
+      case 'textDocument/rename': {
+        if (!this.featuresOn(doc)) return null;
+        const l = linesOf(doc);
+        const r = renameEdits(doc.text, l.offset(p.position), String(p.newName ?? ''));
+        if ('error' in r) throw new Error(r.error);
+        return { changes: { [doc.uri]: r.edits.map((e) => ({ range: l.range(e), newText: e.text })) } };
+      }
       case 'textDocument/documentSymbol': {
         if (!this.featuresOn(doc)) return [];
         const l = linesOf(doc);
@@ -322,7 +422,7 @@ export class Server {
       case 'textDocument/hover': {
         if (!this.featuresOn(doc)) return null;
         const l = linesOf(doc);
-        const h = hoverAt(doc.text, l.offset(p.position));
+        const h = hoverAt(doc.text, l.offset(p.position), { docsLink: this.docsLink });
         return h ? { contents: { kind: 'markdown', value: h.markdown }, range: l.range(h.range) } : null;
       }
       case 'textDocument/completion': {
@@ -348,18 +448,34 @@ export class Server {
               })),
           };
         }
-        const items = completionsAt(doc.text, at);
+        const items = completionsAt(doc.text, at, { explicit: p.context?.triggerKind !== 2, docsLink: this.docsLink });
         return items ? { isIncomplete: false, items: items.map((e) => this.toCompletionItem(l, e)) } : null;
       }
       case 'textDocument/signatureHelp': {
         if (!this.featuresOn(doc)) return null;
-        const s = signatureHelpAt(doc.text, linesOf(doc).offset(p.position));
+        const s = signatureHelpAt(doc.text, linesOf(doc).offset(p.position), { docsLink: this.docsLink });
         if (!s) return null;
         return {
-          signatures: s.signatures.map((x) => ({ label: x.label, documentation: x.documentation === undefined ? undefined : { kind: 'markdown', value: x.documentation }, parameters: x.parameters.map((label) => ({ label })) })),
+          signatures: s.signatures.map((x) => ({ label: x.label, documentation: x.documentation === undefined ? undefined : { kind: 'markdown', value: x.documentation }, parameters: x.parameters.map((label, i) => ({ label, ...(x.parameterDocs?.[i] ? { documentation: { kind: 'markdown', value: x.parameterDocs[i] } } : {}) })) })),
           activeSignature: s.activeSignature,
           activeParameter: s.activeParameter,
         };
+      }
+      case 'textDocument/semanticTokens/full': {
+        if (!this.featuresOn(doc)) return { data: [] };
+        // Relative positions, five numbers a token (LSP 3.16): line delta, start (relative on the same line), length,
+        // type index, modifier bits. Tokens never span lines here (a name).
+        const l = linesOf(doc);
+        const data: number[] = [];
+        let line = 0, char = 0;
+        for (const t of semanticTokens(doc.text)) {
+          const s = l.position(t.start), e = l.position(t.end);
+          if (e.line !== s.line) continue;
+          data.push(s.line - line, s.line === line ? s.character - char : s.character, e.character - s.character, SEMANTIC_TOKEN_TYPES.indexOf(t.type), t.modifiers.reduce((m, x) => m | (1 << SEMANTIC_TOKEN_MODIFIERS.indexOf(x)), 0));
+          line = s.line;
+          char = s.character;
+        }
+        return { data };
       }
       case 'textDocument/inlayHint': {
         if (!this.featuresOn(doc)) return [];
@@ -370,9 +486,27 @@ export class Server {
           .filter((h) => h.offset >= from && h.offset <= to)
           .map((h) => ({ position: l.position(h.offset), label: h.label, paddingLeft: true, tooltip: { kind: 'markdown', value: h.tooltip } }));
       }
+      case 'textDocument/rangeFormatting':
+      case 'textDocument/onTypeFormatting': {
+        if (!doc || !this.isHandler(doc)) return null;
+        const l = linesOf(doc);
+        let from: number, to: number;
+        if (method === 'textDocument/rangeFormatting') (from = l.offset(p.range.start)), (to = l.offset(p.range.end));
+        else {
+          // The line just finished: after Enter, the one above.
+          const line = p.ch === '\n' ? Math.max(0, p.position.line - 1) : p.position.line;
+          from = to = l.offset({ line, character: 0 });
+        }
+        const r = rangeFormatEdits(doc.text, from, to, this.formatStyle(p.options));
+        if ('error' in r) {
+          if (method === 'textDocument/rangeFormatting') this.notify('window/showMessage', { type: 2, message: `Nucleus: ${r.error}` });
+          return [];
+        }
+        return r.edits.map((e) => ({ range: l.range(e), newText: e.text }));
+      }
       case 'textDocument/formatting': {
         if (!doc || !this.isHandler(doc)) return null;
-        const r = formatEdits(doc.text, { insertSpaces: p.options?.insertSpaces !== false, tabSize: typeof p.options?.tabSize === 'number' ? p.options.tabSize : 4 });
+        const r = formatEdits(doc.text, this.formatStyle(p.options));
         if ('error' in r) {
           // Refuses rather than risk changing what the code does: say why, change nothing.
           this.notify('window/showMessage', { type: 2, message: `Nucleus: ${r.error}` });
@@ -390,6 +524,39 @@ export class Server {
     return NOT_FOUND;
   }
 
+/** In a folder the workspace scan skips (node_modules, dot folders such as .git), relative to its workspace folder. */
+  private skipped(file: string): boolean {
+    const root = this.roots.find((r) => file.startsWith(r + path.sep));
+    return !!root && path.relative(root, file).split(/[\\/]/).slice(0, -1).some(skipName);
+  }
+
+  /** A handler's <Name>/ folder joins the watched ones. */
+  private watchFolderOf(file: string | undefined) {
+    if (!file || !this.canWatch || !/\.js$/i.test(file) || this.skipped(file)) return;
+    const dir = file.slice(0, -3);
+    if (this.handlerDirs.has(dir) || this.handlerDirs.size >= MAX_WATCHED_FOLDERS) return;
+    this.handlerDirs.add(dir);
+    this.updateWatchers();
+  }
+
+  /** What the client watches for us: handler files (`**\/*.js`) and the <Name>/ folders of known handlers, not
+   *  every file in the workspace (node_modules, .git and build output would flood the server). Re-registered,
+   *  at most every half second, when a handler folder is added. */
+  private updateWatchers(delay = 500) {
+    if (!this.canWatch) return;
+    clearTimeout(this.watchTimer);
+    this.watchTimer = setTimeout(() => {
+      const watchers = watchersFor([...this.handlerDirs].sort(), this.relativeWatch);
+      const key = JSON.stringify(watchers);
+      if (this.watching?.key === key || this.shutdown) return;
+      if (this.watching) this.request('client/unregisterCapability', { unregisterations: [{ id: this.watching.id, method: 'workspace/didChangeWatchedFiles' }] });
+      const id = `nucleus-files-${this.nextId}`;
+      this.request('client/registerCapability', { registrations: [{ id, method: 'workspace/didChangeWatchedFiles', registerOptions: { watchers } }] });
+      this.watching = { id, key };
+    }, delay);
+    this.watchTimer.unref?.();
+  }
+
 /** Handlers in the workspace folders (skipping node_modules and dot folders), problems published for the closed ones. */
   private scanWorkspace() {
     if (!this.settings.lint.enable || !this.settings.lint.workspace) return;
@@ -404,7 +571,7 @@ export class Server {
       }
       for (const e of entries) {
         if (count >= 2000 || dirs > 3000 || this.shutdown) return; // a whole drive opened: stop early
-        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        if (skipName(e.name)) continue;
         const abs = path.join(dir, e.name);
         if (e.isDirectory()) {
           dirs++;
@@ -444,7 +611,7 @@ export class Server {
   /** A file changed on disk: re-check it if it's a closed handler, or the handler whose folder it is in. */
   private fileChanged(uri: string, type: number) {
     const file = pathOf(uri);
-    if (!file) return;
+    if (!file || this.skipped(file)) return;
     if (/\.js$/i.test(file) && !this.docs.has(uri)) {
       if (type === 3) this.notify('textDocument/publishDiagnostics', { uri, diagnostics: [] });
       else this.fromDisk(uri);
@@ -480,6 +647,7 @@ export class Server {
       ...(e.documentation !== undefined ? { documentation: { kind: 'markdown', value: e.documentation } } : {}),
       ...(e.range ? { textEdit: { range: l.range(e.range), newText: text } } : { insertText: text }),
       insertTextFormat: snippet ? 2 : 1,
+      ...(text.includes('\n') ? { insertTextMode: 2 } : {}), // later lines get the line's indentation
       ...(e.filterText ? { filterText: e.filterText } : {}),
       ...(e.sortText ? { sortText: e.sortText } : {}),
       ...(e.preselect ? { preselect: true } : {}),
@@ -498,9 +666,16 @@ export class Server {
       ...(a.preferred !== undefined ? { isPreferred: a.preferred } : {}),
       edit: { changes: { [doc.uri]: a.edits.map((e) => ({ range: l.range(e), newText: e.text })) } },
     });
+    // Source actions (an editor's "Source Action…" menu, or every action when it asks for no kind): the handler's
+    // .nc package for the Hub, and installing it into Nucleus Co-op.
+    const source: unknown[] = [];
+    if (pathOf(doc.uri) && (!only || only.some((k) => k === 'source' || k.startsWith('source.nucleus')))) {
+      source.push({ title: 'Nucleus: Package as .nc (for the Hub)', kind: 'source.nucleus.package', command: { title: 'Package', command: COMMANDS.package, arguments: [{ uri: doc.uri }] } });
+      if (this.settings.nucleusPath) source.push({ title: 'Nucleus: Install to Nucleus Co-op', kind: 'source.nucleus.install', command: { title: 'Install', command: COMMANDS.install, arguments: [{ uri: doc.uri }] } });
+    }
     if (wantsFixAll && !only!.includes('quickfix')) {
       const a = fixAllCodeAction(doc.text, this.settings.lint.rules);
-      return a ? [toAction(a)] : [];
+      return [...(a ? [toAction(a)] : []), ...source].filter((x: any) => only!.some((k) => x.kind === k || x.kind.startsWith(`${k}.`)));
     }
     // The client sends back the diagnostics it shows; match them to a fresh lint of the current text.
     const current = this.lintDoc(doc);
@@ -512,12 +687,15 @@ export class Server {
       const match = current.find((x) => x.rule === cd.code && x.message === cd.message && x.start === start && Math.max(x.end, x.start) === end) ?? current.find((x) => x.rule === cd.code && x.start === start);
       if (match && !pairs.some(([m]) => m === match)) pairs.push([match, cd]);
     }
-    const actions = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    const actions: any[] = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
+    actions.push(...source);
     // Game-folder problems carry their fix (the exe's real name, BinariesFolder…) in `data`.
     for (const cd of p.context?.diagnostics ?? []) {
       const f = cd?.code === 'game-folder' ? cd.data?.fix : undefined;
       if (f && typeof f.start === 'number') actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: [{ range: l.range({ start: f.start, end: f.end }), newText: f.text }] } } } as any);
     }
+    // Explain this line: on request from the actions menu, never on screen by itself.
+    if (!only && p.range?.start && (doc.text.split('\n')[p.range.start.line] ?? '').trim()) actions.push({ title: 'Nucleus: Explain this line', command: { title: 'Explain this line', command: COMMANDS.explainLine, arguments: [{ uri: doc.uri, line: p.range.start.line }] } });
     if (!only && !actions.some((a) => a.kind === FIX_ALL_KIND)) {
       const all = fixAllCodeAction(doc.text, this.settings.lint.rules);
       if (all) actions.push(toAction(all));
@@ -537,8 +715,82 @@ export class Server {
         // keyboardPlayer: 1-based player, 'none' (or 0) for nobody, 'all' (or -1) for each player their own.
         const kb = a.keyboardPlayer === 'all' || a.keyboardPlayer === -1 ? EVERY_KEYBOARD : a.keyboardPlayer === 'none' || a.keyboardPlayer === 0 ? -1 : Math.min(Math.max(1, Number(a.keyboardPlayer ?? 1)), players) - 1;
         const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
-        const r = simulateIsolated(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined });
-        return formatSimulation(r, kb);
+        // In the simulator's worker: the server keeps answering (completion, hover) while it runs.
+        return simWorker()
+          .simulate(text, { players, width: a.width ?? 1920, height: a.height ?? 1080, keyboardPlayer: kb, plugins: file ? pluginsFor(file) : undefined }, { signal: this.current })
+          .then((r) => formatSimulation(r, kb));
+      }
+      case COMMANDS.workbenchLink: {
+        // The browser workbench with this handler open (a share link); `ref` says which editor asked.
+        const ref = typeof (args[0] as any)?.ref === 'string' && /^[\w.-]{1,40}$/.test((args[0] as any).ref) ? (args[0] as any).ref : 'lsp';
+        return workbenchLinkFor(doc?.text, ref);
+      }
+      case COMMANDS.package: {
+        // The .nc package for the Hub: handler.js + the <Name>/ folder (core/pkg.ts), next to the handler.
+        const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
+        if (!file) throw new Error('nucleus.package: give { uri } of a handler file.');
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        if (errors && !(args[0] as any)?.force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        const out = typeof (args[0] as any)?.out === 'string' ? (args[0] as any).out : file.replace(/\.js$/i, '.nc');
+        const { zip, assetCount } = buildPackage(file);
+        fs.writeFileSync(out, zip);
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: wrote ${path.basename(out)} (handler.js + ${assetCount} file(s) from its folder). Upload it at https://hub.splitscreen.me/` });
+        return { file: out, assetCount };
+      }
+      case COMMANDS.install: {
+        const file = typeof a.uri === 'string' ? pathOf(a.uri) : undefined;
+        const nucleus = typeof (args[0] as any)?.nucleusPath === 'string' ? (args[0] as any).nucleusPath : this.settings.nucleusPath;
+        if (!file) throw new Error('nucleus.install: give { uri } of a handler file.');
+        if (!nucleus) throw new Error('Set nucleus.nucleusPath (the Nucleus Co-op folder, with NucleusCoop.exe) first.');
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        const force = !!(args[0] as any)?.force;
+        if (errors && !force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        const r = installHandler(file, nucleus, { overwrite: force || (args[0] as any)?.overwrite !== false });
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: installed ${path.basename(r.dest)}${r.assets ? ` and ${r.assets} file(s)` : ''}. Restart Nucleus Co-op (or re-add the game) to pick it up.` });
+        return { file: r.dest, assetCount: r.assets };
+      }
+      case COMMANDS.testInNucleus: {
+        // { uri, restart?, debugLog? }: install, then start Nucleus Co-op (Windows) with the handler's game selected.
+        const o = (args[0] ?? {}) as { uri?: string; restart?: boolean; debugLog?: boolean; nucleusPath?: string; force?: boolean };
+        const file = typeof o.uri === 'string' ? pathOf(o.uri) : undefined;
+        const nucleus = o.nucleusPath ?? this.settings.nucleusPath;
+        if (!file) throw new Error('nucleus.testInNucleus: give { uri } of a handler file.');
+        if (!nucleus) throw new Error('Set nucleus.nucleusPath (the Nucleus Co-op folder, with NucleusCoop.exe) first.');
+        const status = nucleusStatus(nucleus);
+        if (!status.canStart) throw new Error(status.why);
+        const errors = lint(doc?.text ?? fs.readFileSync(file, 'utf8')).filter((d) => d.severity === 'error').length;
+        if (errors && !o.force) throw new Error(`The handler has ${errors} error(s), so Nucleus may not load it: fix them first (or pass { force: true }).`);
+        if (status.running && !o.restart) return { started: false, running: true, message: 'Nucleus Co-op is running and only reads handlers when it starts: ask the user, then call again with { restart: true }.' };
+        if (status.running) stopNucleusSync();
+        if (typeof o.debugLog === 'boolean') setDebugLog(nucleus, o.debugLog);
+        const r = testInNucleus(file, nucleus);
+        this.notify('window/showMessage', { type: 3, message: `Nucleus: ${AFTER_START}` });
+        return { started: true, guid: r.guid, debugLog: debugLogOn(nucleus), log: debugLogPath(nucleus) };
+      }
+      case COMMANDS.newHandler: {
+        // { name, exe, dir, steamId?, maxPlayers?, features? }: writes <dir>/<name>.js from the template and opens it.
+        const o = (args[0] ?? {}) as { name?: string; exe?: string; dir?: string; steamId?: string; maxPlayers?: number; features?: string[] };
+        if (!o.name || !o.exe || !o.dir) throw new Error('nucleus.newHandler: give { name, exe, dir } (and optionally steamId, maxPlayers, features).');
+        const problems = validateHandlerInfo({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers, features: o.features });
+        if (problems.length) throw new Error(`nucleus.newHandler: ${problems.join(' ')}`);
+        const dir = /^file:/i.test(o.dir) ? fileURLToPath(o.dir) : o.dir;
+        const out = path.join(dir, `${toHandlerFileName(o.name)}.js`);
+        if (fs.existsSync(out)) throw new Error(`${path.basename(out)} already exists there.`);
+        const features = (o.features ?? []).filter((f) => FEATURES.some((x) => x.id === f)) as Feature[];
+        fs.writeFileSync(out, renderHandler({ gameName: o.name, executableName: o.exe, steamId: o.steamId, maxPlayers: o.maxPlayers === undefined ? undefined : Number(o.maxPlayers), features }));
+        const uri = pathToFileURL(out).href;
+        this.request('window/showDocument', { uri, takeFocus: true });
+        return { uri };
+      }
+      case COMMANDS.explainLine: {
+        if (!doc) throw new Error('nucleus.explainLine: give the uri of an open document and a 0-based line.');
+        const line = Number((a as { line?: number }).line ?? 0);
+        const e = explainLine(doc.text, linesOf(doc).offset({ line, character: 0 }));
+        if (!e) return { markdown: undefined };
+        // Plain text for the message popup; the Markdown for clients that can show it.
+        const plain = e.markdown.replace(/\*\*/g, '').replace(/`/g, '');
+        this.notify('window/showMessage', { type: 3, message: plain });
+        return { markdown: e.markdown, aiPrompt: e.aiPrompt };
       }
       case COMMANDS.fixAll: {
         if (!doc) throw new Error('nucleus.fixAll: give the uri of an open document.');
@@ -554,12 +806,27 @@ export class Server {
 }
 const NOT_FOUND = Symbol('not found');
 
+/** Folders the workspace scan and the file watcher skip. */
+export const skipName = (name: string) => name.startsWith('.') || name === 'node_modules';
+const MAX_WATCHED_FOLDERS = 500;
+
+/** The file watchers to register: every .js file, and each handler's <Name>/ folder. */
+export function watchersFor(handlerDirs: string[], relative: boolean): { globPattern: string | { baseUri: string; pattern: string } }[] {
+  return [
+    { globPattern: '**/*.js' },
+    ...handlerDirs.map((dir) => ({ globPattern: relative ? { baseUri: pathToFileURL(dir).href, pattern: '**/*' } : `${dir.replace(/\\/g, '/')}/**/*` })),
+  ];
+}
+
+/** The editor's name for links to the site (set at initialize), as for the docs links. */
+let linkRef = 'lsp';
+
 function toLspDiagnostic(l: Lines, d: LintDiagnostic) {
   return {
     range: l.range(d),
     severity: SEVERITY[d.severity],
     code: d.rule,
-    codeDescription: { href: RULES_URL },
+    codeDescription: { href: RULE_DOCS[d.rule] ? ruleUrl(d.rule, linkRef) : RULES_URL }, // the check's own page
     source: 'nucleus',
     message: d.message,
     ...(d.tags?.length ? { tags: d.tags.map((t) => TAG[t]) } : {}),
@@ -608,7 +875,8 @@ export function serve(input: NodeJS.ReadableStream = process.stdin, output: Node
         }
         for (const one of Array.isArray(msg) ? msg : [msg]) {
           const out = server.handle(one);
-          if (out) write(out);
+          if (out instanceof Promise) void out.then((o) => o && write(o));
+          else if (out) write(out);
           if (server.exited) return finish(0);
         }
       }

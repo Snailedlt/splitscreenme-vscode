@@ -2,12 +2,19 @@
   "name": "splitscreenme-vscode",
   "displayName": "SplitScreen.Me / Nucleus Co-op Handler Tools",
   "description": "IntelliSense, docs, linting and packaging for Nucleus Co-op game handlers (SplitScreen.Me).",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "splitscreenme",
   "license": "MIT",
+  "preview": true,
+  "pricing": "Free",
+  "homepage": "https://github.com/Snailedlt/splitscreenme-vscode",
+  "bugs": {
+    "url": "https://github.com/Snailedlt/splitscreenme-vscode/issues"
+  },
+  "qna": "https://github.com/Snailedlt/splitscreenme-vscode/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SplitScreen-Me/splitscreenme-vscode"
+    "url": "https://github.com/Snailedlt/splitscreenme-vscode"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -27,12 +34,22 @@
   ],
   "main": "./dist/extension.js",
   "bin": {
+    "ncdev": "./dist/cli.js",
     "nucleus": "./dist/cli.js",
     "nucleus-lint": "./dist/cli.js"
   },
   "activationEvents": [
     "onLanguage:javascript"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a folder you don't trust yet, the checks, completion, docs, Format and Try it work. Install, Test in Nucleus Co-op and Set up AI agents ask you to trust the folder first, and a folder's own game folder links (splitscreenme.gameFolders) are ignored.",
+      "restrictedConfigurations": [
+        "splitscreenme.gameFolders"
+      ]
+    }
+  },
   "contributes": {
     "mcpServerDefinitionProviders": [
       {
@@ -68,13 +85,18 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.explainLine",
+        "title": "Explain This Line",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.fixAll",
         "title": "Fix All Auto-fixable Problems",
         "category": "Nucleus"
       },
       {
         "command": "splitscreenme.formatHandler",
-        "title": "Format Handler (indentation and spacing)",
+        "title": "Format Handler",
         "category": "Nucleus"
       },
       {
@@ -86,6 +108,19 @@
         "command": "splitscreenme.installHandler",
         "title": "Install Handler into Nucleus Co-op",
         "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.testInNucleus",
+        "title": "Test in Nucleus Co-op",
+        "category": "Nucleus",
+        "icon": "$(debug-start)",
+        "enablement": "!isWeb"
+      },
+      {
+        "command": "splitscreenme.openNucleusLog",
+        "title": "Open Nucleus Co-op's Debug Log",
+        "category": "Nucleus",
+        "enablement": "!isWeb"
       },
       {
         "command": "splitscreenme.browseHub",
@@ -113,6 +148,11 @@
         "category": "Nucleus"
       },
       {
+        "command": "splitscreenme.openInWorkbench",
+        "title": "Open in the Browser Workbench",
+        "category": "Nucleus"
+      },
+      {
         "command": "splitscreenme.linkGameFolder",
         "title": "Link the Game's Folder…",
         "category": "Nucleus"
@@ -121,9 +161,30 @@
         "command": "splitscreenme.unlinkGameFolder",
         "title": "Unlink the Game's Folder",
         "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.showDocs",
+        "title": "Docs (Every Option and Function)",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.docsSearch",
+        "title": "Search the Docs…",
+        "category": "Nucleus"
+      },
+      {
+        "command": "splitscreenme.docsBack",
+        "title": "Docs: Back",
+        "category": "Nucleus"
       }
     ],
     "keybindings": [
+      {
+        "command": "splitscreenme.explainLine",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && splitscreenme.isHandler"
+      },
       {
         "command": "splitscreenme.formatHandler",
         "key": "shift+alt+f",
@@ -132,6 +193,13 @@
       }
     ],
     "menus": {
+      "editor/context": [
+        {
+          "command": "splitscreenme.explainLine",
+          "when": "splitscreenme.isHandler",
+          "group": "1_nucleus@1"
+        }
+      ],
       "explorer/context": [
         {
           "command": "splitscreenme.packageHandler",
@@ -148,7 +216,12 @@
         {
           "command": "splitscreenme.tryIt",
           "when": "splitscreenme.isHandler",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "splitscreenme.testInNucleus",
+          "when": "splitscreenme.isHandler && isWindows",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
@@ -167,6 +240,10 @@
         {
           "command": "splitscreenme.setupAgents",
           "when": "!isWeb"
+        },
+        {
+          "command": "splitscreenme.docsBack",
+          "when": "false"
         }
       ]
     },
@@ -199,6 +276,34 @@
           "default": true,
           "description": "After an update, show a short note with what's new (the full list is in Nucleus: What's New)."
         },
+        "splitscreenme.format.quotes": {
+          "type": "string",
+          "enum": [
+            "double",
+            "single",
+            "keep"
+          ],
+          "enumDescriptions": [
+            "\"Double\" quotes (also what the Hub install reads Game.GameName and Game.ExecutableName between)",
+            "'Single' quotes",
+            "Leave quotes as written"
+          ],
+          "default": "double",
+          "markdownDescription": "Quotes around strings when formatting a handler. A string that contains the chosen quote keeps its own, so no escapes are added."
+        },
+        "splitscreenme.format.semicolons": {
+          "type": "string",
+          "enum": [
+            "add",
+            "keep"
+          ],
+          "enumDescriptions": [
+            "A semicolon at the end of every statement that ends without one",
+            "Leave statement ends as written"
+          ],
+          "default": "add",
+          "markdownDescription": "Semicolons when formatting a handler. Either way the program stays exactly the same: the formatter checks that it parses to the same code before changing anything."
+        },
         "splitscreenme.lint.enable": {
           "type": "boolean",
           "default": true,
@@ -226,7 +331,7 @@
         "splitscreenme.lint.rules": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Override the severity of individual rules, e.g. `{ \"deprecated\": \"off\", \"unknown-member\": \"error\" }`. See the [rule list](https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules).",
+          "markdownDescription": "Override the severity of individual rules, e.g. `{ \"deprecated\": \"off\", \"unknown-member\": \"error\" }`. See the [rule list](https://github.com/Snailedlt/splitscreenme-vscode#lint-rules).",
           "properties": {
             "syntax-error": {
               "type": "string",
@@ -477,6 +582,276 @@
                 "hint",
                 "off"
               ]
+            },
+            "no-cond-assign": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-constant-condition": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-dupe-keys": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-duplicate-case": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-dupe-else-if": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-dupe-args": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "use-isnan": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "valid-typeof": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-unreachable": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-unused-expressions": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-self-assign": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-self-compare": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-unsafe-negation": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-compare-neg-zero": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-invalid-regexp": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-empty-character-class": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-control-regex": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-sparse-arrays": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-useless-escape": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-octal-escape": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-loss-of-precision": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "for-direction": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-unsafe-finally": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-func-assign": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-ex-assign": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-obj-calls": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
+            },
+            "no-shadow-restricted-names": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "hint",
+                "off"
+              ]
             }
           },
           "additionalProperties": false
@@ -576,15 +951,112 @@
           }
         ]
       }
+    ],
+    "walkthroughs": [
+      {
+        "id": "nucleus.start",
+        "title": "Make a Nucleus Co-op handler",
+        "description": "From an empty file to a handler players can download from the Hub: write it, let it check itself, try it, test it in Nucleus, share it.",
+        "when": "true",
+        "steps": [
+          {
+            "id": "start",
+            "title": "Start a handler",
+            "description": "Start from the template, with the game's name and its .exe, or from a handler that already works for a similar game (same engine, same launcher).\n[New Handler…](command:splitscreenme.newHandler)\n[Browse the Hub…](command:splitscreenme.browseHub)\nIn an empty .js file, typing `handler` offers the whole template too.",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-hover-light.png",
+                "dark": "media/walkthrough/vscode-hover-dark.png",
+                "hc": "media/walkthrough/vscode-hover-dark.png",
+                "hcLight": "media/walkthrough/vscode-hover-light.png"
+              },
+              "altText": "A handler open in VS Code, with the docs of an option shown on hover"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.newHandler",
+              "onCommand:splitscreenme.browseHub"
+            ]
+          },
+          {
+            "id": "check",
+            "title": "Let it check itself as you type",
+            "description": "Problems are underlined as you type: red stops Nucleus, orange is probably wrong. Hover one for why and what to do; **Ctrl+.** offers the fix. Hover any option for its docs; suggestions know what exists where.\n[Fix All Auto-fixable Problems](command:splitscreenme.fixAll)",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-problems-light.png",
+                "dark": "media/walkthrough/vscode-problems-dark.png",
+                "hc": "media/walkthrough/vscode-problems-dark.png",
+                "hcLight": "media/walkthrough/vscode-problems-light.png"
+              },
+              "altText": "Problems in a handler, each explained, with a fix offered"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.fixAll"
+            ]
+          },
+          {
+            "id": "tryit",
+            "title": "Try it before Nucleus does",
+            "description": "Try It runs `Game.Play` for each player, the way Nucleus would, and shows what each one gets: window, launch arguments, files changed. Nothing on your PC is touched.\n[Try It](command:splitscreenme.tryIt)",
+            "media": {
+              "image": {
+                "light": "media/walkthrough/vscode-try-it-light.png",
+                "dark": "media/walkthrough/vscode-try-it-dark.png",
+                "hc": "media/walkthrough/vscode-try-it-dark.png",
+                "hcLight": "media/walkthrough/vscode-try-it-light.png"
+              },
+              "altText": "The Try It panel: what each player gets"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.tryIt"
+            ]
+          },
+          {
+            "id": "folder",
+            "title": "Link the game's folder",
+            "description": "Point it at where the game is installed and the checks can see the real files: the exe's name, the folders to link or copy, the files to suggest.\n[Link the Game's Folder…](command:splitscreenme.linkGameFolder)",
+            "media": {
+              "markdown": "media/walkthrough/folder.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.linkGameFolder"
+            ]
+          },
+          {
+            "id": "install",
+            "title": "Test it in Nucleus Co-op",
+            "description": "One click installs the handler (and its folder) into Nucleus' `handlers` folder and starts Nucleus with the game selected: pick the players and press Play. Turn on the debug log when asked: if something's off, `debug-log.txt` says why.\n[Test in Nucleus Co-op](command:splitscreenme.testInNucleus)\n[Open the Debug Log](command:splitscreenme.openNucleusLog)",
+            "media": {
+              "markdown": "media/walkthrough/install.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.testInNucleus",
+              "onCommand:splitscreenme.installHandler"
+            ]
+          },
+          {
+            "id": "share",
+            "title": "Share it on the Hub",
+            "description": "Package makes the .nc file the Hub takes: the handler and its folder. Upload it at [hub.splitscreen.me](https://hub.splitscreen.me/).\n[Package Handler for the Hub](command:splitscreenme.packageHandler)",
+            "media": {
+              "markdown": "media/walkthrough/share.md"
+            },
+            "completionEvents": [
+              "onCommand:splitscreenme.packageHandler"
+            ]
+          }
+        ]
+      }
     ]
   },
   "scripts": {
-    "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs",
+    "generate": "node scripts/generate-api.mjs && node scripts/generate-wm.mjs && node scripts/generate-jsbuiltins.mjs",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit -p .",
     "test": "node scripts/build.mjs --tests && node --test dist-test/*.test.js",
     "package": "vsce package --no-dependencies",
+    "standalone": "node scripts/build.mjs && sh npp-plugin/build.sh && node scripts/sea.mjs --require-plugin",
     "vscode:prepublish": "node scripts/build.mjs --production"
   },
   "devDependencies": {
@@ -594,6 +1066,9 @@
     "acorn": "^8.19.0",
     "acorn-walk": "^8.3.5",
     "esbuild": "^0.28.2",
+    "eslint": "10.14.0",
+    "path-browserify": "1.0.1",
+    "postject": "1.0.0-alpha.6",
     "typescript": "^5.9.3"
   },
   "icon": "media/icon.png",

@@ -4,15 +4,57 @@
 // same behaviour. Positions are UTF-16 offsets into the text (what JavaScript strings index), which
 // is also what LSP counts by default. No `vscode` import here, no Node APIs either.
 import { blockedItemAt, blockedListAt, blockedLists, blockTarget, COMMON_MESSAGES, hex, messageMarkdown } from './wm';
-import { api, claudeNote, DOCS_URL, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved } from './api';
+import { api, claudeNote, DOCS_URL, isStringMember, Member, memberMarkdown, memberSignature, membersOf, ownerLabel, Resolved, resolveCall, resolveGlobal, resolveIndex, resolveMember } from './api';
 import { callContextAt, memberContextAt, resolveAt, valueContextAt } from './complete';
+export { explainLine, type LineExplanation } from './explain';
 import { Diagnostic, lineOf, lineStart, looksLikeHandler, RuleId, RULES, Severity, TextEdit } from './lint';
 import { fixAll } from './fix';
 import { formatHandler } from './format';
 import { parseLikeJint } from './jsparse';
+import { addedOptions, codeStateAt, KEYWORDS, optionMarkdown, ownNameAt, ownReturnTypes, parseTolerant, visibleNames } from './ownsymbols';
+import { innerCallFrame } from './complete';
+import { newHandlerSnippet, SNIPPETS } from './snippets';
+import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS } from './jsbuiltins';
+import { lookup } from './lookup';
+import { prettySignature } from './pretty';
+import { WORKBENCH_URL } from './sharelink';
+import { BOM, withoutBom } from './bom';
+import { eolOf } from './eol';
+
+/** Editors with their own JavaScript support (VS Code) already suggest and explain the handler's own functions and
+ *  variables: `own: false` leaves those out, so they don't show twice. */
+export interface FeatureOptions {
+  own?: boolean;
+  /** Asked for (Ctrl+Space), not opened by a typed character: names are offered before any letter is typed. */
+  explicit?: boolean;
+  /** Turns API names in the docs into links (to the editor's docs view, or the workbench's `#docs-…`). */
+  docsLink?: (path: string) => string;
+}
+
+/** `Context.Options["…` with the cursor in (or right after `[` before) the key. */
+function optionKeyContextAt(text: string, offset: number): { quote: string; partial: string; start: number; end: number } | undefined {
+  const before = text.slice(Math.max(0, offset - 200), offset);
+  const m = /Context\s*\.\s*Options\s*\[\s*(["']?)([^"'\]\n]*)$/.exec(before);
+  if (!m) return undefined;
+  const rest = /^[^"'\]\n]*/.exec(text.slice(offset))![0];
+  return { quote: m[1], partial: m[2], start: offset - m[2].length, end: offset + (m[1] ? rest.length : 0) };
+}
+/** `Context.Options["key"] == "…`: the key and the value typed so far. */
+function optionValueContextAt(text: string, offset: number): { key: string; quote: string; partial: string } | undefined {
+  const before = text.slice(Math.max(0, offset - 300), offset);
+  const m = /Context\s*\.\s*Options\s*\[\s*["']([^"'\n]*)["']\s*\]\s*(?:===?|!==?)\s*(["'])([^"'\n]*)$/.exec(before);
+  return m ? { key: m[1], quote: m[2], partial: m[3] } : undefined;
+}
+/** The key under the cursor in `Context.Options["key"]`. */
+function optionKeyAt(text: string, offset: number): { key: string; start: number; end: number } | undefined {
+  const c = optionKeyContextAt(text, offset);
+  if (!c || !c.quote) return undefined;
+  const key = text.slice(c.start, c.end);
+  return { key, start: c.start, end: c.end };
+}
 
 /** Where the lint rules are documented (the README table). */
-export const RULES_URL = 'https://github.com/SplitScreen-Me/splitscreenme-vscode#lint-rules';
+export const RULES_URL = 'https://github.com/Snailedlt/splitscreenme-vscode#lint-rules';
 
 export interface Span {
   start: number;
@@ -30,18 +72,71 @@ export interface HoverInfo {
 const notTopLevel = '\n\n_Only available inside callbacks such as `Game.Play`._';
 
 /** The hover at `offset`: an API member's docs, an enum, a global, or a window message in BlockedMessages. */
-export function hoverAt(text: string, offset: number): HoverInfo | undefined {
+/** The API path a name in the docs stands for (`ModifySaveFile` → `Context.ModifySaveFile`), if it's one. */
+export function apiPathOf(raw: string): string | undefined {
+  const t = raw.trim().replace(/\(.*\)$/, '').replace(/;$/, '').replace(/^new\s+/, '');
+  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(t) || /^(true|false|null|undefined|var|function|return)$/.test(t)) return undefined;
+  if (api.globals[t]) return t;
+  // A bare name only when it's written like Nucleus' own (PascalCase): `path` or `first` are parameters, not API.
+  if (!t.includes('.') && !/^[A-Z]/.test(t)) return undefined;
+  const r = lookup(t);
+  if (r.kind === 'entries') return r.entries.length === 1 ? r.entries[0].path : t;
+  if (r.kind === 'enum' || r.kind === 'class') return t.startsWith('Nucleus.') ? t : `Nucleus.${t}`;
+  return undefined;
+}
+/** The workbench's docs for a name: `#docs-Context.ModifySaveFile` (`ref` says which tool the visit came from). */
+export function workbenchDocsUrl(path: string, ref: string): string {
+  return `${WORKBENCH_URL}?ref=${encodeURIComponent(ref)}#docs-${encodeURIComponent(path)}`;
+}
+/** API names written as code in Markdown docs (`` `Context.Width` ``) as links; code blocks and links stay as they are. */
+export function linkApiNames(md: string, link: (path: string) => string): string {
+  return md.split(/(```[\s\S]*?```)/).map((part, i) => i % 2 ? part : part.replace(/(\[?)`([^`\n]+)`(\]\()?/g, (m, open, code, close) => {
+    if (open || close) return m; // already a link
+    const path = apiPathOf(code);
+    return path ? `[\`${code}\`](${link(path)})` : m;
+  })).join('');
+}
+
+export function hoverAt(text: string, offset: number, opts: FeatureOptions = {}): HoverInfo | undefined {
+  const h = hoverAtRaw(text, offset, opts);
+  if (!h || !opts.docsLink) return h;
+  // The name itself: its docs one click away (the signature on top is a code block, which can't hold a link).
+  const r = resolveAt(text, offset);
+  const res = r?.resolved;
+  const own = res?.kind === 'member' && res.member.own;
+  const self = !res || own ? undefined
+    : res.kind === 'member' ? apiPathOf(`${ownerLabel(res.owner)}.${res.name}`)
+    : res.kind === 'enum' || res.kind === 'nucleusClass' ? `Nucleus.${res.name}`
+    : res.kind === 'enumValue' ? `Nucleus.${res.enumName}`
+    : apiPathOf(text.slice(r!.start, r!.end));
+  return { ...h, markdown: linkApiNames(h.markdown, opts.docsLink) + (self ? `\n\n[Open in Docs](${opts.docsLink(self)})` : '') };
+}
+function hoverAtRaw(text: string, offset: number, opts: FeatureOptions = {}): HoverInfo | undefined {
   // A number in Game.ProtoInput.BlockedMessages: the window message's name and what it does.
   const msg = blockedItemAt(text, offset);
   if (msg) return { markdown: messageMarkdown(msg.id), range: { start: msg.start, end: msg.end } };
+  // The key in Context.Options["key"]: the option Game.AddOption added.
+  const k = optionKeyAt(text, offset);
+  if (k) {
+    const o = addedOptions(text).find((x) => x.key === k.key);
+    if (o) return { markdown: optionMarkdown(o, text), range: { start: k.start, end: k.end } };
+  }
   const r = resolveAt(text, offset);
-  if (!r) return undefined;
+  if (!r) return opts.own === false ? undefined : ownHover(text, offset);
   const range = { start: r.start, end: r.end };
   const word = text.slice(r.start, r.end);
   const res = r.resolved;
   switch (res.kind) {
-    case 'member':
-      return { markdown: memberMarkdown(res.owner, res.name, res.member), range };
+    case 'member': {
+      if (res.member.own) break; // the handler's own function: below
+      let md = memberMarkdown(res.owner, res.name, res.member);
+      // Context.Options: the keys this handler adds.
+      if (res.owner === 'Context' && res.name === 'Options') {
+        const opts = addedOptions(text, offset);
+        if (opts.length) md += '\n\n**This handler adds:**\n' + opts.map((o) => `- \`"${o.key}"\`${o.name ? `: ${o.name}` : ''}${o.values ? ` (${o.values.map((v) => `\`${v}\``).join(', ')})` : ''}`).join('\n');
+      }
+      return { markdown: md, range };
+    }
     case 'enum': {
       const e = api.enums[res.name];
       return { markdown: '```ts\nenum Nucleus.' + res.name + '\n```\n\n' + (e.doc ?? '') + '\n\n' + Object.entries(e.values).map(([k, v]) => `- \`${k}\` = ${v}`).join('\n'), range };
@@ -56,17 +151,43 @@ export function hoverAt(text: string, offset: number): HoverInfo | undefined {
     case 'list':
     case 'nucleus': {
       const g = api.globals[word];
-      if (!g) return undefined;
+      if (!g) break;
       return { markdown: '```ts\n' + `${word}: ${g.type}` + '\n```\n\n' + g.doc + (g.topLevel ? '' : notTopLevel) + `\n\n[Handler API docs](${DOCS_URL})`, range };
     }
   }
-  return undefined;
+  return opts.own === false ? undefined : ownHover(text, offset);
+}
+
+/** The comment above an own name as Markdown: its text, then the `@param`s as a list (`@returns` as "Returns …"). */
+function ownDocMarkdown(raw: string | undefined): string | undefined {
+  const { text: doc, params } = splitJsDoc(raw);
+  const ps = Object.entries(params).map(([k, v]) => `- \`${k}\`: ${v}`).join('\n');
+  const out = [doc?.replace(/^\s*@returns?\s+(\{[^}]*\}\s*)?/m, 'Returns '), ps].filter(Boolean).join('\n\n');
+  return out || undefined;
+}
+
+/** The handler's own function or variable under the cursor: how it's declared and the comment above it. */
+function ownHover(text: string, offset: number): HoverInfo | undefined {
+  let s = offset;
+  let e = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  if (e === s || /\d/.test(text[s]) || codeStateAt(text, s) !== 'code') return undefined;
+  let d = s;
+  while (d > 0 && /[ \t]/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.') return undefined; // a property, not a variable
+  const n = ownNameAt(text, offset, text.slice(s, e));
+  if (!n) return undefined;
+  const line = text.slice(0, n.start).split('\n').length;
+  const returns = n.kind === 'function' ? ownReturnTypes(text).get(n.name) : undefined;
+  const doc = ownDocMarkdown(n.doc);
+  return { markdown: '```js\n' + prettySignature(n.signature + (returns ? `: ${returns}` : '')) + '\n```' + (doc ? '\n\n' + doc : '') + `\n\n_Declared on line ${line}._`, range: { start: s, end: e } };
 }
 
 // ---------------------------------------------------------------------------
 // Completion
 
-export type CompletionKind = 'field' | 'property' | 'method' | 'module' | 'variable' | 'class' | 'enum' | 'enumMember' | 'constant' | 'value' | 'snippet';
+export type CompletionKind = 'field' | 'property' | 'method' | 'function' | 'module' | 'variable' | 'class' | 'enum' | 'enumMember' | 'constant' | 'value' | 'snippet' | 'keyword';
 
 export interface CompletionEntry {
   label: string;
@@ -117,7 +238,42 @@ const lineBounds = (text: string, offset: number) => {
 };
 
 /** Completion items at `offset`, or undefined when there's nothing to offer (let the editor do its own). */
-export function completionsAt(text: string, offset: number): CompletionEntry[] | undefined {
+export function completionsAt(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
+  const list = withoutBom(text, offset, (t, o) => completionsAtRaw(t, o, opts));
+  const link = opts.docsLink;
+  return link && list ? list.map((c) => (c.documentation ? { ...c, documentation: linkApiNames(c.documentation, link) } : c)) : list;
+}
+function completionsAtRaw(text: string, offset: number, opts: FeatureOptions = {}): CompletionEntry[] | undefined {
+  // `Context.Options["|"]`: the keys the handler adds with Game.AddOption.
+  const key = optionKeyContextAt(text, offset);
+  if (key) {
+    const options = addedOptions(text, offset);
+    if (!options.length) return undefined;
+    const closeAfter = /^["']?\s*\]/.test(text.slice(key.end)) || /^\s*\]/.test(text.slice(key.end));
+    return options.map((o, i) => ({
+      label: o.key,
+      kind: 'property' as const,
+      detail: o.name ?? 'Game.AddOption',
+      documentation: optionMarkdown(o, text),
+      // The closing quote and bracket too, unless they're there already (an editor that closes them as you type).
+      insertText: key.quote ? o.key + (text.slice(key.end).startsWith(key.quote) ? '' : key.quote + (closeAfter ? '' : ']')) : `"${o.key}"${closeAfter ? '' : ']'}`,
+      range: { start: key.start, end: key.end },
+      sortText: String(i).padStart(3, '0'),
+    }));
+  }
+  // `Context.Options["mode"] == "|"`: that option's choices.
+  const cmp = optionValueContextAt(text, offset);
+  if (cmp) {
+    const o = addedOptions(text, offset).find((x) => x.key === cmp.key);
+    if (!o?.values) return undefined;
+    let end = offset;
+    while (end < text.length && !/["'\n]/.test(text[end])) end++;
+    return o.values.map((v, i) => ({ label: v, kind: 'value' as const, detail: o.name ?? o.key, range: { start: offset - cmp.partial.length, end }, sortText: String(i).padStart(3, '0'), preselect: v === o.default }));
+  }
+  // Inside a comment or any other string: nothing (help on request; `// this sets Game.` isn't code). Not even on
+  // Ctrl+Space: editors send "invoked" for every typed letter too. File names in the game folder lists come from
+  // their own providers (gamefolders.ts, lsp.ts).
+  if (codeStateAt(text, offset) !== 'code') return undefined;
   // Inside `Game.ProtoInput.BlockedMessages = [ | ]`: the window messages handlers block, most used first.
   const list = blockedListAt(text, offset);
   if (list && !blockedItemAt(text, offset)) {
@@ -159,7 +315,11 @@ export function completionsAt(text: string, offset: number): CompletionEntry[] |
     });
   }
   const ctx = memberContextAt(text, offset);
-  if (!ctx) return globalCompletions(text, offset);
+  if (!ctx) {
+    const names = opts.own === false ? globalCompletions(text, offset) : identifierCompletions(text, offset, !!opts.explicit);
+    const snips = snippetCompletions(text, offset, !!opts.explicit);
+    return names || snips.length ? [...(names ?? []), ...snips] : undefined;
+  }
 
   const line = lineBounds(text, offset);
   const before = text.slice(line.start, offset - ctx.partial.length);
@@ -219,9 +379,89 @@ function globalCompletions(text: string, offset: number): CompletionEntry[] | un
     .map(([name, g]) => ({ label: name, kind: 'variable' as const, detail: `${name}: ${g.type}`, documentation: g.doc + (g.topLevel ? '' : notTopLevel), sortText: `0_${name}` }));
 }
 
+/** Where a name starts (not after a dot): the handler's own functions and variables in scope, Nucleus' globals,
+ *  JavaScript's own (Math, parseInt…) and the keywords. For editors without their own JavaScript suggestions. */
+function identifierCompletions(text: string, offset: number, explicit: boolean): CompletionEntry[] | undefined {
+  let s = offset;
+  let e = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  if (/\d/.test(text[s] ?? '')) return undefined;
+  let d = s;
+  while (d > 0 && /[ \t]/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.') return undefined;
+  const lineBefore = text.slice(text.lastIndexOf('\n', s - 1) + 1, s);
+  if (/\b(var|let|const|function|catch\s*\()\s*$|\bfunction\s*[\w$]*\s*\([^)]*$/.test(lineBefore)) return undefined; // naming something new
+  if (codeStateAt(text, s) !== 'code') return undefined;
+  const range = { start: s, end: e };
+  const word = text.slice(s, offset);
+  if (!word && !explicit) return undefined;
+  const out: CompletionEntry[] = [];
+  const seen = new Set<string>();
+  for (const n of visibleNames(text, offset)) {
+    if (n.name === word && n.start === s) continue; // the name being declared right here
+    seen.add(n.name);
+    out.push({ label: n.name, kind: n.kind === 'function' ? 'function' : 'variable', detail: n.signature, documentation: ownDocMarkdown(n.doc), range, sortText: `0_${n.name}`, ...(n.kind === 'function' ? { insertText: `${n.name}($1)`, snippet: true, signatureHelp: true } : {}) });
+  }
+  for (const [name, g] of Object.entries(api.globals)) {
+    if (g.hidden || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ label: name, kind: 'variable', detail: `${name}: ${g.type}`, documentation: g.doc + (g.topLevel ? '' : notTopLevel), range, sortText: `1_${name}` });
+  }
+  for (const name of JS_GLOBAL_OBJECTS) if (!seen.has(name)) (seen.add(name), out.push({ label: name, kind: 'module', detail: `JavaScript's ${name}`, range, sortText: `2_${name}` }));
+  for (const [name, m] of Object.entries(JS_FUNCTIONS)) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({ label: name, kind: 'function', detail: memberSignature('', name, m)[0], documentation: m.doc, range, sortText: `2_${name}`, insertText: `${name}($1)`, snippet: true, signatureHelp: true });
+  }
+  for (const k of KEYWORDS) if (!seen.has(k)) out.push({ label: k, kind: 'keyword', range, sortText: `3_${k}` });
+  return out;
+}
+
+/** Handler snippets (core/snippets.ts), where a statement starts and part of a name is typed (or on request). */
+function snippetCompletions(text: string, offset: number, explicit: boolean): CompletionEntry[] {
+  let s = offset;
+  while (s > 0 && /[\w$]/.test(text[s - 1])) s--;
+  const word = text.slice(s, offset).toLowerCase();
+  if ((!word && !explicit) || !/^[ \t]*$/.test(text.slice(text.lastIndexOf('\n', s - 1) + 1, s)) || codeStateAt(text, s) !== 'code') return [];
+  const program = parseTolerant(text, offset);
+  let inFunction = false;
+  if (program) {
+    const walk = (n: any) => {
+      if ((n.type === 'FunctionExpression' || n.type === 'FunctionDeclaration') && n.body.start < offset && offset < n.body.end) inFunction = true;
+      for (const k of Object.keys(n)) {
+        const v = n[k];
+        if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === 'string' && c.start <= offset && offset <= c.end && walk(c));
+        else if (v && typeof v.type === 'string' && v.start <= offset && offset <= v.end) walk(v);
+      }
+    };
+    walk(program);
+  }
+  let e = offset;
+  while (e < text.length && /[\w$]/.test(text[e])) e++;
+  // An empty file: the whole New Handler template.
+  const whole: CompletionEntry[] =
+    !inFunction && !/\bGame\s*\./.test(text) && (!word || 'handler'.startsWith(word) || 'newhandler'.startsWith(word))
+      ? [{ label: 'handler', labelDetail: 'A new handler (the template)', kind: 'snippet', detail: 'A new handler (the template)', documentation: 'The New Handler template: the required options, the common ones with their usual values, and an empty `Game.Play`. Fill in the game\'s name and its .exe; then Check and Try it.', insertText: newHandlerSnippet(), snippet: true, filterText: 'handler new handler template', range: { start: s, end: e }, sortText: '4_handler' }]
+      : [];
+  return whole.concat(SNIPPETS.filter((x) => (x.where === 'callback') === inFunction && (!word || x.prefix.startsWith(word) || x.label.toLowerCase().includes(word))).map((x) => ({
+    label: x.prefix,
+    labelDetail: x.label,
+    kind: 'snippet' as const,
+    detail: x.label,
+    documentation: x.doc + '\n\n```js\n' + x.body.replace(/\$\{\d+\|([^,|]*)[^}]*\}/g, '$1').replace(/\$\{\d+:([^}]*)\}/g, '$1').replace(/\$\d/g, '').replace(/\\([\\$}])/g, '$1') + '\n```',
+    insertText: x.body,
+    snippet: true,
+    filterText: `${x.prefix} ${x.label}`,
+    range: { start: s, end: e },
+    sortText: `4_${x.prefix}`,
+  })));
+}
+
 function ownerOf(base: Resolved): string {
   if (base.kind === 'object') return base.type;
   if (base.kind === 'member' && base.member.ref) return base.member.ref;
+  if (base.kind === 'member' && isStringMember(base.member)) return 'String';
   return '';
 }
 
@@ -234,6 +474,8 @@ export interface SignatureEntry {
   documentation?: string;
   /** Each parameter's label, a substring of `label`. */
   parameters: string[];
+  /** Each parameter's docs (Markdown), where there are any. */
+  parameterDocs?: (string | undefined)[];
 }
 export interface SignatureHelpInfo {
   signatures: SignatureEntry[];
@@ -242,16 +484,24 @@ export interface SignatureHelpInfo {
 }
 
 /** The overloads of the method (or Nucleus class constructor) whose call the cursor is in. */
-export function signatureHelpAt(text: string, offset: number): SignatureHelpInfo | undefined {
+export function signatureHelpAt(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
+  const h = signatureHelpAtRaw(text, offset, opts);
+  const link = opts.docsLink;
+  if (!h || !link) return h;
+  const l = (s?: string) => (s === undefined ? s : linkApiNames(s, link));
+  return { ...h, signatures: h.signatures.map((s) => ({ ...s, documentation: l(s.documentation), parameterDocs: s.parameterDocs?.map(l) })) };
+}
+function signatureHelpAtRaw(text: string, offset: number, opts: FeatureOptions = {}): SignatureHelpInfo | undefined {
   const c = callContextAt(text, offset);
-  if (!c) return undefined;
+  if (!c || (c.callee.kind === 'member' && c.callee.member.own)) return opts.own === false ? undefined : ownSignatureHelp(text, offset);
   const signatures: SignatureEntry[] = [];
   let activeSignature = 0;
   if (c.callee.kind === 'member' && c.callee.member.kind === 'method') {
     const { owner, name, member } = c.callee;
     for (const o of member.overloads ?? []) {
       const params = o.params.map((p) => `${p.rest ? '...' : ''}${p.name}: ${p.type}`);
-      signatures.push({ label: `${ownerLabel(owner)}.${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params });
+      const docs = o.params.map((p) => (p.doc ? p.doc + (p.docBy === 'claude' ? ' (AI-written)' : '') : undefined));
+      signatures.push({ label: `${ownerLabel(owner) ? `${ownerLabel(owner)}.` : ''}${name}(${params.join(', ')}): ${o.returns}`, documentation: member.doc + (claudeNote(member) ? `\n\n_✎ ${claudeNote(member)}_` : ''), parameters: params, ...(docs.some(Boolean) ? { parameterDocs: docs } : {}) });
     }
     // Prefer the first overload that has enough parameters for the cursor position.
     const idx = (member.overloads ?? []).findIndex((o) => o.params.length > c.activeParameter || o.params.some((p) => p.rest));
@@ -262,6 +512,39 @@ export function signatureHelpAt(text: string, offset: number): SignatureHelpInfo
     signatures.push({ label: `new Nucleus.${c.callee.name}(${params.join(', ')})`, documentation: cls.doc, parameters: params });
   } else return undefined;
   return { signatures, activeSignature, activeParameter: c.activeParameter };
+}
+
+/** A call of the handler's own function: its parameters and the comment above it. */
+function ownSignatureHelp(text: string, offset: number): SignatureHelpInfo | undefined {
+  const frame = innerCallFrame(text, offset);
+  if (!frame) return undefined;
+  const m = /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, frame.pos - 100), frame.pos));
+  if (!m) return undefined;
+  const at = frame.pos - m[0].length;
+  let d = at;
+  while (d > 0 && /\s/.test(text[d - 1])) d--;
+  if (text[d - 1] === '.' || /\bfunction\s*$/.test(text.slice(Math.max(0, d - 20), d))) return undefined;
+  const n = ownNameAt(text, offset, m[1]);
+  if (!n || n.kind !== 'function' || !n.params) return undefined;
+  const { text: doc, params } = splitJsDoc(n.doc);
+  const docs = n.params.map((p) => params[p]);
+  return { signatures: [{ label: `${n.name}(${n.params.join(', ')})`, documentation: doc, parameters: n.params, ...(docs.some(Boolean) ? { parameterDocs: docs } : {}) }], activeSignature: 0, activeParameter: frame.commas };
+}
+
+/** `@param name what it is` lines (also `@param {type} name - …`) out of a comment, and the rest. */
+export function splitJsDoc(doc: string | undefined): { text?: string; params: Record<string, string> } {
+  const params: Record<string, string> = {};
+  if (!doc) return { text: doc, params };
+  const rest = doc
+    .split('\n')
+    .filter((l) => {
+      const m = /^\s*@param\s+(?:\{[^}]*\}\s*)?\[?([\w$]+)[^\s\]]*\]?\s*(?:-\s*)?(.*)$/.exec(l);
+      if (m) params[m[1]] = m[2].trim();
+      return !m;
+    })
+    .join('\n')
+    .trim();
+  return { text: rest || undefined, params };
 }
 
 // ---------------------------------------------------------------------------
@@ -296,16 +579,19 @@ export function fixAllCodeAction(text: string, rules?: RuleOverrides): CodeActio
  *  problem is auto-fixable) and "Disable <rule> for this line". */
 export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: RuleOverrides): CodeActionEntry[] {
   const actions: CodeActionEntry[] = [];
+  const eol = eolOf(text);
   for (const diag of diagnostics) {
     for (const fix of diag.fixes ?? []) actions.push({ title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: fix.preferred, diagnostic: diag });
-    if (!actions.some((a) => a.kind === 'source.fixAll') && diag.fixes?.some((f) => f.preferred)) {
+    // A quick fix like the others (VS Code drops a source.fixAll action from the Ctrl+. menu, which asks for quick
+    // fixes only); fixing all on save is fixAllCodeAction's job.
+    if (!actions.some((a) => a.title.startsWith('Fix all ')) && diag.fixes?.some((f) => f.preferred)) {
       const fix = fixAllAction(text, rules);
-      if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'source.fixAll', edits: [fix.edit], diagnostic: diag });
+      if (fix && fix.count > 1) actions.push({ title: `Fix all ${fix.count} auto-fixable problems`, kind: 'quickfix', edits: [fix.edit], diagnostic: diag });
     }
     if (diag.rule in RULES && diag.rule !== 'syntax-error') {
-      const start = lineStart(text, diag.start);
+      const start = Math.max(lineStart(text, diag.start), text.startsWith(BOM) ? 1 : 0); // after a BOM
       const indent = text.slice(start).match(/^[ \t]*/)![0];
-      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}\n` }], diagnostic: diag });
+      actions.push({ title: `Disable ${diag.rule} for this line`, kind: 'quickfix', edits: [{ start, end: start, text: `${indent}// nucleus-lint-disable-next-line ${diag.rule}${eol}` }], diagnostic: diag });
     }
   }
   return actions;
@@ -316,10 +602,52 @@ export function quickFixes(text: string, diagnostics: Diagnostic[], rules?: Rule
 
 /** Format Document (core/format.ts: indentation and spacing only). `edits` is empty when already
  *  formatted; `error` says why it refused (the editor should show it, not change anything). */
-export function formatEdits(text: string, opts: { insertSpaces: boolean; tabSize: number }): { edits: TextEdit[] } | { error: string } {
-  const r = formatHandler(text, { indent: opts.insertSpaces ? ' '.repeat(opts.tabSize) : '\t' });
+/** The editor's indentation, and the style settings (core/format.ts: quotes, semicolons). */
+export interface FormatSettings {
+  insertSpaces: boolean;
+  tabSize: number;
+  quotes?: 'double' | 'single' | 'keep';
+  semicolons?: 'add' | 'keep';
+}
+const formatOptions = (o: FormatSettings) => ({ indent: o.insertSpaces ? ' '.repeat(o.tabSize) : '\t', quotes: o.quotes, semicolons: o.semicolons });
+
+export function formatEdits(text: string, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
+  const r = formatHandler(text, formatOptions(opts));
   if (!r.ok) return { error: r.reason };
   return { edits: r.changed ? [{ start: 0, end: text.length, text: r.code }] : [] };
+}
+
+/** Format only the lines from `start` to `end` (offsets): a selection, or the line just typed. Blank lines are kept
+ *  so the rest of the file doesn't move. */
+export function rangeFormatEdits(text: string, start: number, end: number, opts: FormatSettings): { edits: TextEdit[] } | { error: string } {
+  const r = formatHandler(text, { ...formatOptions(opts), keepBlankLines: true });
+  if (!r.ok) return { error: r.reason };
+  // Lines as JavaScript and Nucleus see them (\r\n, \n, a lone \r, U+2028/U+2029); only their text is compared.
+  const linesOf = (t: string) => {
+    const out: { start: number; text: string }[] = [];
+    let at = 0;
+    for (const m of t.matchAll(/\r\n|[\r\n\u2028\u2029]/g)) {
+      out.push({ start: at, text: t.slice(at, m.index) });
+      at = m.index! + m[0].length;
+    }
+    out.push({ start: at, text: t.slice(at) });
+    return out;
+  };
+  const was = linesOf(text);
+  const now = linesOf(r.code);
+  if (now.length < was.length) return { edits: [] }; // can't line the two up: leave it
+  const lineAt = (o: number) => {
+    let i = 0;
+    while (i + 1 < was.length && was[i + 1].start <= o) i++;
+    return i;
+  };
+  const l0 = lineAt(start);
+  const l1 = lineAt(Math.max(start, end));
+  const edits: TextEdit[] = [];
+  for (let i = l0; i <= l1; i++) {
+    if (was[i].text !== now[i].text) edits.push({ start: was[i].start, end: was[i].start + was[i].text.length, text: now[i].text });
+  }
+  return { edits };
 }
 
 // ---------------------------------------------------------------------------
@@ -483,4 +811,108 @@ function outlineByLines(text: string): SymbolEntry[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Semantic tokens: what a Nucleus name is, so the theme colours it (Game and Context as objects, their
+// properties, methods and Nucleus enum values each in their own colour). Only names the API knows get one;
+// an unknown name keeps the plain colour (its problem underline says why).
+
+/** The token types, in legend order (LSP's and VS Code's standard names). */
+export const SEMANTIC_TOKEN_TYPES = ['namespace', 'class', 'enum', 'enumMember', 'property', 'method'] as const;
+/** The modifiers, in legend order (bit n = SEMANTIC_TOKEN_MODIFIERS[n]). */
+export const SEMANTIC_TOKEN_MODIFIERS = ['readonly', 'defaultLibrary', 'deprecated'] as const;
+export type SemanticTokenType = (typeof SEMANTIC_TOKEN_TYPES)[number];
+export type SemanticTokenModifier = (typeof SEMANTIC_TOKEN_MODIFIERS)[number];
+export interface SemanticToken extends Span {
+  type: SemanticTokenType;
+  modifiers: SemanticTokenModifier[];
+}
+
+export function semanticTokens(text: string): SemanticToken[] {
+  const program = parseTolerant(text) as any;
+  if (!program) return [];
+  const out: SemanticToken[] = [];
+  const memo = new Map<any, Resolved | undefined>();
+  // A variable or parameter of the same name hides the global (`var Context = ...`: then it isn't Nucleus').
+  const own = new Set<string>();
+  const decl = (n: any) => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier') own.add(n.id.name);
+    if (/^Function/.test(n.type) && n.params) for (const p of n.params) if (p.type === 'Identifier') own.add(p.name);
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) v.forEach(decl);
+      else if (v && typeof v === 'object' && typeof v.type === 'string') decl(v);
+    }
+  };
+  decl(program);
+  const emit = (node: any, r: Resolved) => {
+    let type: SemanticTokenType | undefined;
+    const mods: SemanticTokenModifier[] = [];
+    switch (r.kind) {
+      case 'object':
+      case 'nucleus':
+      case 'list':
+        type = 'namespace';
+        mods.push('defaultLibrary');
+        break;
+      case 'enum':
+        type = 'enum';
+        break;
+      case 'enumValue':
+        type = 'enumMember';
+        break;
+      case 'nucleusClass':
+        type = 'class';
+        break;
+      case 'member':
+        if (!r.owner) return; // JavaScript's own functions (parseInt): the editor colours those already
+        type = r.member.kind === 'method' ? 'method' : r.member.kind === 'object' ? 'namespace' : 'property';
+        if (r.member.readonly && r.member.kind !== 'object') mods.push('readonly');
+        if (r.member.deprecated) mods.push('deprecated');
+        break;
+    }
+    if (type) out.push({ start: node.start, end: node.end, type, modifiers: mods });
+  };
+  // What an expression is, colouring each Nucleus name on the way (once per node).
+  const resolve = (node: any): Resolved | undefined => {
+    if (memo.has(node)) return memo.get(node);
+    let r: Resolved | undefined;
+    if (node.type === 'Identifier') {
+      r = api.globals[node.name] && !own.has(node.name) ? resolveGlobal(node.name) : undefined;
+      if (r && r.kind !== 'opaque') emit(node, r);
+    } else if (node.type === 'MemberExpression') {
+      const base = resolve(node.object);
+      if (base && base.kind !== 'opaque') {
+        if (node.computed) r = resolveIndex(base);
+        else if (node.property.type === 'Identifier') {
+          r = resolveMember(base, node.property.name).resolved;
+          if (r && r.kind !== 'opaque') emit(node.property, r);
+        }
+      }
+    } else if (node.type === 'CallExpression') {
+      const callee = resolve(node.callee);
+      r = callee ? resolveCall(callee) : undefined;
+    }
+    memo.set(node, r);
+    return r;
+  };
+  const visit = (node: any, parent: any) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'MemberExpression' || node.type === 'CallExpression') resolve(node);
+    else if (node.type === 'Identifier') {
+      // A name on its own (`Context` passed along): not a property name or a declaration.
+      const isName = !(parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) && !(parent?.type === 'Property' && parent.key === node) && !/Declarat|Function/.test(parent?.type ?? '');
+      if (isName) resolve(node);
+    }
+    for (const k in node) {
+      if (k === 'type' || k === 'start' || k === 'end' || k === 'loc') continue;
+      const v = node[k];
+      if (Array.isArray(v)) for (const c of v) visit(c, node);
+      else if (v && typeof v === 'object' && typeof v.type === 'string') visit(v, node);
+    }
+  };
+  visit(program, undefined);
+  return out.sort((a, b) => a.start - b.start);
 }

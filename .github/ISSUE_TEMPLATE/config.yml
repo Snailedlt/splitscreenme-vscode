@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: A question about writing a handler
+    url: https://discord.gg/XxGMkqCf4r
+    about: Ask other handler authors on the SplitScreen.Me Discord, or on r/nucleuscoop (https://www.reddit.com/r/nucleuscoop/).

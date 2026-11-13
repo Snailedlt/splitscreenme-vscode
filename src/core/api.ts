@@ -1,6 +1,8 @@
 // Typed access to the generated Nucleus handler API model (data/nucleus-api.json).
 import raw from '../../data/nucleus-api.json';
+import { JS_FUNCTIONS, JS_GLOBAL_OBJECTS, JS_OBJECTS, isJsBuiltin, mdnUrl } from './jsbuiltins';
 import { DOTNET_OBJECTS } from './dotnet';
+import { prettyCode, prettySignature } from './pretty';
 
 export type SimpleType =
   | 'string'
@@ -21,6 +23,10 @@ export interface Param {
   csType?: string;
   rest?: boolean;
   optional?: boolean;
+  /** What to pass, in plain words (JavaScript's from TypeScript's docs; Nucleus' from data/claude-docs.json). */
+  doc?: string;
+  /** The doc was written by Claude (AI) from the source. */
+  docBy?: 'claude';
 }
 export interface Overload {
   returns: string;
@@ -35,6 +41,8 @@ export interface Member {
   default?: string;
   readonly?: boolean;
   internal?: boolean;
+  /** One of the handler's own functions (its return type worked out from its code), not a Nucleus member. */
+  own?: boolean;
   required?: boolean;
   doc: string;
   /** Set when the doc was written by Claude (data/claude-docs.json) rather than taken from the official docs. */
@@ -90,7 +98,16 @@ export interface ApiModel {
   nucleusClasses: Record<string, NucleusClass>;
 }
 
-export const api = raw as unknown as ApiModel;
+/** The model as objects without a prototype: a name typed in a handler (`toString`, `constructor`, `__proto__`) is
+ *  never mistaken for a member, an enum or a docs page. */
+function bare(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(bare);
+  if (!v || typeof v !== 'object') return v;
+  const o = Object.create(null);
+  for (const [k, x] of Object.entries(v)) o[k] = bare(x);
+  return o;
+}
+export const api = bare(raw) as ApiModel;
 // .NET `System.*`, written by hand (core/dotnet.ts): the generator only reads the Nucleus sources.
 Object.assign(api.objects, DOTNET_OBJECTS);
 if (api.globals.System) api.globals.System = { ...api.globals.System, type: 'System', doc: DOTNET_OBJECTS.System.doc };
@@ -99,7 +116,7 @@ export const DOCS_URL = 'https://www.splitscreen.me/docs/handler-api';
 
 /** What a resolved expression refers to. */
 export type Resolved =
-  | { kind: 'object'; type: string } // an ApiObject (Game, Context, GameHook, ...)
+  | { kind: 'object'; type: string; of?: string } // an ApiObject (Game, Context, GameHook, ...); `of`: an Array's element type
   | { kind: 'list'; of: string } // PlayerList
   | { kind: 'nucleus' } // the Nucleus namespace
   | { kind: 'enum'; name: string } // Nucleus.Folder
@@ -114,7 +131,42 @@ export function objectTypeOf(ts: string | undefined): string | undefined {
   return api.objects[ts] ? ts : undefined;
 }
 
+/** An API object by name; also JavaScript's own (String, Array, Math, JSON, Number: core/jsbuiltins.ts). */
+export function objectOf(type: string): ApiObject | undefined {
+  return api.objects[type] ?? JS_OBJECTS[type];
+}
+/** The object a value of TypeScript type `ts` is (`string` -> String, `number` -> Number, `string[]` -> an Array of
+ *  strings, an API object by name), for the members of an expression's result. */
+export function valueTypeOf(ts: string | undefined): Resolved | undefined {
+  if (!ts) return undefined;
+  const t = ts.replace(/\s*\|\s*(null|undefined)\b/g, '').trim();
+  if (t === 'string') return { kind: 'object', type: 'String' };
+  if (t === 'number') return { kind: 'object', type: 'Number' };
+  const arr = /^(.+)\[\]$/.exec(t) ?? /^Array<(.+)>$/.exec(t);
+  if (arr) return { kind: 'object', type: 'Array', of: arr[1] };
+  if (/^RegExp(Match|Exec)Array$/.test(t)) return { kind: 'object', type: 'Array', of: 'string' };
+  if (api.objects[t]) return { kind: 'object', type: t };
+  return undefined;
+}
+/** What a field or property's value is, when it's a string, number or list (for `.` after it). */
+function valueObject(m: Member): Resolved | undefined {
+  if (m.kind === 'method' || m.kind === 'object') return undefined;
+  const v = valueTypeOf(m.ts ?? m.type);
+  return v && v.kind === 'object' && (v.type === 'String' || v.type === 'Number' || v.type === 'Array') ? v : undefined;
+}
+/** What calling `base` gives back: its return type (the first overload's). */
+export function resolveCall(base: Resolved): Resolved | undefined {
+  if (base.kind !== 'member' || base.member.kind !== 'method') return undefined;
+  return valueTypeOf(base.member.overloads?.[0]?.returns);
+}
+
+/** A field or property that holds a string: its value has JavaScript's string methods. */
+export const isStringMember = (m: Member) => m.kind !== 'method' && m.kind !== 'object' && (m.type === 'string' || m.ts === 'string');
+
 export function resolveGlobal(name: string): Resolved | undefined {
+  // JavaScript's Math and JSON, and its global functions (parseInt…): for hover, completion and parameter hints.
+  if (JS_GLOBAL_OBJECTS.includes(name) && !api.globals[name]) return { kind: 'object', type: name };
+  if (JS_FUNCTIONS[name] && !api.globals[name]) return { kind: 'member', owner: '', name, member: JS_FUNCTIONS[name] };
   const g = api.globals[name];
   if (!g) return undefined;
   if (name === 'Nucleus') return { kind: 'nucleus' };
@@ -145,7 +197,7 @@ export function jintMemberName(members: Record<string, unknown>, name: string): 
 export function resolveMember(base: Resolved, name: string): StepResult {
   switch (base.kind) {
     case 'object': {
-      const obj = api.objects[base.type];
+      const obj = objectOf(base.type)!;
       const key = jintMemberName(obj.members, name);
       if (!key && obj.open && !looksLikeTypo(name, Object.keys(obj.members))) return { resolved: { kind: 'opaque' } };
       if (!key) return { unknown: { owner: base.type, ownerLabel: base.type, candidates: Object.keys(obj.members) } };
@@ -154,6 +206,9 @@ export function resolveMember(base: Resolved, name: string): StepResult {
     case 'member': {
       const ref = base.member.ref;
       if (base.member.kind === 'object' && ref && api.objects[ref]) return resolveMember({ kind: 'object', type: ref }, name);
+      if (isStringMember(base.member)) return resolveMember({ kind: 'object', type: 'String' }, name);
+      const v = valueObject(base.member);
+      if (v) return resolveMember(v, name);
       return { resolved: { kind: 'opaque' } };
     }
     case 'list':
@@ -189,6 +244,12 @@ export function resolveMember(base: Resolved, name: string): StepResult {
 /** Element type when indexing (`PlayerList[i]`). */
 export function resolveIndex(base: Resolved): Resolved {
   if (base.kind === 'list') return { kind: 'object', type: base.of };
+  if (base.kind === 'object' && base.type === 'Array' && base.of) return valueTypeOf(base.of) ?? { kind: 'opaque' };
+  if (base.kind === 'object' && base.type === 'String') return { kind: 'object', type: 'String' };
+  if (base.kind === 'member') {
+    const v = valueObject(base.member);
+    if (v) return resolveIndex(v);
+  }
   return { kind: 'opaque' };
 }
 
@@ -196,12 +257,17 @@ export function resolveIndex(base: Resolved): Resolved {
 export function membersOf(base: Resolved): { name: string; member?: Member; enumValue?: number; detail?: string }[] {
   switch (base.kind) {
     case 'object':
-      return Object.entries(api.objects[base.type].members)
+      return Object.entries(objectOf(base.type)!.members)
         .filter(([, m]) => !m.internal)
         .map(([name, member]) => ({ name, member }));
     case 'member':
       if (base.member.kind === 'object' && base.member.ref && api.objects[base.member.ref]) {
         return membersOf({ kind: 'object', type: base.member.ref });
+      }
+      if (isStringMember(base.member)) return membersOf({ kind: 'object', type: 'String' });
+      {
+        const v = valueObject(base.member);
+        if (v) return membersOf(v);
       }
       return [];
     case 'list':
@@ -270,13 +336,14 @@ export function looksLikeTypo(name: string, candidates: string[]): boolean {
 
 export function memberSignature(owner: string, name: string, m: Member): string[] {
   const label = ownerLabel(owner);
+  const full = label ? `${label}.${name}` : name;
   if (m.kind === 'method') {
     return (m.overloads ?? []).map(
-      (o) => `${label}.${name}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}${p.optional ? '?' : ''}: ${p.type}`).join(', ')}): ${o.returns}`,
+      (o) => `${full}(${o.params.map((p) => `${p.rest ? '...' : ''}${p.name}${p.optional ? '?' : ''}: ${p.type}`).join(', ')}): ${o.returns}`,
     );
   }
   const t = m.kind === 'object' ? m.ref ?? m.ts : m.ts;
-  return [`${m.readonly ? '(read-only) ' : ''}${label}.${name}: ${t}`];
+  return [`${m.readonly ? '(read-only) ' : ''}${full}: ${t}`];
 }
 
 /** "GameHook" -> "Game.Hook" etc., for messages. */
@@ -316,16 +383,21 @@ export const docReviewUrl = (path: string) =>
 
 export function memberMarkdown(owner: string, name: string, m: Member): string {
   const parts: string[] = [];
-  parts.push('```ts\n' + memberSignature(owner, name, m).join('\n') + '\n```');
+  // Each overload laid out as prettier would (one parameter per line when it's long), the example too.
+  parts.push('```ts\n' + memberSignature(owner, name, m).map((x) => prettySignature(x)).join('\n') + '\n```');
   if (m.deprecated) parts.push(`**${m.deprecated}**`);
   if (m.doc) parts.push(m.doc);
   if (claudeNote(m)) parts.push(`_✎ ${claudeNote(m)}_${m.docCheckedBy ? '' : ` [Is it wrong? Tell us](${docReviewUrl(`${ownerLabel(owner)}.${name}`)})`}`);
+  // What to pass for each parameter (every name once, from whichever overload has it).
+  const params = new Map<string, Param>();
+  for (const o of m.overloads ?? []) for (const p of o.params) if (p.doc && !params.has(p.name)) params.set(p.name, p);
+  if (params.size) parts.push([...params.values()].map((p) => `- \`${p.name}\`: ${p.doc}`).join('\n') + ([...params.values()].some((p) => p.docBy === 'claude') ? '\n\n_✎ Parameters: AI-written from the Nucleus source._' : ''));
   const meta: string[] = [];
   if (m.default !== undefined) meta.push(`Default: \`${m.default}\``);
   if (m.category) meta.push(`Category: ${m.category}`);
   if (m.required) meta.push('**Required**');
   if (meta.length) parts.push(meta.join(' · '));
-  if (m.example) parts.push('```js\n' + m.example + '\n```');
-  parts.push(`[Handler API docs](${DOCS_URL})`);
+  if (m.example) parts.push('```js\n' + prettyCode(m.example) + '\n```');
+  parts.push(isJsBuiltin(owner) ? `[MDN: ${owner ? `${owner}.` : ''}${name}](${mdnUrl(owner, name)})` : `[Handler API docs](${DOCS_URL})`);
   return parts.join('\n\n');
 }

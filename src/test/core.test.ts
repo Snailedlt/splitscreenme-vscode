@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
 import { memberContextAt, resolveAt, callContextAt, valueContextAt } from '../core/complete';
 import { membersOf, suggest } from '../core/api';
-import { renderHandler, toGuid, toHandlerFileName, FEATURES } from '../core/templates';
+import { renderHandler, toGuid, toHandlerFileName, validateGameName, FEATURES } from '../core/templates';
 import { writeZip, readZip, handlerPackageEntries, crc32 } from '../core/zip';
 import { lint } from '../core/lint';
+import { completionsAt, signatureHelpAt } from '../core/features';
 
 const at = (src: string) => ({ text: src.replace('|', ''), offset: src.indexOf('|') });
 
@@ -78,6 +79,12 @@ test('templates lint clean and are ES5', () => {
   }
   assert.equal(toGuid('Halo: Reach!'), 'Halo Reach');
   assert.equal(toHandlerFileName('Halo: Reach?'), 'Halo Reach');
+  // Never the folder itself, its parent, a path or a Windows device name (a Hub title or GameName is anyone's text).
+  for (const bad of ['.', '..', '...', ' .. ', '', '//', '..\\..']) assert.equal(toHandlerFileName(bad), 'handler', JSON.stringify(bad));
+  assert.equal(toHandlerFileName('Game.'), 'Game');
+  assert.equal(toHandlerFileName('CON'), '_CON');
+  assert.equal(toHandlerFileName('nul.txt'), '_nul.txt');
+  assert.equal(toHandlerFileName('a/../b'), 'a..b');
 });
 
 test('zip round trip with directory entries (Nucleus package layout)', () => {
@@ -127,6 +134,12 @@ test('valuePicks: true/false, enum and number values, wrong types, computed valu
   assert.equal(at?.name, 'SymlinkGame');
   assert.equal(src.slice(at!.start, at!.end), 'false');
   assert.equal(valuePickAt(src, 3), undefined, 'not on the option name');
+  // A long handler: the cursor near the end must not re-read the text once per assignment above it.
+  const long = 'var x = 1;\n'.repeat(30000) + 'Game.SymlinkGame = true;\n';
+  const t = Date.now();
+  assert.equal(valuePickAt(long, long.lastIndexOf('true') + 1)?.name, 'SymlinkGame');
+  assert.equal(valuePickAt(long, long.length - 40), undefined);
+  assert.ok(Date.now() - t < 1500, `valuePickAt on 30000 lines took ${Date.now() - t} ms`);
 });
 
 test('documentSymbols: settings by object, callbacks with what they set, own names; code that does not parse', async () => {
@@ -140,4 +153,97 @@ test('documentSymbols: settings by object, callbacks with what they set, own nam
   assert.deepEqual(s[3].children!.map((c) => c.name), ['Context.Width']);
   const broken = documentSymbols('Game.GameName = "Demo";\nGame.Play = function () {\n  Context.\n');
   assert.deepEqual(broken.map((x) => `${x.kind}:${x.name}`), ['property:Game.GameName', 'function:Game.Play']);
+});
+
+test('completion: JavaScript string methods after a string value (Jint ES5)', () => {
+  const labels = (t: string) => (completionsAt(t, t.length) ?? []).map((c) => c.label);
+  assert.ok(labels('Game.Play = function () {\n  var args = Context.StartArguments;\n  args.').includes('replace'), 'a variable set from a string field');
+  assert.ok(labels('var s = "-w " + Context.Width;\ns.').includes('split'), 'a variable set from a string');
+  assert.ok(labels('Context.StartArguments.').includes('indexOf'));
+  assert.ok(!labels('Context.StartArguments.').includes('includes'), 'ES5 only');
+  assert.match(signatureHelpAt('var s = "a";\ns.replace(', 25)?.signatures[0].label ?? '', /replace\(searchValue: string \| RegExp, replaceValue: string\)/);
+});
+
+test('JavaScript built-ins: generated from TypeScript\'s lib.es5.d.ts, current, and offered where they apply', () => {
+  const { execFileSync } = require('node:child_process');
+  execFileSync(process.execPath, ['scripts/generate-jsbuiltins.mjs', '--check'], { cwd: require('node:path').join(__dirname, '..') });
+  const labels = (t: string) => (completionsAt(t, t.length) ?? []).map((c) => c.label);
+  assert.ok(labels('Math.').includes('floor') && labels('JSON.').includes('stringify'));
+  assert.ok(labels('var list = ["a"];\nlist.').includes('forEach'), 'an array literal');
+  assert.ok(!labels('var list = ["a"];\nlist.').includes('includes'), 'ES5 only');
+  assert.match(signatureHelpAt('parseInt(', 9)?.signatures[0].label ?? '', /^parseInt\(string: string, radix\??: number\)/);
+  assert.ok(!JSON.stringify(require('../../data/js-builtins.json').objects).match(/=> value is|\bthis:/), 'no TypeScript-only notation');
+  assert.ok(lint('Game.GUID = "x";\nvar n = Math.flor(2.5);\n').some((d) => d.rule === 'unknown-member' && /flor/.test(d.message)), 'a misspelled Math method');
+  assert.ok(!lint('Game.GUID = "x";\nvar n = Math.floor(2.5) + Math.PI;\n').some((d) => d.rule === 'unknown-member'));
+});
+
+test('go to definition and references: own functions and variables (Jint scopes), Game.X, Context.Options keys', () => {
+  const { definitionAt, referencesAt } = require('../core/definition');
+  const t = 'Game.AddOption("Mode", "How to play", "mode", ["A", "B"], "A");\nvar folder = "x";\nfunction helper(a) { var b = a + folder; return b; }\nGame.Play = function () {\n  var folder = Context.Width;\n  var m = Context.Options["mode"];\n  helper(folder);\n  Game.Play;\n};\n';
+  const word = (r: any) => (r ? t.slice(r.start, r.end) : r);
+  const line = (r: any) => t.slice(0, r.start).split('\n').length;
+  const at = (s: string, plus = 0) => t.indexOf(s) + plus;
+  assert.equal(line(definitionAt(t, at('helper(folder)'))), 3, 'a function declaration');
+  assert.equal(line(definitionAt(t, at('helper(folder)', 8))), 5, 'the inner var, not the outer one');
+  assert.equal(line(definitionAt(t, at('a + folder', 5))), 2, 'the outer var, from another function');
+  assert.equal(word(definitionAt(t, at('Options["mode', 10))), 'mode', 'Context.Options["mode"] -> the AddOption key');
+  assert.equal(line(definitionAt(t, at('Options["mode', 10))), 1);
+  assert.equal(line(definitionAt(t, at('Game.Play;', 6))), 4, 'Game.Play -> where it is set');
+  assert.equal(definitionAt(t, at('Context.Width', 2)), undefined, 'API names have no definition in the handler');
+  assert.deepEqual(referencesAt(t, at('helper(folder)', 8)).map(line), [5, 7]);
+  // While typing (doesn't parse): still the declaration.
+  assert.equal(line(definitionAt('function go() {}\nGame.Play = function () {\n  go(\n', 45)), 1);
+});
+
+test('Open in the Browser Workbench: the share link decodes to the handler, as the workbench reads it', () => {
+  const { workbenchLinkFor } = require('../workbenchlink');
+  const zlib = require('node:zlib');
+  const text = 'Game.GameName = "Ünïcode";\n'.repeat(20);
+  const { url, withHandler } = workbenchLinkFor(text, 'vscode');
+  assert.ok(withHandler);
+  assert.match(url, /^https:\/\/snailedlt\.github\.io\/nucleuscoop-handler-testbench\/\?ref=vscode#share-[0-9A-Za-z]+$/);
+  // The workbench's decoder (core/sharelink.ts fromBase62, which playground/src/share.ts imports), then inflate.
+  const { fromBase62 } = require('../core/sharelink');
+  const bytes = fromBase62(url.split('#share-')[1]);
+  assert.equal(zlib.inflateRawSync(Buffer.from(bytes)).toString('utf8'), text);
+  // Too large for a link: the workbench without it.
+  const big = workbenchLinkFor(Array.from({ length: 40000 }, (_, i) => `var v${i} = ${Math.random()};`).join('\n'), 'vscode');
+  assert.equal(big.withHandler, false);
+  assert.equal(big.url, 'https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode');
+});
+
+test('completion: nothing in comments or strings, but the deliberate string suggestions stay', () => {
+  const c = (src: string, explicit = false) => completionsAt(src.replace('|', ''), src.indexOf('|'), { explicit });
+  assert.equal(c('// this sets Game.|'), undefined, 'a line comment');
+  assert.equal(c('// this sets Game.|', true), undefined, 'a line comment, Ctrl+Space');
+  assert.equal(c('/* Game.| */\nGame.GUID = "x";'), undefined, 'a block comment');
+  assert.equal(c('var s = "Game.|";'), undefined, 'a string');
+  assert.equal(c("var s = 'Context.Op|';", true), undefined, 'a string, Ctrl+Space');
+  assert.ok(c('Game.|')!.length > 50, 'code still gets members');
+  assert.ok(c('// note\nGame.|')!.length > 50, 'after a comment');
+  const opts = 'Game.AddOption("Mode", "", "mode", ["Easy", "Hard"]);\n';
+  assert.deepEqual(c(opts + 'if (Context.Options["|"]) {}')!.map((x) => x.label), ['mode'], 'option keys');
+  assert.deepEqual(c(opts + 'if (Context.Options["mode"] == "|') !.map((x) => x.label), ['Easy', 'Hard'], 'option choices');
+});
+
+test('New Handler: game names the template can take, and plain reasons for the rest', () => {
+  const nl = String.fromCharCode(10);
+  const bad: [string, RegExp][] = [['', /name/], ['   ', /name/], ['Say "Hi"', /double quotes/], ['A\\B', /backslash/], ['Two' + nl + 'lines', /one line/], ['Tab' + String.fromCharCode(9), /one line/], ['Sep' + String.fromCharCode(0x2028), /one line/], ['???', /letters or digits/]];
+  for (const [name, why] of bad) assert.match(validateGameName(name) ?? '', why, JSON.stringify(name));
+  // Every name it lets through gives a handler our own checks pass, the Hub install included.
+  for (const name of ['Halo: Reach', 'Pokémon Ünïcödé', '日本のゲーム', "Tom's <Game>?", 'Ninja Gaiden Σ', '  Spaced  ']) {
+    assert.equal(validateGameName(name), undefined, name);
+    const diags = lint(renderHandler({ gameName: name, executableName: 'game.exe', features: [] })).filter((d) => d.severity === 'error' || d.rule === 'guid-characters');
+    assert.deepEqual(diags.map((d) => d.message), [], name);
+  }
+  assert.equal(toGuid('Ünïcödé 日本'), 'Unicode', 'accents spelt plainly');
+  assert.equal(toGuid('Pokémon Straße Œuvre Ørsted'), 'Pokemon Strasse OEuvre Orsted');
+  assert.equal(toGuid('日本'), 'MyGame');
+});
+
+test('validateHandlerInfo: maxPlayers is a whole number 1-16, as a number or digits', async () => {
+  const { validateHandlerInfo } = await import('../core/templates');
+  const bad = (m: unknown) => validateHandlerInfo({ gameName: 'Demo', executableName: 'demo.exe', maxPlayers: m }).some((p) => p.startsWith('maxPlayers'));
+  for (const m of ['', true, '4.5', 0, 17, ' ', 'x']) assert.ok(bad(m), `rejects ${JSON.stringify(m)}`);
+  for (const m of [1, 4, '8', 16]) assert.ok(!bad(m), `accepts ${JSON.stringify(m)}`);
 });

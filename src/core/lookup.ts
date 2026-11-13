@@ -107,7 +107,8 @@ export function search(query: string, limit = 20): Entry[] {
       return { e, score };
     })
     .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || a.e.path.localeCompare(b.e.path));
+    // Equal scores: the shorter name first ("mutex" finds KillMutex before KillLastInstanceMutex), then A–Z.
+    .sort((a, b) => b.score - a.score || a.e.name.length - b.e.name.length || a.e.path.localeCompare(b.e.path));
   return scored.slice(0, limit).map((x) => x.e);
 }
 

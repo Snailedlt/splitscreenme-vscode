@@ -10,6 +10,7 @@ import * as acorn from 'acorn';
 import { lookup, search, markdownReference } from '../core/lookup';
 import { lint } from '../core/lint';
 import { installAgentKit, findSkillDir } from '../core/pkg';
+import { tmpdir } from './tmp';
 
 const ROOT = path.join(__dirname, '..');
 const SKILL = path.join(ROOT, 'plugin', 'skills', 'nucleus-handler');
@@ -63,8 +64,8 @@ test('generated api.md and bundled CLI are up to date', () => {
   assert.ok(fs.existsSync(CLI), 'run npm run build');
 });
 
-test('bundled CLI: lint, api, new, package (offline)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-cli-'));
+test('bundled CLI: lint, api, new, package (offline)', (t) => {
+  const dir = tmpdir(t, 'nucleus-cli-');
   const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: 'utf8' });
 
   let r = run('new', '--name', 'Halo: Reach', '--exe', 'reach.exe', '--features', 'protoinput,goldberg');
@@ -99,10 +100,13 @@ test('bundled CLI: lint, api, new, package (offline)', () => {
   assert.equal(run('frobnicate', '--bogus').status, 2, 'unknown flag is a usage error');
   assert.equal(run('lint', 'missing.js').status, 1);
   assert.equal(run('new').status, 2);
+  const q = run('new', '--name', 'Say "Hi"', '--exe', 'game.exe', '--out', 'quoted.js');
+  assert.equal(q.status, 2, 'a game name the Hub install would break on');
+  assert.match(q.stderr, /double quotes/);
 });
 
-test('installAgentKit is idempotent and preserves user content', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-kit-'));
+test('installAgentKit is idempotent and preserves user content', (t) => {
+  const dir = tmpdir(t, 'nucleus-kit-');
   fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# My notes\n\nKeep me.\n');
   fs.writeFileSync(path.join(dir, 'CLAUDE.md'), 'Use tabs.\n');
   const skill = findSkillDir(path.dirname(CLI))!;
@@ -135,4 +139,29 @@ test('plugin manifests are consistent', () => {
   const skill = fs.readFileSync(path.join(SKILL, 'SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: nucleus-handler\ndescription: .+\n---\n/);
   assert.ok(skill.split('\n').length < 500);
+});
+
+test('bundled CLI: new --list-features, install into a Nucleus folder', (t) => {
+  const dir = tmpdir(t, 'nucleus-install-');
+  const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: 'utf8' });
+  let r = run('new', '--list-features', '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(JSON.parse(r.stdout).some((f: { id: string }) => f.id === 'protoinput'));
+
+  assert.equal(run('new', '--name', 'My Game', '--exe', 'game.exe').status, 0);
+  fs.mkdirSync(path.join(dir, 'My Game', 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'My Game', 'sub', 'a.ini'), 'x=1');
+  const nucleus = path.join(dir, 'Nucleus');
+  r = run('install', 'My Game.js', '--nucleus', nucleus);
+  assert.notEqual(r.status, 0, 'no handlers folder');
+  fs.mkdirSync(path.join(nucleus, 'handlers'), { recursive: true });
+  r = run('install', 'My Game.js', '--nucleus', nucleus, '--json');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).assetCount, 1);
+  assert.ok(fs.existsSync(path.join(nucleus, 'handlers', 'My Game.js')));
+  assert.ok(fs.existsSync(path.join(nucleus, 'handlers', 'My Game', 'sub', 'a.ini')));
+  assert.notEqual(run('install', 'My Game.js', '--nucleus', nucleus).status, 0, 'refuses to replace without --force');
+  assert.equal(run('install', 'My Game.js', '--nucleus', nucleus, '--force').status, 0);
+  fs.writeFileSync(path.join(dir, 'Bad.js'), 'Game.ExecutableName = "a.exe";\nGame.GameName = "Bad";\nGame.Play = () => 1;\n');
+  assert.notEqual(run('install', 'Bad.js', '--nucleus', nucleus).status, 0, 'refuses a handler with errors');
 });

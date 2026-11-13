@@ -1,13 +1,18 @@
+import { workbenchLinkFor } from './workbenchlink';
+import { WORKBENCH_URL } from './core/sharelink';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { FEATURES, renderHandler, toHandlerFileName, Feature } from './core/templates';
+import { FEATURES, renderHandler, toHandlerFileName, validateGameName, Feature } from './core/templates';
 import { writeZip, handlerPackageEntries } from './core/zip';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { lint, looksLikeHandler } from './core/lint';
 import { findSkillDir, installAgentKit } from './core/pkg';
 import { gameFolderName } from './core/pkgcheck';
+import { ruleOverrides } from './settings';
+import { installHandler as installFiles, InstallError } from './install';
+import { AFTER_START, debugLogOn, debugLogPath, nucleusStatus, setDebugLog, stopNucleus, testInNucleus } from './nucleusrun';
 
 export interface CommandHost {
   lintFiles(entries: { uri: vscode.Uri; text: string }[]): void;
@@ -27,12 +32,32 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
 
   reg('splitscreenme.newHandler', newHandler);
   reg('splitscreenme.packageHandler', (uri?: vscode.Uri) => packageHandler(uri));
-  reg('splitscreenme.installHandler', (uri?: vscode.Uri) => installHandler(uri));
+  reg('splitscreenme.installHandler', async (uri?: vscode.Uri) => (await trusted('Installing a handler')) && installHandler(uri));
+  reg('splitscreenme.testInNucleus', async (uri?: vscode.Uri) => (await trusted('Testing in Nucleus Co-op')) && testHandlerInNucleus(context, uri));
+  reg('splitscreenme.openNucleusLog', openNucleusLog);
   reg('splitscreenme.browseHub', () => browseHub(context));
   reg('splitscreenme.setupTypes', () => setupTypes(context));
   reg('splitscreenme.openDocs', openDocs);
+  reg('splitscreenme.openInWorkbench', openInWorkbench);
   reg('splitscreenme.lintWorkspace', () => lintWorkspace(host));
-  reg('splitscreenme.setupAgents', () => setupAgents(context));
+  reg('splitscreenme.setupAgents', async () => (await trusted('Setting up AI agents')) && setupAgents(context));
+}
+
+/**
+ * In Restricted Mode (a folder VS Code doesn't trust yet) the checks, completion, docs and Try it (sandboxed) all
+ * work, but nothing hands the folder's code to a program that runs it with full access: Nucleus Co-op runs a
+ * handler's code with .NET, and agents run what their config names. Say why and offer to trust the folder.
+ */
+async function trusted(what: string): Promise<boolean> {
+  if (vscode.workspace.isTrusted !== false) return true;
+  const manage = 'Manage Workspace Trust';
+  const pick = await vscode.window.showWarningMessage(
+    `${what} needs a trusted folder: Nucleus Co-op runs the handler's code with full access to your PC. Trust this folder if you know where the handler came from.`,
+    { modal: true },
+    manage,
+  );
+  if (pick === manage) await vscode.commands.executeCommand('workbench.trust.manage');
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +67,7 @@ async function newHandler() {
     title: 'New Nucleus handler (1/4)',
     prompt: 'Game name, as shown in Nucleus',
     placeHolder: 'e.g. Borderlands 2',
-    validateInput: (v) => (v.trim() ? undefined : 'Required'),
+    validateInput: (v) => validateGameName(v),
   });
   if (!gameName) return;
   const executableName = await vscode.window.showInputBox({
@@ -116,7 +141,8 @@ async function isDir(p: string) {
 
 /** Refuse to ship a handler Nucleus won't load, unless the user insists. */
 async function confirmNoErrors(text: string, action: string): Promise<boolean> {
-  const errors = lint(text).filter((d) => d.severity === 'error');
+  // With the user's rule settings: a rule they turned down or off doesn't block Package or Install.
+  const errors = lint(text, { rules: ruleOverrides() }).filter((d) => d.severity === 'error');
   if (!errors.length) return true;
   const choice = await vscode.window.showWarningMessage(
     `This handler has ${errors.length} error(s), e.g. "${errors[0].message}". ${action} anyway?`,
@@ -176,6 +202,48 @@ async function nucleusFolder(): Promise<string | undefined> {
   return dir;
 }
 
+/** Install the handler and start Nucleus Co-op on its game: the real test, one click away (src/nucleusrun.ts). */
+async function testHandlerInNucleus(context: vscode.ExtensionContext, uri?: vscode.Uri) {
+  const file = await resolveHandlerFile(uri);
+  if (!file) return;
+  const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === file.toString());
+  if (doc?.isDirty) await doc.save(); // what's tested is what's on screen
+  const text = await fs.readFile(file.fsPath, 'utf8');
+  if (!(await confirmNoErrors(text, 'Test'))) return;
+  const nucleus = await nucleusFolder();
+  if (!nucleus) return;
+  const status = nucleusStatus(nucleus);
+  if (!status.canStart) {
+    vscode.window.showWarningMessage(`Nucleus: ${status.why}`);
+    return;
+  }
+  if (status.running) {
+    const ok = await vscode.window.showWarningMessage('Nucleus Co-op is open. It reads handlers when it starts: close it and start it again with this handler?', { modal: true }, 'Restart Nucleus Co-op');
+    if (ok !== 'Restart Nucleus Co-op') return;
+    await stopNucleus();
+  }
+  // The debug log is what tells you why something went wrong: offer it once, remember the answer.
+  if (status.debugLog === false && !context.globalState.get('nucleus.debugLogAsked')) {
+    const on = await vscode.window.showInformationMessage("Turn on Nucleus' debug log? debug-log.txt then says what Nucleus did, step by step: the first thing to read when a test goes wrong.", 'Turn it on', 'Not now');
+    await context.globalState.update('nucleus.debugLogAsked', true);
+    if (on === 'Turn it on') setDebugLog(nucleus, true);
+  }
+  testInNucleus(file.fsPath, nucleus);
+  const pick = await vscode.window.showInformationMessage(AFTER_START, ...(debugLogOn(nucleus) ? ['Open the Debug Log'] : []));
+  if (pick) await openNucleusLog();
+}
+
+async function openNucleusLog() {
+  const nucleus = await nucleusFolder();
+  if (!nucleus) return;
+  const log = debugLogPath(nucleus);
+  if (!(await fs.stat(log).then(() => true, () => false))) {
+    vscode.window.showInformationMessage(`Nucleus: there's no debug-log.txt in ${nucleus} yet. Turn on the debug log in Nucleus' settings (or answer yes when testing), then run a test.`);
+    return;
+  }
+  await vscode.window.showTextDocument(vscode.Uri.file(log), { preview: true });
+}
+
 async function installHandler(uri?: vscode.Uri) {
   const file = await resolveHandlerFile(uri);
   if (!file) return;
@@ -186,26 +254,19 @@ async function installHandler(uri?: vscode.Uri) {
 
   const base = path.basename(file.fsPath, '.js');
   const handlers = path.join(nucleus, 'handlers');
-  const destJs = path.join(handlers, `${base}.js`);
-  if (path.resolve(destJs) === path.resolve(file.fsPath)) {
-    vscode.window.showInformationMessage('This handler is already in the Nucleus handlers folder.');
-    return;
-  }
-  const exists = await fs.stat(destJs).then(() => true, () => false);
-  if (exists) {
+  let overwrite = false;
+  if (await fs.stat(path.join(handlers, `${base}.js`)).then(() => true, () => false)) {
     const ok = await vscode.window.showWarningMessage(`${base}.js already exists in ${handlers}. Overwrite it?`, { modal: true }, 'Overwrite');
     if (ok !== 'Overwrite') return;
+    overwrite = true;
   }
-  await fs.copyFile(file.fsPath, destJs);
-  const assetDir = path.join(path.dirname(file.fsPath), base);
   let copied = 0;
-  if (await isDir(assetDir)) {
-    for (const f of await listFiles(assetDir)) {
-      const dest = path.join(handlers, base, ...f.rel.split('/'));
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.copyFile(f.abs, dest);
-      copied++;
-    }
+  try {
+    copied = installFiles(file.fsPath, nucleus, { overwrite }).assets;
+  } catch (e) {
+    if (e instanceof InstallError && e.code === 'same-file') vscode.window.showInformationMessage(e.message);
+    else vscode.window.showErrorMessage(`Couldn't install: ${(e as Error).message}`);
+    return;
   }
   vscode.window.showInformationMessage(
     `Installed ${base}.js${copied ? ` and ${copied} asset file(s)` : ''} to ${handlers}. Restart Nucleus Co-op (or re-add the game) to pick up changes.`,
@@ -216,9 +277,15 @@ async function installHandler(uri?: vscode.Uri) {
 
 
 async function browseHub(context: vscode.ExtensionContext) {
-  const list = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Loading handlers from hub.splitscreen.me…' }, async () => {
-    return hubHandlers(); // cached for an hour, shared with the CLI and the MCP server
-  });
+  let list: HubHandler[];
+  try {
+    list = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Loading handlers from hub.splitscreen.me…' }, async () => {
+      return hubHandlers({ feature: 'hub-browse' }); // cached for an hour, shared with the CLI and the MCP server
+    });
+  } catch (e) {
+    void vscode.window.showErrorMessage(String((e as Error)?.message ?? e));
+    return;
+  }
   type Item = vscode.QuickPickItem & { h: HubHandler };
   const items: Item[] = list.map((h) => ({
     label: `${h.verified ? '$(verified) ' : ''}${h.title}`,
@@ -248,7 +315,13 @@ async function browseHub(context: vscode.ExtensionContext) {
     vscode.env.openExternal(vscode.Uri.parse(handlerPageUrl(pick.h._id)));
     return;
   }
-  const entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h));
+  let entries: Awaited<ReturnType<typeof hubPackage>>;
+  try {
+    entries = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading ${pick.h.title}…` }, () => hubPackage(pick.h, { feature: 'hub-browse' }));
+  } catch (e) {
+    void vscode.window.showErrorMessage(`Couldn't download ${pick.h.title}: ${(e as Error)?.message ?? e}`);
+    return;
+  }
   const js = entries.find((e) => e.name === 'handler.js') ?? entries.find((e) => e.name.endsWith('.js') && !e.name.includes('/'));
   if (!js?.data) {
     vscode.window.showWarningMessage('The package has no handler.js.');
@@ -257,7 +330,8 @@ async function browseHub(context: vscode.ExtensionContext) {
   // Laid out the way a Hub install puts it (AGENTS.md): <GameName>.js, and the contents of every top-level folder merged
   // into <GameName>/ (Game.Folder). Other files at the package root are dropped by the install, so they're left out here.
   const handlerText = Buffer.from(js.data).toString('utf8');
-  const game = gameFolderName(handlerText).replace(/\\/g, '') || 'handler';
+  // Never "." or ".." (the workspace itself or its parent would be overwritten below): a safe single folder name.
+  const game = toHandlerFileName(gameFolderName(handlerText));
   const dir = vscode.Uri.joinPath(context.globalStorageUri, 'hub', `${pick.h._id}-v${pick.h.currentVersion}`);
   const handlerUri = vscode.Uri.joinPath(dir, `${game}.js`);
   await vscode.workspace.fs.writeFile(handlerUri, js.data);
@@ -351,6 +425,15 @@ async function setupTypes(context: vscode.ExtensionContext) {
 
 // ---------------------------------------------------------------------------
 
+/** The open handler in the browser workbench (its visual editor, Lines, Test all…), through a share link. */
+async function openInWorkbench() {
+  const doc = vscode.window.activeTextEditor?.document;
+  const text = doc && /\.js$/i.test(doc.fileName) ? doc.getText() : undefined;
+  const { url, withHandler } = workbenchLinkFor(text, 'vscode');
+  await vscode.env.openExternal(vscode.Uri.parse(url, true));
+  if (text !== undefined && !withHandler) vscode.window.showInformationMessage('This handler is too large to pass in a link: in the workbench, use Open file… to open it.');
+}
+
 async function openDocs() {
   const links = [
     { label: 'Handler API reference', url: 'https://www.splitscreen.me/docs/handler-api' },
@@ -358,10 +441,12 @@ async function openDocs() {
     { label: 'Proto Input', url: 'https://www.splitscreen.me/docs/protoinput' },
     { label: 'FAQ', url: 'https://www.splitscreen.me/docs/faq' },
     { label: 'Nucleus Co-op docs (legacy)', url: 'https://nucleus-coop.github.io/docs/' },
+    { label: 'Browser workbench (Nucleus: Open in the Browser Workbench opens this handler there)', url: `${WORKBENCH_URL}?ref=vscode` },
     { label: 'Handler hub', url: 'https://hub.splitscreen.me/' },
     { label: 'Nucleus Co-op source code', url: 'https://github.com/SplitScreen-Me/splitscreenme-nucleus' },
     { label: 'PCGamingWiki (check input & multiplayer support)', url: 'https://www.pcgamingwiki.com/wiki/Home' },
-    { label: 'r/nucleuscoop', url: 'https://www.reddit.com/r/nucleuscoop/' },
+    { label: 'Ask for help: SplitScreen.Me Discord', url: 'https://discord.gg/XxGMkqCf4r' },
+    { label: 'Ask for help: r/nucleuscoop', url: 'https://www.reddit.com/r/nucleuscoop/' },
   ];
   const pick = await vscode.window.showQuickPick(links.map((l) => ({ label: l.label, detail: l.url, url: l.url })), { title: 'SplitScreen.Me documentation' });
   if (pick) vscode.env.openExternal(vscode.Uri.parse(pick.url));

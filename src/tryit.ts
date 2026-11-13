@@ -1,11 +1,13 @@
 // "Try it" panel: shows what Nucleus would set up for each player of the handler being edited
 // (window, launch arguments, file changes), updated as you type. The simulation runs isolated
-// from VS Code and Node (src/sandbox.ts). The webview has scripts disabled; its controls are
+// from VS Code and Node (src/sandbox.ts), in a worker thread (src/simworker.ts), so a looping
+// handler never freezes the editor: a new edit cancels the run before it. The webview has scripts disabled; its controls are
 // command links.
 import * as vscode from 'vscode';
 import { SimOptions, SimResult, sessionSummary, groupIgnored, EVERY_KEYBOARD } from './core/sim';
-import { pluginsFor, simulateIsolated } from './sandbox';
-import { MATRIX_RESOLUTIONS, MatrixResult, planMatrix, runMatrix } from './core/matrix';
+import { pluginsFor, isTimeout } from './sandbox';
+import { simWorker, runMatrixInWorker, isCancelled } from './simworker';
+import { MATRIX_RESOLUTIONS, MatrixResult, planMatrix } from './core/matrix';
 
 export interface TryItState {
   players: number;
@@ -119,16 +121,42 @@ export function registerTryIt(context: vscode.ExtensionContext, isHandler: (doc:
   const markHandler = (e: vscode.TextEditor | undefined) => void vscode.commands.executeCommand('setContext', 'splitscreenme.isHandler', !!e && isHandler(e.document));
   markHandler(vscode.window.activeTextEditor);
 
-  const render = () => {
+  let run: AbortController | undefined; // the run on screen's way; a newer one cancels it
+  let stuck: string | undefined; // text + options of the last run that timed out: not re-run automatically
+  let matrixRun: AbortController | undefined;
+  const optsFor = (d: vscode.TextDocument): SimOptions => ({ players: state.players, width: state.width, height: state.height, keyboardPlayer: state.keyboardPlayer, plugins: d.isUntitled ? undefined : pluginsFor(d.fileName) });
+
+  /** `auto`: an edit or an editor switch, not something the user picked; then a text that timed out isn't run again. */
+  const render = async (auto = false) => {
     if (!panel || !doc) return;
-    const opts: SimOptions = { players: state.players, width: state.width, height: state.height, keyboardPlayer: state.keyboardPlayer, plugins: doc.isUntitled ? undefined : pluginsFor(doc.fileName) };
-    const title = doc.isUntitled ? 'Untitled' : doc.fileName.split(/[\\/]/).pop()!;
+    const d = doc;
+    const opts = optsFor(d);
+    const title = d.isUntitled ? 'Untitled' : d.fileName.split(/[\\/]/).pop()!;
     panel.title = `Try it: ${title}`;
-    panel.webview.html = renderTryIt(simulateIsolated(doc.getText(), opts), state, title, matrix);
+    const text = d.getText();
+    const key = JSON.stringify([text, opts]);
+    if (auto && stuck === key) return; // still the text that didn't finish: the panel already says so
+    run?.abort();
+    const mine = (run = new AbortController());
+    let r: SimResult;
+    try {
+      r = await simWorker().simulate(text, opts, { signal: mine.signal });
+    } catch (e) {
+      if (isCancelled(e)) return;
+      throw e;
+    }
+    if (mine !== run || !panel || doc !== d) return;
+    stuck = isTimeout(r) ? key : undefined;
+    panel.webview.html = renderTryIt(r, state, title, matrix);
   };
   const schedule = (delay = 400) => {
     clearTimeout(timer);
-    timer = setTimeout(render, delay);
+    timer = setTimeout(() => void render(true), delay);
+  };
+  const stopMatrix = () => {
+    matrixRun?.abort();
+    matrixRun = undefined;
+    matrix = undefined;
   };
 
   context.subscriptions.push(
@@ -139,6 +167,7 @@ export function registerTryIt(context: vscode.ExtensionContext, isHandler: (doc:
         return;
       }
       doc = editor.document;
+      stuck = undefined; // asked for: run it again
       if (panel) panel.reveal(vscode.ViewColumn.Beside, true);
       else {
         panel = vscode.window.createWebviewPanel('splitscreenme.tryIt', 'Try it', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
@@ -146,33 +175,55 @@ export function registerTryIt(context: vscode.ExtensionContext, isHandler: (doc:
           enableCommandUris: [SET, TEST_ALL, 'workbench.actions.view.problems'],
           localResourceRoots: [],
         });
-        panel.onDidDispose(() => (panel = undefined), null, context.subscriptions);
+        panel.onDidDispose(() => ((panel = undefined), run?.abort(), stopMatrix()), null, context.subscriptions);
       }
-      render();
+      return render();
     }),
     vscode.commands.registerCommand(SET, (change: Partial<TryItState>) => {
       const next = { ...state, ...change };
       if (!(next.players >= 1 && next.players <= 16) || (next.keyboardPlayer < -1 && next.keyboardPlayer !== EVERY_KEYBOARD) || next.keyboardPlayer >= next.players) return;
       state = next;
       void context.workspaceState?.update(STATE_KEY, state);
-      render();
+      return render();
     }),
-    vscode.commands.registerCommand(TEST_ALL, () => {
+    vscode.commands.registerCommand(TEST_ALL, async () => {
       if (!doc) return;
-      const code = doc.getText();
-      const plugins = doc.isUntitled ? undefined : pluginsFor(doc.fileName);
-      const plan = planMatrix(simulateIsolated(code, { players: 1, width: 1920, height: 1080, keyboardPlayer: -1, plugins }));
-      if (!plan) return void vscode.window.showWarningMessage("Nucleus can't load this handler yet: fix the problems first.");
-      matrix = runMatrix(plan, (o) => simulateIsolated(code, o), { plugins });
-      render();
+      const d = doc;
+      const code = d.getText();
+      const plugins = d.isUntitled ? undefined : pluginsFor(d.fileName);
+      stopMatrix();
+      const mine = (matrixRun = new AbortController());
+      // In the worker, in batches: the editor stays responsive, the notification shows progress and can cancel.
+      await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Testing every combination', cancellable: true }, async (progress, token) => {
+        token.onCancellationRequested(() => mine.abort());
+        try {
+          const first = await simWorker().simulate(code, { players: 1, width: 1920, height: 1080, keyboardPlayer: -1, plugins }, { signal: mine.signal });
+          const plan = planMatrix(first);
+          if (!plan) return void vscode.window.showWarningMessage(isTimeout(first) ? first.loadError! : "Nucleus can't load this handler yet: fix the problems first.");
+          let last = 0;
+          const m = await runMatrixInWorker(plan, code, { plugins }, {
+            signal: mine.signal,
+            onProgress: ({ done, total }) => {
+              progress.report({ increment: ((done - last) / total) * 100, message: `${done} of ${total}` });
+              last = done;
+            },
+          });
+          if (mine !== matrixRun || doc !== d) return;
+          matrix = m;
+          if (m.skipped) void vscode.window.showWarningMessage(`Test all stopped early: ${m.timedOut} combinations did not finish in time (an endless loop?), so the other ${m.skipped} were not run.`);
+          await render();
+        } catch (e) {
+          if (!isCancelled(e)) throw e;
+        }
+      });
     }),
-    vscode.workspace.onDidChangeTextDocument((e) => e.document === doc && ((matrix = undefined), schedule())),
+    vscode.workspace.onDidChangeTextDocument((e) => e.document === doc && (stopMatrix(), schedule())),
     vscode.window.onDidChangeActiveTextEditor((e) => {
       markHandler(e);
       // Follow the handler being edited.
       if (panel && e && e.document !== doc && isHandler(e.document)) {
         doc = e.document;
-        matrix = undefined;
+        stopMatrix();
         schedule(0);
       }
     }),

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { checkPackage, installMap, sizeOf, textOf, type PackageFile } from '../core/pkgcheck';
 import { packageFilesFor, packageFileForPath } from '../pkgfiles';
+import { tmpdir } from './tmp';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const f = (name: string, text = 'x'): PackageFile => ({ name, data: enc(text) });
@@ -38,8 +39,8 @@ test('package checks: nothing to say about a clean package; big files only by si
   assert.equal(textOf(new Uint8Array([0xff, 0xfe, 0x41, 0])!)?.text, 'A');
 });
 
-test('package files on disk: <Name>/ next to <Name>.js, named as in the .nc; the CLI reports them', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nucleus-pkg-'));
+test('package files on disk: <Name>/ next to <Name>.js, named as in the .nc; the CLI reports them', (t) => {
+  const dir = tmpdir(t, 'nucleus-pkg-');
   const js = path.join(dir, 'MyGame.js');
   fs.writeFileSync(js, HANDLER);
   assert.equal(packageFilesFor(js, 0), undefined, 'no folder, nothing to check');

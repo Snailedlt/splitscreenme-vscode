@@ -1,0 +1,215 @@
+{
+ "$comment": "Parameter docs written by Claude (AI) from the Nucleus and Proto Input source: what to pass for each parameter of the most used methods. Keys are members as handlers write them; basis says what each is based on. The tools show them as AI-written. scripts/generate-api.mjs puts them on the parameters (doc, docBy).",
+ "params": {
+  "Context.GetFolder": {
+   "basis": "Nucleus GenericContext.cs GetFolder; FileUtil.cs GetFolder; GenericGameHandler.cs jsData; Folder.cs",
+   "params": {
+    "folder": "Nucleus.Folder.InstancedGameFolder (this instance's root folder once it is set up), MainGameFolder (the folder holding the game's exe) or Documents (the user's Documents folder)."
+   }
+  },
+  "Context.FindLineNumberInTextFile": {
+   "basis": "Nucleus GenericContext.cs FindLineNumberInTextFile; SearchType.cs",
+   "params": {
+    "path": "Full path of the text file to search; it must exist (it is read without a check). Returns the first matching line number, counting from 1, or -1.",
+    "searchValue": "Text to look for, case-sensitive.",
+    "type": "How a line must match: Nucleus.SearchType.Contains, Nucleus.SearchType.Full (the whole line equals searchValue) or Nucleus.SearchType.StartsWith."
+   }
+  },
+  "ProtoInput.InstallHook": {
+   "basis": "Nucleus ProtoInput.cs InstallHook, ExposedValues; PlayerInfo.cs ProtoInputInstanceHandle; ProtoInputLauncher.cs",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle); Nucleus sets it when it injects Proto Input, otherwise it is 0.",
+    "hookID": "Which hook to install: a ProtoInput.Values.*HookID value, e.g. ProtoInput.Values.GetCursorPosHookID or ProtoInput.Values.FocusHooksHookID."
+   }
+  },
+  "ProtoInput.UninstallHook": {
+   "basis": "Nucleus ProtoInput.cs UninstallHook, ExposedValues; PlayerInfo.cs ProtoInputInstanceHandle",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "hookID": "Which hook to remove: a ProtoInput.Values.*HookID value, the same one passed to InstallHook."
+   }
+  },
+  "ProtoInput.EnableMessageFilter": {
+   "basis": "Nucleus ProtoInput.cs EnableMessageFilter, ExposedValues; PlayerInfo.cs ProtoInputInstanceHandle",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "filterID": "Which filter to turn on: a ProtoInput.Values.*FilterID value, e.g. ProtoInput.Values.RawInputFilterID or ProtoInput.Values.WindowActivateFilterID."
+   }
+  },
+  "ProtoInput.DisableMessageFilter": {
+   "basis": "Nucleus ProtoInput.cs DisableMessageFilter, ExposedValues; PlayerInfo.cs ProtoInputInstanceHandle",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "filterID": "Which filter to turn off: a ProtoInput.Values.*FilterID value, the same one passed to EnableMessageFilter."
+   }
+  },
+  "Context.ModifySaveFile": {
+   "basis": "Nucleus GenericContext.cs ModifySaveFile; SaveType.cs; SaveData/IniSaveInfo.cs, CfgSaveInfo.cs",
+   "params": {
+    "installSavePath": "Full path of the source file to read. For INI it is copied to saveFullPath first when the two paths differ (the copy fails if saveFullPath already exists).",
+    "saveFullPath": "Full path where the edited file is written; may be the same as installSavePath to edit in place.",
+    "type": "File format: Nucleus.SaveType.INI or Nucleus.SaveType.CFG (Source-engine style cfg); any other value throws.",
+    "info": "One or more entries to set, new Nucleus.IniSaveInfo(section, key, value) for INI or new Nucleus.CfgSaveInfo(section, key, value) for CFG; other kinds are ignored."
+   }
+  },
+  "Context.EditRegKey": {
+   "basis": "Nucleus GenericContext.cs EditRegKey; RegType.cs",
+   "params": {
+    "baseKey": "Registry root as text: \"HKEY_CURRENT_USER\", \"HKEY_LOCAL_MACHINE\" or \"HKEY_USERS\"; anything else and the call does nothing.",
+    "sKey": "Key path under the root, e.g. \"Software\\\\Company\\\\Game\"; created if missing. Before the first edit Nucleus exports it to utils\\backup\\<last part>.reg.",
+    "subKey": "Name of the value to set inside that key.",
+    "value": "The data to write; null does nothing. For RegType.Binary the value's text is stored as UTF-8 bytes.",
+    "regType": "Value type: Nucleus.RegType.String, DWord, QWord, Binary, ExpandString or MultiString (the names of .NET's RegistryValueKind)."
+   }
+  },
+  "Context.ReplaceLinesInTextFile": {
+   "basis": "Nucleus GenericContext.cs ReplaceLinesInTextFile (both overloads)",
+   "params": {
+    "path": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+    "newLines": "Array of \"N|new text\" strings: N is the line number, counting from 1; out-of-range lines are skipped and text after a second | is dropped.",
+    "encoder": "Encoding name for .NET Encoding.GetEncoding, e.g. \"utf-8\" or \"utf-16\", used to read and write; without it .NET's default (UTF-8) is used."
+   }
+  },
+  "Game.AddOption": {
+   "basis": "Nucleus GenericGameInfo.cs AddOption; GameOption.cs; PlayerOptionsControl.cs; GameProfile.cs",
+   "params": {
+    "name": "Title of the option shown to the player in Nucleus' options list.",
+    "desc": "Description shown under the title.",
+    "key": "Name the handler reads the chosen value with: Context.Options[key].",
+    "value": "Default value or choices: an array of choices shows a drop-down (first item preselected); an empty array shows a text box.",
+    "defaultValue": "Stored on the option, but no Nucleus code reads it; a drop-down starts on the first item of value."
+   }
+  },
+  "Context.WriteTextFile": {
+   "basis": "Nucleus GenericContext.cs WriteTextFile",
+   "params": {
+    "path": "Full path of the file to write; an existing file is deleted first, so its old content is lost.",
+    "lines": "The text: one or more lines, as separate arguments or an array; each becomes a line, with no line break after the last."
+   }
+  },
+  "ProtoInput.SetDrawFakeCursor": {
+   "basis": "Nucleus ProtoInput.cs SetDrawFakeCursor; ProtoInputHooks PipeCommunication.cpp",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "enable": "true draws Proto Input's fake mouse cursor in that instance, false hides it."
+   }
+  },
+  "ProtoInput.StartFocusMessageLoop": {
+   "basis": "Nucleus ProtoInput.cs StartFocusMessageLoop; ProtoInputLoader Inject.cpp; ProtoInputHooks FocusMessageLoop.cpp",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "milliseconds": "Pause between rounds of fake focus messages, in milliseconds.",
+    "wm_activate": "true posts WM_ACTIVATE (click-activate) to the game window each round.",
+    "wm_activateapp": "true posts WM_ACTIVATEAPP (activated) to the game window each round.",
+    "wm_ncactivate": "true posts WM_NCACTIVATE (active title bar) to the game window each round.",
+    "wm_setfocus": "true posts WM_SETFOCUS to the game window each round.",
+    "wm_mouseactivate": "true posts WM_MOUSEACTIVATE to the game window each round."
+   }
+  },
+  "Context.ChangeXmlNodeInnerTextValue": {
+   "basis": "Nucleus GenericContext.cs ChangeXmlNodeInnerTextValue",
+   "params": {
+    "path": "Full path of the XML file; %VARIABLES% are expanded. The file is saved in place.",
+    "xpath": "XPath selecting the element(s) to change, e.g. \"//Settings/Width\"; every match is changed.",
+    "innerTextValue": "New text content for each matched element (replaces everything inside it)."
+   }
+  },
+  "ProtoInput.StopFocusMessageLoop": {
+   "basis": "Nucleus ProtoInput.cs StopFocusMessageLoop",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle)."
+   }
+  },
+  "Context.RunAdditionalFiles": {
+   "basis": "Nucleus GenericContext.cs RunAdditionalFiles (all three overloads); GameManager.cs GetAppContentPath",
+   "params": {
+    "filePaths": "Array of full file paths. Plain paths run for the first player only; prefix \"N|\" (player number from 1) or \"all|\" for every player.",
+    "changeWorkingDir": "true starts each file in the AdditionalFiles folder of Nucleus' content folder; false in the file's own folder.",
+    "secondsToPauseInbetween": "Seconds to wait between files (not after the last); in the overloads with promptBetween, only when promptBetween is true.",
+    "runAsAdmin": "true starts each file as administrator (Windows asks for elevation).",
+    "promptBetween": "true shows a prompt after each file that waits for OK before going on.",
+    "customText": "Text shown in the prompts.",
+    "showFilePath": "true adds the file's path to the prompt text.",
+    "confirm": "true starts each file only after its prompt is confirmed; files then only run when promptBetween is also true."
+   }
+  },
+  "Context.PatchFile": {
+   "basis": "Nucleus GenericContext.cs PatchFile (both overloads)",
+   "params": {
+    "originalFile": "Full path of the file to read.",
+    "patchedFile": "Full path the patched bytes are written to; may be the same as originalFile. It is written even if nothing matched.",
+    "patchFind": "Bytes to find, as an array of numbers 0-255; only the first match is patched (more matches are logged as not unique).",
+    "patchReplace": "Bytes written over the match, starting at its first byte.",
+    "spatchFind": "Text to find, converted to ASCII bytes; only the first match is patched.",
+    "spatchReplace": "Text written over the match as ASCII bytes, starting at its first byte."
+   }
+  },
+  "Context.EditRegKeyNoBackup": {
+   "basis": "Nucleus GenericContext.cs EditRegKeyNoBackup; RegType.cs",
+   "params": {
+    "baseKey": "Registry root as text: \"HKEY_CURRENT_USER\", \"HKEY_LOCAL_MACHINE\" or \"HKEY_USERS\"; anything else and the call does nothing.",
+    "sKey": "Key path under the root, e.g. \"Software\\\\Company\\\\Game\"; created if missing. No .reg backup is made.",
+    "subKey": "Name of the value to set inside that key.",
+    "value": "The data to write; null does nothing. For RegType.Binary the value's text is stored as UTF-8 bytes.",
+    "regType": "Value type: Nucleus.RegType.String, DWord, QWord, Binary, ExpandString or MultiString (the names of .NET's RegistryValueKind)."
+   }
+  },
+  "Context.ChangeXmlAttributeValue": {
+   "basis": "Nucleus GenericContext.cs ChangeXmlAttributeValue",
+   "params": {
+    "path": "Full path of the XML file; %VARIABLES% are expanded. The file is saved in place.",
+    "xpath": "XPath selecting the element(s) whose attribute to change, e.g. \"//Graphics\"; every match is changed.",
+    "attributeName": "Name of an existing attribute on every matched element; a match without it throws.",
+    "attributeValue": "New value for the attribute."
+   }
+  },
+  "Context.PatchFileFindPattern": {
+   "basis": "Nucleus GenericContext.cs PatchFileFindPattern (both overloads)",
+   "params": {
+    "originalFile": "Full path of the file to read.",
+    "patchedFile": "Full path the patched bytes are written to; may be the same as originalFile.",
+    "origPattern": "Bytes to find as a hex string, spaces allowed, e.g. \"8B 45 FC 89\"; no wildcards.",
+    "patchPattern": "Replacement bytes as a hex string, at least as long as origPattern, written over each match byte by byte.",
+    "insert": "Number whose low two bytes (little-endian) are written into a copy of origPattern at offset, which then replaces the match.",
+    "offset": "Position in origPattern, counting bytes from 1, where the two insert bytes go.",
+    "patchall": "With patchPattern: true patches every match fully, false only the first byte of each match. With insert: false stops after the first match."
+   }
+  },
+  "ProtoInput.SetRawInputBypass": {
+   "basis": "Nucleus ProtoInput.cs SetRawInputBypass; ProtoInputHooks RawInput.cpp, PipeCommunication.cpp; readme Proto Input.txt",
+   "params": {
+    "instanceHandle": "The player's Proto Input instance, Player.ProtoInputInstanceHandle (or PlayerList[i].ProtoInputInstanceHandle).",
+    "enable": "true passes raw input from every device to the game, not just the player's; false lets Proto Input filter it per device."
+   }
+  },
+  "Context.CopyFolder": {
+   "basis": "Nucleus GenericContext.cs CopyFolder; FileUtil.cs CopyDirectory, CopyDirectoryFiles",
+   "params": {
+    "source": "Full path of the folder to copy, with all its subfolders.",
+    "destination": "Full path of the target folder, created if missing; files already there are not overwritten (copy errors are ignored)."
+   }
+  },
+  "Context.CopyScriptFolder": {
+   "basis": "Nucleus GenericContext.cs CopyScriptFolder, ScriptFolder",
+   "params": {
+    "DestinationPath": "Full path to copy the handler's own folder (handlers\\<handler file name>\\) into, with subfolders; created if missing, existing files overwritten."
+   }
+  },
+  "Context.BackupFile": {
+   "basis": "Nucleus GenericContext.cs BackupFile (both overloads)",
+   "params": {
+    "filePaths": "Array of full file paths; each existing file is copied to <name>_NUCLEUS_BACKUP<ext> in the same folder, missing ones are logged.",
+    "filePath": "Full path of one file to copy to <name>_NUCLEUS_BACKUP<ext> beside it; this overload only acts for the first player.",
+    "overwrite": "true replaces an existing _NUCLEUS_BACKUP copy; false and the copy already exists throws."
+   }
+  },
+  "Context.ReplacePartialLinesInTextFile": {
+   "basis": "Nucleus GenericContext.cs ReplacePartialLinesInTextFile (both overloads)",
+   "params": {
+    "path": "Full path of the text file to edit; it must exist. The file is read, deleted and written back.",
+    "newLines": "Array of \"N|regex|replacement\" strings: N is the line number from 1, every regex match on that line is replaced (.NET Regex.Replace); none may contain |.",
+    "encoder": "Encoding name for .NET Encoding.GetEncoding, e.g. \"utf-8\" or \"utf-16\", used to read and write; without it .NET's default (UTF-8) is used."
+   }
+  }
+ }
+}

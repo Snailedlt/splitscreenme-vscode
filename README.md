@@ -1,8 +1,8 @@
 # SplitScreen.Me / Nucleus Co-op Handler Tools for VS Code
 
-Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side.
+Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) game handlers: the JavaScript files that tell Nucleus how to run several copies of a game side by side. In VS Code, [Notepad++](#notepad), [any editor with LSP](#other-editors), on the [command line](#the-command-line-tool-ncdev) and in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md): one engine, the same checks everywhere.
 
-> **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/**
+> **Beta, testers wanted.** Intro, screenshots and a 5-minute install: **https://snailedlt.github.io/nucleuscoop-handler-testbench/start/?ref=vscode-readme-md**
 
 <p>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-problems-dark.png"><img src="docs/images/vscode-problems-light.png" width="49%" alt="VS Code: a handler with common mistakes, each underlined, and the Problems panel explaining every one"></picture>
@@ -14,29 +14,68 @@ Tooling for writing [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscree
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/vscode-quickfix-dark.png"><img src="docs/images/vscode-quickfix-light.png" width="32%" alt="VS Code: the quick fix that wraps Game.KillMutex's value in an array"></picture>
 </p>
 
-*Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/). Testing it? See [TESTING.md](TESTING.md).*
+*Problems, the **Try it** panel, hover, completion and quick fixes, in VS Code. The same checks run in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md). Testing it? See [TESTING.md](TESTING.md).*
 
-- **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`.
-- **Hover docs** and **signature help** for every `Context` method and its overloads.
+**In motion** (about a minute each, captioned, no sound; click to play):
+
+<p>
+  <a href="docs/videos/vscode.mp4"><img src="docs/videos/vscode-poster.jpg" width="49%" alt="Video: VS Code with the extension, showing problems, quick fixes, suggestions, parameter hints, the Docs panel and Try it"></a>
+  <a href="docs/videos/notepadpp.mp4"><img src="docs/videos/notepadpp-poster.jpg" width="49%" alt="Video: Notepad++ with the plugin, showing the same checks, fixes, suggestions and docs"></a>
+</p>
+
+The browser workbench has [its own](https://github.com/Snailedlt/nucleuscoop-handler-testbench/blob/main/docs/videos/workbench.mp4).
+
+- **IntelliSense** for `Game`, `Game.Hook`, `Game.ProtoInput`, `Context`, `Player`, `PlayerList`, `ProtoInput`, `Hub` and the `Nucleus.*` enums. Completion lists every option Nucleus actually has, with types, defaults and docs. On an empty line, `Game.` completes the whole assignment, e.g. `Game.SymlinkGame = true|false;`. After `=`, the values the option takes.
+- **Suggestions that know your handler:** `Context.Options["` suggests the keys your `Game.AddOption` lines add, and `== "` their choices; what your own functions return is understood after a dot.
+- **Hover docs** and **signature help** for every method and its overloads, saying what to pass for each parameter of the most used ones. API names in them are links to the **Nucleus Docs** panel.
+- **Snippets** for what most handlers do (`iniset`, `replacelines`, `regkey`, `startargs`, `ifoption`, `eachplayer`…), offered where a statement starts; in an empty file, `handler` writes the whole template.
 - **Linting** for the mistakes that make handlers fail, often silently. See [Lint rules](#lint-rules).
-- **Fix all**, deterministic and offline: applies every fix that keeps the handler's behaviour or repairs code Nucleus can't load. It runs as a command, on save, or as `nucleus lint --fix`. Fixes that change behaviour or need your input stay one-click quick fixes. On the 41 engine probes, it takes 11 of the 16 that fail in Jint 2.11.58 to working.
-- **Format Document** (Shift+Alt+F): indentation and spacing only. No line moves (Nucleus runs handlers line by line), and the tokens and comments are checked to be exactly the same afterwards, so formatting never changes what the handler does. Also `nucleus format`.
+- **Fix all**, deterministic and offline: applies every fix that keeps the handler's behaviour or repairs code Nucleus can't load. It runs as a command, on save, or as `ncdev lint --fix`. Fixes that change behaviour or need your input stay one-click quick fixes. On the 41 engine probes, it takes 11 of the 16 that fail in Jint 2.11.58 to working.
+- **Format Document** (Shift+Alt+F, also a selection, and as you type): indentation, spacing, double quotes and semicolons (both [configurable](#settings)). No line moves (Nucleus runs handlers line by line), and the result is checked to parse to exactly the same program, so formatting never changes what the handler does. Also `ncdev format`.
 - **Quick fixes**: did-you-mean for typos, `"true"` → `true`, template string → concatenation, wrap a value in an array, add missing required options, and more.
 - **New Handler** wizard that generates a handler which passes the linter, with optional Proto Input, Goldberg, INI resolution and user-option sections.
 - **Package for the Hub**: builds a `.nc` package laid out the way Nucleus' installer expects.
 - **Install into Nucleus**: copies the handler and its asset folder into your Nucleus `handlers` folder.
+- **Test in Nucleus Co-op** (Windows): the ▷ button above a handler installs it and starts Nucleus with its game selected.
+- **Go to definition** (F12) and the **Outline** of the handler's options, functions and variables.
+- **Checks against the game's folder**: link the game's install folder and `ExecutableName`, `BinariesFolder` and the symlink lists are checked against the real files (only names and sizes are read).
+- **A getting-started guide**: *Help › Welcome › Make a Nucleus Co-op handler* walks from an empty file to the Hub.
 - **Browse the Hub**: search the 600+ handlers on [hub.splitscreen.me](https://hub.splitscreen.me) and open any handler's source, which is handy for seeing how others solved a problem.
 - **Type definitions** (`nucleus.d.ts`), so you can opt into full TypeScript checking with `// @ts-check`.
-- **Snippets** (`nc-…`) for common tasks: INI/XML edits, text-file line replacement, registry edits, copying files from the handler folder, options, Goldberg and Proto Input.
-- **`nucleus-lint` CLI** that runs the same checks in CI.
+- More snippets (`nc-…`) for INI/XML edits, copying files from the handler folder, Goldberg and Proto Input.
+- **The `ncdev` CLI** runs the same checks in CI, and much more: see [below](#the-command-line-tool-ncdev).
 
 The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `GameHookInfo`, `GenericContext`, `ProtoInputOptions`, …) and the [splitscreen.me docs](https://www.splitscreen.me/docs/handler-api), so it reflects what Nucleus really accepts rather than a hand-maintained list.
+
+## Every editor, side by side
+
+One engine runs underneath all of them, so the checks, suggestions and docs are the same; what differs is what each editor can show.
+
+| | VS Code | [Notepad++](#notepad) | [Browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md) | [Other editors (LSP)](#your-own-editor-for-experienced-developers) |
+|---|:-:|:-:|:-:|:-:|
+| Problems as you type, with the why | ✅ | ✅ | ✅ | ✅ |
+| Quick fixes and Fix all | ✅ | ✅ Alt+Enter | ✅ | ✅ |
+| Suggestions, snippets, the New Handler template | ✅ | ✅ | ✅ | ✅ |
+| Hover docs and parameter hints | ✅ | ✅ | ✅ | ✅ |
+| Docs for every option and function | ✅ panel | ✅ API reference | ✅ Docs tab | ✅ links to the workbench |
+| Format (never moves a line) | ✅ | ✅ | ✅ | ✅ |
+| Go to definition, references, rename | ✅ | ✅ | ✅ | ✅ |
+| Outline | ✅ | ✅ panel | — | ✅ |
+| Try it (what Nucleus does per player) | ✅ | ✅ | ✅ | ✅ command |
+| Debugger (step through, per player) | ✅ | — | ✅ | ✅ `ncdev dap` |
+| Visual editor (Form, Blocks, Lines) | — | — | ✅ | — |
+| Checks against the game's folder | ✅ | ✅ | ✅ | ✅ |
+| Browse and open Hub handlers | ✅ | ✅ | ✅ | `ncdev hub` |
+| Package as `.nc` for the Hub | ✅ | ✅ | ✅ | ✅ command |
+| Install into Nucleus Co-op (Windows) | ✅ | ✅ | ✅ Chrome, Edge | ✅ command |
+| Test in Nucleus Co-op (starts it) | ✅ | ✅ | — (a browser can't) | ✅ command |
+| Install needed | the extension | `ncdev setup notepad++` | nothing | `ncdev` |
 
 ## Getting started
 
 1. Install the extension. Until it is on the Marketplace, download the `.vsix` from the [releases](https://github.com/Snailedlt/splitscreenme-vscode/releases) (or run `npm ci && npm run package`), then **Extensions: Install from VSIX…**. Testing it? See [TESTING.md](TESTING.md).
 2. Open the folder where you keep your handlers. Any `.js` file that sets `Game.GUID`, `Game.GameName`, `Game.ExecutableName` or `Game.Play`, or lives in a `handlers` folder, gets handler features. Other JavaScript files are left alone.
-3. Run **Nucleus: New Handler…** from the Command Palette, or type `nc-handler` in an empty `.js` file.
+3. Run **Nucleus: New Handler…** from the Command Palette, or type `handler` in an empty `.js` file. New to handlers? *Help › Welcome › Make a Nucleus Co-op handler* walks you through it.
 
 ### Commands
 
@@ -45,12 +84,15 @@ The API model is **generated from the Nucleus C# sources** (`GenericGameInfo`, `
 | **Nucleus: New Handler…** | Asks for the game name, executable, Steam app ID and optional features, then writes a ready-to-edit handler. |
 | **Nucleus: Try It (Simulate Each Player)** | Opens a panel beside the editor showing what Nucleus would set up for each player: window position and size, launch arguments, the settings files it changes, options Nucleus skips, and errors a player would hit. It updates as you type; pick 1–4 players, the keyboard & mouse player and the monitor size in the panel. Also the ▷ button in the editor title bar. See [Try it](#try-it). |
 | **Nucleus: Package Handler for the Hub (.nc)** | Zips `Game.js` as `handler.js`, plus the `Game/` asset folder next to it. Also available in the Explorer context menu. |
+| **Nucleus: Test in Nucleus Co-op** (▷ above a handler, Windows) | Installs the handler and starts Nucleus Co-op with its game selected: pick the players and press Play. Restarts an open Nucleus (with your OK; it reads handlers when it starts) and offers to turn on its debug log once. **Nucleus: Open Nucleus Co-op's Debug Log** opens `debug-log.txt`. Also `ncdev test` and in Notepad++. |
 | **Nucleus: Install Handler into Nucleus Co-op** | Copies `Game.js` and `Game/` into `<Nucleus>/handlers/`. Asks for your Nucleus folder once (`splitscreenme.nucleusPath`). |
 | **Nucleus: Browse Handlers on the Hub…** | Searches hub.splitscreen.me; opens a handler's source or its Hub page. |
 | **Nucleus: Set Up Type Definitions** | Writes `.vscode/nucleus.d.ts` and a `jsconfig.json` (ES5 lib), then hands completion over to the TypeScript service. Add `// @ts-check` to a handler for type errors. |
 | **Nucleus: Fix All Auto-fixable Problems** | Applies every safe fix to the open handler. To run it on save, add `"editor.codeActionsOnSave": { "source.fixAll.nucleus": "explicit" }`. |
 | **Nucleus: Lint All Handlers in Workspace** | Lints every handler in the workspace, not just open files. |
+| **Nucleus: Docs (Every Option and Function)** | Opens **Nucleus Docs** beside the editor: every option and function with its docs, by group or by search (**Nucleus: Search the Docs…**). API names in hovers, parameter hints and suggestions open their page here; *Open in the workbench* shows the same page in the browser. |
 | **Nucleus: Open Documentation…** | Quick links to the handler API, guides, Proto Input, FAQ, Hub and PCGamingWiki. |
+| **Nucleus: Open in the Browser Workbench** | The handler you're editing, in the [browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md) (its visual editor, Lines, Test all), through a share link. |
 
 Package and Install both refuse to continue if the handler has lint errors, unless you confirm.
 
@@ -81,15 +123,15 @@ The repo also ships an agent kit, so coding agents (Claude Code, Copilot, Codex,
   | Command | What it does |
   | --- | --- |
   | `nucleus lint <file> --json` | Diagnostics and available fixes |
-  | `nucleus format <file> --write` | Indentation and spacing, never the code itself |
+  | `nucleus format <file> --write` | Indentation, spacing, quotes and semicolons; never what the code does |
   | `nucleus api Game.KillMutex` / `nucleus api --search mutex` | The "hover": type, default and docs |
   | `nucleus hub search <game>` / `nucleus hub fetch <id>` | Study how existing handlers solved the same problem |
-  | `nucleus new …` / `nucleus package …` | Scaffold a handler / build the `.nc` package |
+  | `nucleus new …` / `nucleus install …` / `nucleus package …` | Scaffold a handler / copy it into Nucleus' `handlers` folder / build the `.nc` package |
 
 ### Claude Code
 
 ```
-/plugin marketplace add SplitScreen-Me/splitscreenme-vscode
+/plugin marketplace add Snailedlt/splitscreenme-vscode
 /plugin install nucleus-coop@splitscreenme
 ```
 
@@ -97,19 +139,22 @@ The skill loads automatically when you ask about Nucleus handlers.
 
 ### MCP server (Claude Desktop, Cursor, VS Code Copilot, …)
 
-`nucleus mcp` serves the same tools over the [Model Context Protocol](https://modelcontextprotocol.io), for agents that can't run shell commands. Handler code only runs in the isolated simulator.
+`ncdev mcp` serves the same tools over the [Model Context Protocol](https://modelcontextprotocol.io), for agents that can't run shell commands. Handler code only runs in the isolated simulator.
 
 | Tool | What it does |
 | --- | --- |
-| `nucleus_lint` | Every problem, with line, rule and available fixes |
+| `nucleus_lint` | Every problem, with line, rule, available fixes and a docs link; with a path, also the files in the handler's folder |
 | `nucleus_fix` | Apply the safe automatic fixes; returns the fixed source (or saves it) |
+| `nucleus_format` | Indentation and spacing only; never moves a line |
 | `nucleus_simulate` | Try it: each player's window, launch arguments and file changes |
+| `nucleus_debug` | Stop at breakpoints (with conditions) and errors: variables, call stack, watches |
+| `nucleus_explain` | What one line does: its names' docs and its problems |
 | `nucleus_api` / `nucleus_api_search` | Type, default and docs of an option; search by words |
 | `nucleus_new_handler` | A lint-clean handler from the templates |
 | `nucleus_hub_search` / `nucleus_hub_handler` | Find Hub handlers; read a verified one as an example |
-| `nucleus_rules` | What each check does |
+| `nucleus_rules` | What each check does; with a rule id, why it matters, the fix and examples |
 
-It also offers the skill's guide as the `nucleus-handler` prompt.
+It also offers the skill's guide as the `nucleus-handler` prompt, and gives every client the hard rules (ES5, real option names, callbacks, types) in its instructions: the same rules the workbench's Fix with AI and Explain with AI use (`src/core/airules.ts`).
 
 - **VS Code (Copilot agent mode):** nothing to set up. The extension registers the server (VS Code 1.101 or newer); turn it on under **MCP Servers** in the Extensions view or in the agent's tool picker.
 - **Anywhere else:** download `nucleus.js` from the [latest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) (one file, needs Node 18+), and add it to your client. For Claude Desktop (`claude_desktop_config.json`) or Cursor (`.cursor/mcp.json`):
@@ -152,12 +197,14 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 
 ## Lint rules
 
+Every check has its own page, with why it matters, a wrong and a right example and the fix: [all checks](https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/). Each problem in VS Code and other editors links to its page.
+
 | Rule | Default | What it catches |
 | --- | --- | --- |
 | `syntax-error` | error | The file does not parse. |
 | `es5-only` | error | Syntax Jint 2.x cannot parse: arrow functions, template strings, classes, spread/rest, destructuring, default parameters, `for…of`, `?.`, `??`, `**`, trailing commas in calls, `const` in a `for` head, … The handler would not load. Fixes are offered where mechanical. |
 | `let-const-semantics` | info | `let`/`const` *are* accepted by Jint 2.x, but behave exactly like `var`: function-scoped and reassignable. |
-| `unknown-member` | warning | `Game.IgnoreWindowBordercheck`, `Context.PLayerID`, `player.ProtoController5`, … Jint silently ignores writes to unknown properties of Nucleus objects, and reads return `undefined`. In `"use strict"` code the write throws, so it is an **error** there. Includes a did-you-mean fix. |
+| `unknown-member` | warning | `Game.IgnoreWindowBordercheck`, `Context.PLayerID`, `player.ProtoController5`, … Jint silently ignores writes to unknown properties of Nucleus objects, and reads return `undefined`. In `"use strict"` code the write throws, so it is an **error** there. Also `Context.Options["key"]` with a key no `Game.AddOption` adds. Includes a did-you-mean fix. |
 | `readonly-member` | warning | Assigning computed values such as `Context.Width`, or methods. |
 | `type-mismatch` | warning / error | A non-array for an array option (`Game.KillMutex = "x"`) is an **error**: Jint throws and the handler doesn't load. A `SaveInfo` of the wrong kind in `Context.ModifySaveFile` is a warning (Nucleus skips it: INI files take `IniSaveInfo`, CFG files `CfgSaveInfo`). Also errors: `Game.AddOption` values that aren't a list (Nucleus' options screen fails), and a path in `Game.ExecutableName(s)` (it's compared with the .exe's file name, so it never matches). Booleans for enums are checked against what they convert to: `Game.DPIHandling = true` selects `Scaled`, not `True`. Other mismatches (`Game.HandlerInterval = "100"`, a non-function `Game.Play`, the wrong `Nucleus.*` enum) are warnings. `"true"`/`"false"` strings are only `info`, because .NET parses them. |
 | `value-format` | error / warning | Options Nucleus reads from text with a fixed format. **Errors** (setup fails, or none of the hotkeys work): a `Game.CustomHotkeys` entry that isn't `"true|Toggle HUD|Ctrl|H"` (4 parts, true/false first, a case-sensitive key name), a `CopyFoldersTo`/`SymlinkFoldersTo`/`HardlinkFoldersTo` entry without `folder|destination`, a `Game.SteamlessPatch` that isn't `["true or false", "args", "milliseconds"]`. **Warnings**: a hotkey modifier other than `Ctrl`, `Alt`, `Shift` (means none), a fourth hotkey (ignored), a `Game.BinariesFolder` with `/` or a slash at the start or end. |
@@ -165,7 +212,7 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 | `wrong-arguments` | error | No overload of a `Context`/`ProtoInput` method or `new Nucleus.IniSaveInfo` takes that many arguments. C# default values don't count: Jint 2.11 needs every parameter (`Context.RandomString(8)` throws; pass `RandomString(8, false)`). Also `Game.ShowOptionAsStep` with a key no earlier `Game.AddOption` added (the handler fails to load). Jint throws "No public methods with the specified arguments were found", so the handler fails to load or the instance fails. |
 | `missing-required` | error | `Game.GUID`, `Game.GameName` or `Game.ExecutableName` is missing or empty. With only `Game.ExecutableNames` it's a warning: the game can be added, but Nucleus' "Search disks" reads `ExecutableName` without checking and stops with an error for every game (fix: add `ExecutableName`). |
 | `callback-only-global` | error | `Context`, `Player`, `PlayerList`, `Handler` or `ProtoInput` used at the top level. They only exist inside callbacks such as `Game.Play`. |
-| `guid-changed` | warning | `Game.GUID` differs from the version published on the Hub (same `Hub.Handler.Id`). Nucleus keys a user's game, profiles, cover and content folder by GUID, so the update drops the game from their list. Checked in VS Code (setting `splitscreenme.lint.compareWithHub`), with `nucleus lint --hub`, and in the workbench for Hub handlers. Fix: keep the published GUID. |
+| `guid-changed` | warning | `Game.GUID` differs from the version published on the Hub (same `Hub.Handler.Id`). Nucleus keys a user's game, profiles, cover and content folder by GUID, so the update drops the game from their list. Checked in VS Code (setting `splitscreenme.lint.compareWithHub`), with `ncdev lint --hub`, and in the workbench for Hub handlers. Fix: keep the published GUID. |
 | `file-encoding` | warning | The file isn't valid UTF-8 (often ANSI / Windows-1252): Nucleus reads handlers as UTF-8, so accented letters arrive as `�`. |
 | `undefined-name` | error / warning | A name nothing declares and Nucleus doesn't provide (`"system.cfg", sdfsdf`, a typo of a variable): reading it throws "… is not defined", so at the top level the handler fails to load and in a callback Nucleus stops there. Names from the handler's plugins (`pluginsInfo.txt` in its folder) count as defined; when the linter can't see that folder, an unknown `Name.Member` is only a warning. |
 | `missing-builtin` | error / warning | Built-ins newer than ES5 that Jint 2.x doesn't have: `Object.assign`, `Array.from`, `Number.isInteger`, `Math.trunc`, `Map`, `Set`, `Promise`, … (errors), and string/array methods such as `.includes()`, `.startsWith()`, `.find()`, `.repeat()`, `.trimEnd()` (warnings, because the receiver's type isn't known; errors on literals). They throw "Object has no method …" when the code runs. Fixes rewrite `.includes(x)`/`.startsWith(x)` with `indexOf` and `.trimStart()`/`.trimEnd()` with `replace`. `padStart`/`padEnd` do exist. |
@@ -179,6 +226,38 @@ Contributors' agents: see [AGENTS.md](AGENTS.md).
 | `blocked-message` | warning | A number in `BlockedMessages` that Proto Input's message list doesn't have (it blocks another entry, or nothing), or one listed twice (info). |
 | `needs-option` | warning | An option Nucleus only reads when another is on: `FakeFocusInterval` / `FakeFocusSendActivate…` need `FakeFocus`, the fake-cursor options need `DrawFakeMouseCursor`, `SteamlessArgs` / `SteamlessTiming` need `UseSteamless`. Fix turns the parent on. |
 | `deprecated` | hint | Options the docs mark deprecated, such as the pre-Proto Input multi-keyboard settings. |
+
+General JavaScript mistakes are checked with [ESLint](https://eslint.org)'s own rules (run inside the tools, no setup), only the ones that catch real bugs and were checked against every Hub handler:
+
+| Rule | Default | Why it matters |
+| --- | --- | --- |
+| `no-cond-assign` | warning | A single `=` inside a condition assigns: the condition is the assigned value. To compare, write `==` (or `===`). |
+| `no-constant-condition` | warning | This condition is always the same, so one branch never runs. A common cause: `=` (assign) where `==` (compare) was meant. |
+| `no-dupe-keys` | warning | An object can't have the same key twice: the later value replaces the earlier one. |
+| `no-duplicate-case` | warning | Only the first of two identical `case`s ever runs. |
+| `no-dupe-else-if` | warning | This `else if` tests what an earlier branch already caught, so it never runs. |
+| `no-dupe-args` | warning | Two parameters with the same name: the second hides the first. |
+| `use-isnan` | warning | Nothing equals NaN, not even NaN: this comparison is always false. Use `isNaN(x)`. |
+| `valid-typeof` | warning | `typeof` only gives "undefined", "object", "boolean", "number", "string" or "function": this comparison is never true (a typo?). |
+| `no-unreachable` | warning | Nothing after `return`, `throw`, `break` or `continue` runs. |
+| `no-unused-expressions` | warning | This line computes something and throws the result away: it does nothing. A missing assignment or call, or a statement split over two lines? |
+| `no-self-assign` | warning | Assigning a value to itself does nothing. |
+| `no-self-compare` | warning | Comparing something with itself is always the same; probably a typo. |
+| `no-unsafe-negation` | warning | `!a in b` means `(!a) in b`; you probably meant `!(a in b)`. |
+| `no-compare-neg-zero` | info | `x === -0` is also true for 0. Use `1 / x === -Infinity` if you really need to tell them apart. |
+| `no-invalid-regexp` | error | This regular expression is invalid: it throws when that line runs. |
+| `no-empty-character-class` | warning | `[]` in a regular expression matches nothing, so the whole expression never matches. |
+| `no-control-regex` | info | A control character in a regular expression is almost always a mistake (a lost backslash). |
+| `no-sparse-arrays` | warning | Two commas in a row leave a hole (`undefined`) in the array; usually a typo. |
+| `no-useless-escape` | warning | In a string a backslash only escapes some characters: here it disappears. In a Windows path write two backslashes (`"C:\\Games"`), or `"\\"` for one. |
+| `no-octal-escape` | warning | A backslash before a digit in a string is a character code, not a backslash: `"\\45"`, not `"\45"` (which is "%"). Common in Windows paths with numbers. |
+| `no-loss-of-precision` | warning | JavaScript numbers can't hold this value exactly: it is silently rounded. |
+| `for-direction` | warning | The counter moves away from the end condition, so the loop never stops (or never runs). |
+| `no-unsafe-finally` | warning | A `return`/`throw` in `finally` overrides the one in `try`/`catch`, hiding errors. |
+| `no-func-assign` | warning | This overwrites a function declared with the same name. |
+| `no-ex-assign` | warning | Overwriting the caught error loses it. |
+| `no-obj-calls` | error | `Math` and `JSON` are objects, not functions: calling them throws. |
+| `no-shadow-restricted-names` | warning | Naming a variable `undefined`, `NaN` or `Infinity` changes what that name means everywhere after. |
 
 Change severities with the `splitscreenme.lint.rules` setting, e.g. `{ "deprecated": "off" }`, or with comments:
 
@@ -201,13 +280,19 @@ The linter runs over the 150 most-downloaded handlers on the Hub with **no error
 | `splitscreenme.lint.enable` | `true` | Report problems. |
 | `splitscreenme.lint.compareWithHub` | `true` | For a handler with a `Hub.Handler.Id`, compare `Game.GUID` with the Hub version (`guid-changed`); downloads that version once. |
 | `splitscreenme.lint.rules` | `{}` | Per-rule severity: `error`, `warning`, `info`, `hint` or `off`. |
+| `splitscreenme.lint.packageChecks` | `true` | Check the files in the handler's `<Name>/` folder as they'd go into the .nc (Windows names, overwrites, broken INI/JSON, missing files). |
+| `splitscreenme.format.quotes` | `double` | Quotes when formatting: `double` (what the Hub install reads best), `single` or `keep`. A string containing the chosen quote keeps its own. |
+| `splitscreenme.format.semicolons` | `add` | Semicolons when formatting: `add` or `keep`. |
+| `splitscreenme.gameFolders` | `{}` | The game's install folder per handler, set with **Nucleus: Link the Game's Folder…**. |
 | `splitscreenme.completion.enable` | `true` | The extension's completion/hover/signature help. Turned off by **Set Up Type Definitions**, because TypeScript then provides them. |
 | `splitscreenme.nucleusPath` | | Your Nucleus Co-op folder, used by Install. |
 | `splitscreenme.showWhatsNew` | `true` | After an update, a short note with what's new. **Nucleus: What's New** opens the changelog any time. |
 
+**What the Hub sees.** The Hub's handler list comes from our daily copy on GitHub, checked at most once an hour; hub.splitscreen.me is asked only when that copy is missing or out of date, and each package is downloaded once per version. Every request says it comes from these devtools, which tool and which feature sent it (`User-Agent: SplitScreenMe-DevTools/0.6.0 (ncdev-cli; hub-search; +https://github.com/Snailedlt/splitscreenme-vscode)` and the same in `X-Requested-With`), and nothing else: no search text, file names, code, user or computer names.
+
 ## Try it
 
-**Nucleus: Try It** and `nucleus simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.
+**Nucleus: Try It** and `ncdev simulate` load the handler and run `Game.Play` once per player, the way Nucleus does, without Nucleus or the game. They emulate the rules of Nucleus' engine (Jint 2.11.58): unknown options are skipped, only the first letter of a name is case-insensitive, list and enum values are converted the same way, wrong argument counts throw, and ES2015+ built-ins such as `.includes()` fail. The emulation is checked against the real engine: it predicts the same outcome on all 106 probes of the [testbench](https://github.com/Snailedlt/nucleuscoop-handler-testbench), launch arguments included.
 
 It also follows Nucleus' session flow: an error in `Game.Play` ends the session (later players are never set up), `Game.OnFinishedSetup` and `Game.OnStop` run with the last player's `Context`, `Game.GamePlayAfterLaunch` makes `Context.StartArguments` irrelevant, and paths (`Context.ExePath`, `GetFolder`, ...) depend on `Game.SymlinkGame`/`HardcopyGame`/`HardlinkGame` and `Game.BinariesFolder` as in Nucleus. Plugin globals listed in the handler folder's `pluginsInfo.txt` record their calls.
 
@@ -219,36 +304,125 @@ node dist/cli.js simulate MyGame.js --players 4 --keyboard none --resolution 256
 
 The exit code is 1 when the handler fails to load or a player's setup fails.
 
-`nucleus debug` runs the handler the same way and stops where you ask: at a line (`--break 14`), at a line for one player (`--break "14 if Context.PlayerID == 1"`) and wherever an error ends a phase. Each stop says where it is (the top of the file, `Game.Play` for player 2 of 4, `Game.OnStop`, ...) and shows the variables, the call stack, any `--watch` values and what the handler did so far; `--step` lists every line it runs. It records the run and reads values without running anything of the handler's, so the result is the same as without it.
+`ncdev debug` runs the handler the same way and stops where you ask: at a line (`--break 14`), at a line for one player (`--break "14 if Context.PlayerID == 1"`) and wherever an error ends a phase. Each stop says where it is (the top of the file, `Game.Play` for player 2 of 4, `Game.OnStop`, ...) and shows the variables, the call stack, any `--watch` values and what the handler did so far; `--step` lists every line it runs. It records the run and reads values without running anything of the handler's, so the result is the same as without it.
 
 ```bash
 node dist/cli.js debug MyGame.js --break "14 if Context.PlayerID == 1" --watch Context.StartArguments
 ```
 
-## Command-line linter
+## The command-line tool: `ncdev`
+
+`ncdev` (Nucleus Co-op dev tools) is the same engine as the extension, on the command line: lint, fix, format, Try it (`simulate`), the debugger (`debug`), API lookup, Hub search, new handlers from templates, packages, and the servers for other editors and AI agents (`lsp`, `dap`, `mcp`). `ncdev --help` lists everything. `nucleus` is its old name and still works.
+
+**Standalone (Windows, nothing else to install):** download `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) and run it from a terminal:
+
+```
+ncdev lint MyGame.js
+```
+
+`ncdev update` replaces it with the newest release (checked against the release's SHA-256 sums); `ncdev --version` says when there is one. It's about 95 MB because Node.js is inside. It isn't code-signed yet, so Windows SmartScreen may ask once ("More info › Run anyway").
+
+**With Node.js 18+:** `nucleus.js` from a release (`node nucleus.js lint MyGame.js`), or from the repository:
 
 ```bash
 npm ci && npm run build
-node dist/cli.js path/to/handlers   # or `nucleus-lint` once the package is installed
+node dist/cli.js path/to/handlers   # or `ncdev` / `nucleus-lint` once the package is installed
 ```
 
-`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. `format` re-indents and spaces handlers (`--write` saves, `--check` exits 1 when a file isn't formatted), and `--hub` compares `Game.GUID` with the Hub version. It also has `simulate`, `api`, `hub`, `new`, `package` and `init-agent` subcommands (`node dist/cli.js --help`). Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
+`--fix` applies every safe automatic fix and saves the files, and `--fix-dry-run` shows what it would change. `format` re-indents and spaces handlers (`--write` saves, `--check` exits 1 when a file isn't formatted), and `--hub` compares `Game.GUID` with the Hub version. Lint options: `--json`, `--rule unknown-member=error`, `--quiet` (errors only), `--verbose` (include hints), `--all` (lint every `.js`, not just handler-looking ones), `--list-rules`. The exit code is 1 when there are errors.
 
 ## Other editors
 
-`nucleus lsp` is a Language Server with the same features (problems and quick fixes, hover, completion, signature help, Format Document, window-message hints, Try it), for Neovim, Helix, Zed, Sublime Text, Emacs, JetBrains IDEs (LSP4IJ), Kate and any other LSP client. It needs only Node.js 18+ and the one-file CLI. [PORTING.md](PORTING.md) has a config snippet for each editor and explains how the code is split, for anyone (or any AI agent) porting the tools.
+Most people are best served by **VS Code**, **[Notepad++](#notepad)** or the **[browser workbench](https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=vscode-readme-md)**: they're set up in a few clicks and tested before every release. If you already live in another editor, read on.
 
 ### Notepad++
 
-Notepad++ has no reliable Language Server support, so it gets the names and call tips in its own way:
+1. Download `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases).
+2. Close Notepad++. Open a terminal as administrator (Notepad++ is in Program Files) where `ncdev.exe` is, and run:
 
-```
-nucleus setup notepad++
+   ```
+   ncdev setup notepad++
+   ```
+
+   A portable Notepad++ needs no administrator: add `--path "C:\path\to\Notepad++"`.
+3. Start Notepad++ and open a handler.
+
+This installs the **Nucleus Co-op handlers** plugin and puts `ncdev` in `%LOCALAPPDATA%\ncdev`, where the plugin finds it. In a handler:
+
+- **Problems are underlined** as you type (red: Nucleus would fail; orange: probably wrong; dotted: worth knowing). Hover one, or any name, for an explanation and the docs.
+- **Suggestions as you type** after a dot, `=`, a quote…: the members that exist there, the values an option takes (`true`/`false`, `Nucleus.DPIHandling.True`…), the game's own files once its folder is linked. The selected one's type and docs show in the status bar. Parameter hints after `(`.
+- **The handler's own functions and variables** are suggested too, with the comment above them as their docs, and their parameters show after `(`. `Context.Options["` suggests the keys your `Game.AddOption` lines add, and `== "` their choices.
+- **Alt+F12**: go to where a function, variable or option is defined; *Find references* lists every use; *Rename…* changes a variable or function everywhere in the handler.
+- **Alt+Enter**: the fixes for the line. **Plugins › Nucleus Co-op handlers** has *Fix all*, *Format handler*, *Try it* (what Nucleus would set up for 1–4 players, in a new tab), a *Problems panel* (double-click to jump, right-click for the fixes), *Link the game's folder…*, *Open in the browser workbench* (this handler, in the workbench's visual editor and Test all), the *API reference* and *Check for updates*. Every command can get a shortcut in *Settings › Shortcut Mapper*.
+- **New handler…** asks the game's name, its .exe and what to start with, then creates and opens the handler. **Install to Nucleus Co-op** copies it (and its `<Name>/` folder) into Nucleus' `handlers` folder, asking first if it has errors or is already installed. The **Outline panel** lists the handler's options, functions and variables; click one to jump there.
+- **Test in Nucleus Co-op** installs the handler and starts Nucleus with its game selected (restarting an open one, with your OK); **Open Nucleus' debug log** shows what happened.
+- **Browse the Hub…** lists the Hub's handlers (most downloaded first, or search by game), and downloads one with its files and opens it. **Package as .nc…** makes the file to upload to the Hub.
+- **Settings…**: how each check is shown (error, warning, info, hint or off), and the format style (quotes, semicolons).
+- A **Run › Nucleus: check this handler** entry runs `ncdev lint` on the open file in a console.
+
+`ncdev update` keeps the tool current (the plugin's menu says when there's a new one). `ncdev setup notepad++ --check` says what's installed and `--remove` takes it all out again. Without the standalone `ncdev` (e.g. `node nucleus.js setup notepad++`), the setup adds the Nucleus names and call tips to Notepad++'s own JavaScript suggestions instead (no plugin).
+
+### Your own editor (for experienced developers)
+
+`ncdev lsp` is a Language Server with the same features: problems and quick fixes, hover, completion with your own names and snippets, signature help, go to definition, rename, outline, Format Document, window-message hints, Try it, and *Package*, *Install*, *New handler* and *Test in Nucleus* as code actions and commands. `ncdev dap` brings the debugger. Any editor with an LSP client can use it; most need only a few lines of config.
+
+1. **Get the server.** Windows: `ncdev.exe` from the [newest release](https://github.com/Snailedlt/splitscreenme-vscode/releases) (no Node needed; `ncdev update` keeps it current). Anywhere with Node.js 18+: `nucleus.js` from the same release.
+2. **Point your editor's LSP client at it** for JavaScript files, over stdio: `ncdev lsp`, or `node /path/to/nucleus.js lsp`. It only answers for handler files, so your usual JavaScript server keeps working beside it.
+3. **Open a handler.** Problems should show within a second.
+
+| Editor | Setup | Tested by people | Tested by AI |
+| --- | --- | --- | --- |
+| Neovim | 5 lines of Lua ([below](#neovim)) | not yet | ✅ Neovim 0.9 (the 0.11 config is from its docs) |
+| Helix | 6 lines in `languages.toml` ([below](#helix)) | not yet | not yet |
+| Sublime Text | the [LSP](https://packagecontrol.io/packages/LSP) package + one client entry ([PORTING.md](PORTING.md#sublime-text-lsp-package-preferences--package-settings--lsp--settings)) | not yet | not yet |
+| Emacs 29+ | one `eglot-server-programs` line ([PORTING.md](PORTING.md#emacs-eglot-built-in-since-emacs-29)) | not yet | ✅ Emacs 29.3 (eglot) |
+| Kate | one entry in LSP Client settings ([PORTING.md](PORTING.md#kate-settings--configure-kate--lsp-client--user-server-settings)) | not yet | not yet |
+| JetBrains IDEs | the [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin, a server added in Settings ([PORTING.md](PORTING.md#jetbrains-ides-lsp4ij)) | not yet | not yet |
+| Zed | needs a small Zed extension first ([PORTING.md](PORTING.md#zed-settingsjson)) | not yet | not yet |
+
+*Tested by AI* means an AI agent ran the editor with this setup and checked that problems, hovers and quick fixes come through; *tested by people* means a handler author used it for real. Tried one? A line in the [feedback form](https://github.com/Snailedlt/splitscreenme-vscode/issues/new?template=tester-feedback.yml) (it worked, or what didn't) helps the next person.
+
+#### Neovim
+
+```lua
+vim.lsp.config('nucleus', {
+  cmd = { 'ncdev', 'lsp' }, -- or { 'node', '/path/to/nucleus.js', 'lsp' }
+  filetypes = { 'javascript' },
+  root_markers = { 'handlers', '.git' },
+})
+vim.lsp.enable('nucleus')
 ```
 
-This adds every handler API name (and the `System.IO` members handlers use) to Notepad++'s JavaScript suggestions, with parameters as call tips, and a **Run › Nucleus: check this handler** entry that runs `nucleus lint` on the open file. Notepad++'s own JavaScript words stay; a backup of its file is kept. Close Notepad++ first and restart it after. In `Program Files` it needs a terminal opened as administrator; a portable Notepad++ takes `--path "C:\path\to\Notepad++"`. `--check` says whether it's up to date (run `setup` again after updating the tools), `--remove` puts everything back.
+Before Neovim 0.11:
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'javascript',
+  callback = function()
+    vim.lsp.start({ name = 'nucleus', cmd = { 'ncdev', 'lsp' }, root_dir = vim.fn.getcwd() })
+  end,
+})
+```
+
+#### Helix
+
+In `languages.toml`:
+
+```toml
+[language-server.nucleus]
+command = "ncdev"  # or command = "node", args = ["/path/to/nucleus.js", "lsp"]
+args = ["lsp"]
+
+[[language]]
+name = "javascript"
+language-servers = ["typescript-language-server", "nucleus"]
+```
+
+Settings (which checks to show, the format style, your Nucleus folder), Fix all, Try it and the debugger for each editor are in [PORTING.md](PORTING.md), which also explains how the code is split, for anyone (or any AI agent) building a proper extension for their editor.
 
 ## Development
+
+Want to help, with or without code? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 npm ci
@@ -270,7 +444,7 @@ git clone --depth 1 https://github.com/SplitScreen-Me/splitscreenme-www ../split
 npm run generate   # or: node scripts/generate-api.mjs --nucleus <path> --www <path>
 ```
 
-The generator parses the public members of the C# classes exposed to handlers, with their types and defaults. It then merges descriptions from `docs/handler-api.mdx`, `docs/create-handlers.md`, `docs/protoinput.md` and `MasterHandler.js`. A weekly workflow (`.github/workflows/update-api.yml`) does this automatically and opens a PR when anything changes.
+The generator parses the public members of the C# classes exposed to handlers, with their types and defaults. It then merges descriptions from `docs/handler-api.mdx`, `docs/create-handlers.md`, `docs/protoinput.md` and `MasterHandler.js`. The Sync workflow (`.github/workflows/sync-sources.yml`) checks daily and opens (or updates) a PR when Nucleus or its docs changed.
 
 ### Layout
 
@@ -287,10 +461,10 @@ src/core/hub.ts         hub.splitscreen.me client
 src/extension.ts        VS Code providers
 src/commands.ts         VS Code commands
 src/cli.ts              the nucleus CLI (nucleus-lint is an alias)
-src/mcp.ts              nucleus mcp: the tools as an MCP server
+src/mcp.ts              ncdev mcp: the tools as an MCP server
 scripts/generate-api.mjs
 ```
 
 ## Links
 
-[Handler API](https://www.splitscreen.me/docs/handler-api) · [Creating handlers](https://www.splitscreen.me/docs/create-handlers) · [Proto Input](https://www.splitscreen.me/docs/protoinput) · [Hub](https://hub.splitscreen.me) · [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) · [r/nucleuscoop](https://www.reddit.com/r/nucleuscoop/)
+[Handler API](https://www.splitscreen.me/docs/handler-api) · [Creating handlers](https://www.splitscreen.me/docs/create-handlers) · [Proto Input](https://www.splitscreen.me/docs/protoinput) · [Hub](https://hub.splitscreen.me) · [Nucleus Co-op](https://github.com/SplitScreen-Me/splitscreenme-nucleus) · [r/nucleuscoop](https://www.reddit.com/r/nucleuscoop/) · [Discord](https://discord.gg/XxGMkqCf4r)

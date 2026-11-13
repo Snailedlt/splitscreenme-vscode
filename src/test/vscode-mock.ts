@@ -48,7 +48,7 @@ export class CodeAction {
   edit?: WorkspaceEdit;
   constructor(public title: string, public kind: CodeActionKind) {}
 }
-export enum CompletionItemKind { Method = 1, Field = 4, Variable = 5, Class = 6, Module = 8, Property = 9, Enum = 12, EnumMember = 19 }
+export enum CompletionItemKind { Method = 1, Function = 2, Keyword = 13, Field = 4, Variable = 5, Class = 6, Module = 8, Property = 9, Enum = 12, EnumMember = 19 }
 export enum CompletionItemTag { Deprecated = 1 }
 export class SnippetString {
   constructor(public value: string) {}
@@ -68,6 +68,20 @@ export class CompletionItem {
   command?: any;
   constructor(public label: string, kind?: CompletionItemKind) {
     this.kind = kind;
+  }
+}
+export class SemanticTokensLegend {
+  constructor(public tokenTypes: string[], public tokenModifiers: string[] = []) {}
+}
+/** Collects the pushed tokens as they are (range, type, modifiers) instead of encoding them. */
+export class SemanticTokensBuilder {
+  tokens: { range: Range; type: string; modifiers: string[] }[] = [];
+  constructor(public legend?: SemanticTokensLegend) {}
+  push(range: Range, type: string, modifiers: string[] = []) {
+    this.tokens.push({ range, type, modifiers });
+  }
+  build() {
+    return { tokens: this.tokens };
   }
 }
 export class InlayHint {
@@ -109,13 +123,14 @@ export enum ConfigurationTarget { Global = 1, Workspace, WorkspaceFolder }
 export enum ProgressLocation { Notification = 15 }
 
 // --- registries the tests can inspect --------------------------------------
-export const __registered: Record<string, any[]> = { completion: [], hover: [], signature: [], codeAction: [], commands: [], formatting: [], symbols: [] };
+export const __registered: Record<string, any[]> = { completion: [], hover: [], signature: [], codeAction: [], commands: [], formatting: [], symbols: [], definition: [] };
 export const __diagnostics = new Map<string, Diagnostic[]>();
 export const __config: Record<string, any> = {};
 
 const disposable = { dispose() {} };
 
 export const languages = {
+  getDiagnostics: (): [Uri, Diagnostic[]][] => [...__diagnostics].map(([k, d]) => [Uri.parse(k), d]),
   createDiagnosticCollection: () => ({
     set: (uri: Uri, d: Diagnostic[]) => __diagnostics.set(uri.toString(), d),
     delete: (uri: Uri) => __diagnostics.delete(uri.toString()),
@@ -124,9 +139,13 @@ export const languages = {
   registerCompletionItemProvider: (_s: any, p: any) => (__registered.completion.push(p), disposable),
   registerHoverProvider: (_s: any, p: any) => (__registered.hover.push(p), disposable),
   registerDocumentSymbolProvider: (_s: any, p: any) => (__registered.symbols.push(p), disposable),
+  registerDefinitionProvider: (_s: any, p: any) => (__registered.definition.push(p), disposable),
   registerSignatureHelpProvider: (_s: any, p: any) => (__registered.signature.push(p), disposable),
   registerDocumentFormattingEditProvider: (_s: any, p: any) => (__registered.formatting.push(p), disposable),
+  registerDocumentRangeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).rangeFormatting ??= []).push(p), disposable),
+  registerOnTypeFormattingEditProvider: (_s: any, p: any) => (((__registered as any).onType ??= []).push(p), disposable),
   registerCodeActionsProvider: (_s: any, p: any) => (__registered.codeAction.push(p), disposable),
+  registerDocumentSemanticTokensProvider: (_s: any, p: any, legend: any) => (((__registered as any).semantic ??= []).push({ p, legend }), disposable),
   registerInlayHintsProvider: (_s: any, p: any) => ((__registered as any).inlay = [...((__registered as any).inlay ?? []), p], disposable),
 };
 export const __applied: WorkspaceEdit[] = [];
@@ -134,6 +153,7 @@ export const workspace = {
   applyEdit: async (e: WorkspaceEdit) => (__applied.push(e), true),
   textDocuments: [] as any[],
   workspaceFolders: undefined,
+  isTrusted: true,
   onDidOpenTextDocument: () => disposable,
   onDidChangeTextDocument: () => disposable,
   onDidCloseTextDocument: () => disposable,
@@ -166,6 +186,9 @@ export const window = {
   showErrorMessage: async () => undefined,
   showWarningMessage: async () => undefined,
   showInformationMessage: async () => undefined,
+  __progress: [] as { message?: string }[],
+  withProgress: async (_o: unknown, task: (p: { report(v: { message?: string }): void }, t: { isCancellationRequested: boolean; onCancellationRequested(f: () => void): unknown }) => Promise<unknown>) =>
+    task({ report: (v) => window.__progress.push(v) }, { isCancellationRequested: false, onCancellationRequested: () => disposable }),
 };
 export const env = { openExternal: async () => true };
 
@@ -184,7 +207,7 @@ export function makeDocument(text: string, fileName = '/work/handlers/Game.js') 
     fileName,
     languageId: 'javascript',
     isUntitled: false,
-    getText: () => text,
+    getText: (r?: Range) => (r ? text.slice(starts[r.start.line] + r.start.character, starts[r.end.line] + r.end.character) : text),
     positionAt,
     offsetAt: (p: Position) => starts[p.line] + p.character,
     lineAt: (line: number) => ({
@@ -217,4 +240,7 @@ export class EventEmitter<T> {
   event = (l: (e: T) => void) => (this.ls.push(l), disposable);
   fire(e: T) { this.ls.forEach((l) => l(e)); }
   dispose() {}
+}
+export class Location {
+  constructor(public uri: any, public range: any) {}
 }

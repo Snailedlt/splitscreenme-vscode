@@ -3,7 +3,12 @@ import { registerWhatsNew } from './whatsnew';
 import { Diagnostic as LintDiagnostic, lint, RuleId, Severity } from './core/lint';
 import { registerCommands } from './commands';
 import { registerTryIt } from './tryit';
-import { CodeActionEntry, CompletionKind, completionsAt, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, signatureHelpAt, Span } from './core/features';
+import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
+import { ruleOverrides } from './settings';
+import { definitionAt } from './core/definition';
+import { rangeFormatEdits } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
+import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
 import { checkPackage, type PkgProblem } from './core/pkgcheck';
@@ -28,6 +33,22 @@ export function isHandler(doc: vscode.TextDocument): boolean {
   if (doc.languageId !== 'javascript') return false;
   const mode = config().get<'auto' | 'always' | 'off'>('detection', 'auto');
   return isHandlerFile(doc.fileName, doc.getText(), mode);
+}
+
+/** Warnings and errors Fix all leaves alone: package and game-folder problems on the handler, and every problem on
+ *  its package's own files (they show under their own paths). */
+export function problemsBesideLint(handler: vscode.Uri, all: [vscode.Uri, readonly vscode.Diagnostic[]][], files: vscode.Uri[]): number {
+  const own = new Set(files.map((u) => u.toString()));
+  let n = 0;
+  for (const [uri, list] of all) {
+    const key = uri.toString();
+    for (const d of list) {
+      if (d.severity > vscode.DiagnosticSeverity.Warning) continue;
+      const code = typeof d.code === 'object' ? d.code.value : d.code;
+      if (own.has(key) || (key === handler.toString() && (code === 'package' || code === 'game-folder'))) n++;
+    }
+  }
+  return n;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -130,6 +151,28 @@ export function activate(context: vscode.ExtensionContext) {
       if (edit) await editor.edit((b) => b.replace(edit.range, edit.newText));
       else vscode.window.setStatusBarMessage('Nucleus: already formatted', 2500);
     }),
+    // Explain This Line (Ctrl+Alt+E, the editor's right-click menu or the palette): the line's explanation as a hover.
+    // `at.line`: a line to explain instead of the cursor's (for other callers); the cursor moves there first.
+    vscode.commands.registerCommand(EXPLAIN, async (at?: { line?: number }) => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isHandler(editor.document)) {
+        vscode.window.showInformationMessage('Open a Nucleus handler to explain a line of it.');
+        return;
+      }
+      if (typeof at?.line === 'number' && at.line >= 0 && at.line < editor.document.lineCount) {
+        const p = new vscode.Position(at.line, editor.document.lineAt(at.line).firstNonWhitespaceCharacterIndex);
+        editor.selection = new vscode.Selection(p, p);
+      }
+      const pos = editor.selection.active;
+      const line = editor.document.lineAt(pos.line);
+      if (line.isEmptyOrWhitespace) {
+        vscode.window.setStatusBarMessage('Nucleus: an empty line, nothing to explain', 2500);
+        return;
+      }
+      if (pos.character < line.firstNonWhitespaceCharacterIndex) editor.selection = new vscode.Selection(pos.with(undefined, line.firstNonWhitespaceCharacterIndex), pos.with(undefined, line.firstNonWhitespaceCharacterIndex));
+      explainPending = { uri: editor.document.uri.toString(), line: pos.line };
+      await vscode.commands.executeCommand('editor.action.showHover');
+    }),
     vscode.commands.registerCommand('splitscreenme.fixAll', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !isHandler(editor.document)) {
@@ -142,13 +185,45 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await vscode.workspace.applyEdit(edit.edit);
-      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}. Problems that need your decision are still listed.`);
+      const left = lint(editor.document.getText(), { rules: ruleOverrides() }).filter((d) => d.severity === 'error' || d.severity === 'warning').length;
+      // Fix all doesn't touch package or game-folder problems: count them too, so "nothing else" is true.
+      const rest = left + problemsBesideLint(editor.document.uri, vscode.languages.getDiagnostics(), pkgUris.get(editor.document.uri.toString()) ?? []);
+      vscode.window.showInformationMessage(`Fixed ${edit.count} problem${edit.count === 1 ? '' : 's'}.${rest ? ` ${rest} need${rest === 1 ? 's' : ''} your decision: see the Problems panel.` : ' Nothing else to fix.'}`);
     }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ','),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, { provideCompletionItems: (d, p) => (featuresOn(d) ? completions(d, p) : undefined) }, '.', '=', ' ', '[', ',', '"', "'"),
     vscode.languages.registerHoverProvider(SELECTOR, { provideHover: (d, p) => (featuresOn(d) ? hover(d, p) : undefined) }),
     // Outline, breadcrumbs and Go to Symbol (Ctrl+Shift+O): the settings by object, the callbacks, the handler's own names.
+    // Go to definition: the handler's own functions and variables, `Game.X` to where it's set, and
+    // `Context.Options["key"]` to its `Game.AddOption` (VS Code's JavaScript support adds the rest).
+    vscode.languages.registerDefinitionProvider(SELECTOR, {
+      provideDefinition: (d, pos) => {
+        if (!featuresOn(d)) return undefined;
+        const r = definitionAt(d.getText(), d.offsetAt(pos));
+        return r ? new vscode.Location(d.uri, new vscode.Range(d.positionAt(r.start), d.positionAt(r.end))) : undefined;
+      },
+    }),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, { provideDocumentSymbols: (d) => (featuresOn(d) ? documentSymbols(d.getText()).map((s) => toVsSymbol(d, s)) : []) }, { label: 'Nucleus handler' }),
     // The name after each number in Game.ProtoInput.BlockedMessages: `0x0008` WM_KILLFOCUS.
+    // Nucleus names in the theme's colours: Game/Context as objects, their properties, methods and enum values.
+    // Outside handlers it returns nothing, so JavaScript's own semantic colouring applies there.
+    (() => {
+      const legend = new vscode.SemanticTokensLegend([...SEMANTIC_TOKEN_TYPES], [...SEMANTIC_TOKEN_MODIFIERS]);
+      return vscode.languages.registerDocumentSemanticTokensProvider(
+        SELECTOR,
+        {
+          provideDocumentSemanticTokens: (d) => {
+            if (!featuresOn(d)) return undefined;
+            const b = new vscode.SemanticTokensBuilder(legend);
+            for (const t of semanticTokens(d.getText())) {
+              const start = d.positionAt(t.start);
+              b.push(new vscode.Range(start, d.positionAt(t.end)), t.type, t.modifiers);
+            }
+            return b.build();
+          },
+        },
+        legend,
+      );
+    })(),
     vscode.languages.registerInlayHintsProvider(SELECTOR, {
       provideInlayHints: (d) =>
         featuresOn(d)
@@ -164,10 +239,23 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
       provideDocumentFormattingEdits: (doc, opts) => (isHandler(doc) ? formatEdits(doc, opts) : []),
     }),
+    vscode.languages.registerDocumentRangeFormattingEditProvider(SELECTOR, {
+      provideDocumentRangeFormattingEdits: (doc, range, opts) => (isHandler(doc) ? rangeFormat(doc, doc.offsetAt(range.start), doc.offsetAt(range.end), opts) : []),
+    }),
+    // Format on type (VS Code's editor.formatOnType): the line just finished, after `}`, `;` or Enter.
+    vscode.languages.registerOnTypeFormattingEditProvider(SELECTOR, {
+      provideOnTypeFormattingEdits: (doc, pos, ch, opts) => {
+        if (!isHandler(doc)) return [];
+        const line = ch === '\n' ? Math.max(0, pos.line - 1) : pos.line;
+        const at = doc.offsetAt(new vscode.Position(line, 0));
+        return rangeFormat(doc, at, at, opts, true);
+      },
+    }, '}', ';', '\n'),
     vscode.languages.registerSignatureHelpProvider(SELECTOR, { provideSignatureHelp: (d, p) => (featuresOn(d) ? signatureHelp(d, p) : undefined) }, '(', ','),
   );
 
   registerTryIt(context, isHandler);
+  registerDocsPanel(context);
   registerGameFolders(context, isHandler, SELECTOR, (d) => refresh(d, 0));
   registerDebugger(context, isHandler);
 
@@ -186,9 +274,6 @@ export function deactivate() {}
 // ---------------------------------------------------------------------------
 // Diagnostics
 
-function ruleOverrides(): Partial<Record<RuleId, Severity | 'off'>> {
-  return config().get('lint.rules', {});
-}
 
 const SEVERITY: Record<Severity, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -223,7 +308,7 @@ function toVsSymbol(doc: vscode.TextDocument, s: SymbolEntry): vscode.DocumentSy
 function pkgDiagnostic(p: PkgProblem, range: vscode.Range): vscode.Diagnostic {
   const v = new vscode.Diagnostic(range, `${p.title}. ${p.why}`, SEVERITY[p.severity]);
   v.source = SOURCE;
-  v.code = 'package';
+  v.code = { value: 'package', target: vscode.Uri.parse(RULES_URL) };
   return v;
 }
 
@@ -232,7 +317,7 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
     const range = new vscode.Range(doc.positionAt(d.start), doc.positionAt(Math.max(d.end, d.start)));
     const v = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
     v.source = SOURCE;
-    v.code = { value: d.rule, target: vscode.Uri.parse(`${RULES_URL}`) };
+    v.code = { value: d.rule, target: vscode.Uri.parse(RULE_DOCS[d.rule] ? ruleUrl(d.rule, 'vscode') : RULES_URL) }; // the check's own page
     if (d.tags) {
       v.tags = d.tags.map((t) => (t === 'deprecated' ? vscode.DiagnosticTag.Deprecated : vscode.DiagnosticTag.Unnecessary));
     }
@@ -242,8 +327,22 @@ function toVsDiagnostics(doc: vscode.TextDocument, diags: LintDiagnostic[]): vsc
 }
 
 /** The edit that formats a handler (core/format.ts), or none. */
+function formatStyle(opts: { insertSpaces: boolean; tabSize: number }) {
+  const cfg = vscode.workspace.getConfiguration('splitscreenme.format');
+  return { insertSpaces: opts.insertSpaces, tabSize: opts.tabSize, quotes: cfg.get<'double' | 'single' | 'keep'>('quotes', 'double'), semicolons: cfg.get<'add' | 'keep'>('semicolons', 'add') };
+}
+/** Only the lines from `start` to `end` (a selection, or the line just typed). */
+function rangeFormat(doc: vscode.TextDocument, start: number, end: number, opts: { insertSpaces: boolean; tabSize: number }, quiet = false): vscode.TextEdit[] {
+  const r = rangeFormatEdits(doc.getText(), start, end, formatStyle(opts));
+  if ('error' in r) {
+    if (!quiet) void vscode.window.showWarningMessage(`Nucleus: ${r.error}`);
+    return [];
+  }
+  return r.edits.map((e) => vscode.TextEdit.replace(toRange(doc, e), e.text));
+}
+
 function formatEdits(doc: vscode.TextDocument, opts: { insertSpaces: boolean; tabSize: number }): vscode.TextEdit[] {
-  const r = coreFormatEdits(doc.getText(), opts);
+  const r = coreFormatEdits(doc.getText(), formatStyle(opts));
   if ('error' in r) {
     void vscode.window.showWarningMessage(`Nucleus: ${r.error}`);
     return [];
@@ -295,6 +394,8 @@ const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
   field: vscode.CompletionItemKind.Field,
   property: vscode.CompletionItemKind.Property,
   method: vscode.CompletionItemKind.Method,
+  function: vscode.CompletionItemKind.Function,
+  keyword: vscode.CompletionItemKind.Keyword,
   module: vscode.CompletionItemKind.Module,
   variable: vscode.CompletionItemKind.Variable,
   class: vscode.CompletionItemKind.Class,
@@ -308,7 +409,7 @@ const KIND: Record<CompletionKind, vscode.CompletionItemKind> = {
 const toRange = (doc: vscode.TextDocument, s: Span) => new vscode.Range(doc.positionAt(s.start), doc.positionAt(s.end));
 
 function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.CompletionItem[] | undefined {
-  const entries = completionsAt(doc.getText(), doc.offsetAt(pos));
+  const entries = completionsAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   return entries?.map((e) => {
     const item = new vscode.CompletionItem(e.labelDetail ? { label: e.label, description: e.labelDetail } : e.label, KIND[e.kind]);
     if (e.range) item.range = toRange(doc, e.range);
@@ -326,22 +427,33 @@ function completions(doc: vscode.TextDocument, pos: vscode.Position): vscode.Com
 
 function markdown(s: string) {
   const md = new vscode.MarkdownString(s);
-  md.isTrusted = false;
+  // API names link to the Nucleus Docs panel: that one command may run from a link, nothing else.
+  md.isTrusted = { enabledCommands: [OPEN_DOCS] };
   return md;
 }
 
+const EXPLAIN = 'splitscreenme.explainLine';
+/** Set by Explain This Line until the hover it opens has shown. */
+let explainPending: { uri: string; line: number } | undefined;
+
 function hover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
-  const h = hoverAt(doc.getText(), doc.offsetAt(pos));
+  const p = explainPending;
+  explainPending = undefined;
+  if (p && p.uri === doc.uri.toString() && p.line === pos.line) {
+    const e = explainLine(doc.getText(), doc.offsetAt(pos));
+    if (e) return new vscode.Hover(markdown(e.markdown), doc.lineAt(pos.line).range);
+  }
+  const h = hoverAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   return h && new vscode.Hover(markdown(h.markdown), toRange(doc, h.range));
 }
 
 function signatureHelp(doc: vscode.TextDocument, pos: vscode.Position): vscode.SignatureHelp | undefined {
-  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos));
+  const s = signatureHelpAt(doc.getText(), doc.offsetAt(pos), { own: false, docsLink: docsCommandLink });
   if (!s) return undefined;
   const help = new vscode.SignatureHelp();
   for (const sig of s.signatures) {
     const info = new vscode.SignatureInformation(sig.label, sig.documentation === undefined ? undefined : markdown(sig.documentation));
-    info.parameters = sig.parameters.map((p) => new vscode.ParameterInformation(p));
+    info.parameters = sig.parameters.map((p, i) => new vscode.ParameterInformation(p, sig.parameterDocs?.[i] ? markdown(sig.parameterDocs[i]!) : undefined));
     help.signatures.push(info);
   }
   help.activeSignature = s.activeSignature;

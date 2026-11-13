@@ -2,7 +2,8 @@ import { blockTarget, wmName } from '../core/wm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as acorn from 'acorn';
-import { lint, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
+import { lint, lineOf, Diagnostic, Fix, looksLikeHandler, pluginGlobals } from '../core/lint';
+import { quickFixes } from '../core/features';
 import { fixAll } from '../core/fix';
 import { membersOf } from '../core/api';
 import { memberContextAt } from '../core/complete';
@@ -34,6 +35,7 @@ test('a minimal valid handler has no diagnostics', () => {
 Game.KillMutex = ["Mutex"];
 Game.Hook.ForceFocus = true;
 Game.DPIHandling = Nucleus.DPIHandling.InvScaled;
+Game.AddOption("Window mode", "", "mode", ["Windowed", "Borderless"]);
 Game.Play = function () {
   var ini = Context.GetFolder(Nucleus.Folder.InstancedGameFolder) + "\\\\config.ini";
   Context.ModifySaveFile(ini, ini, Nucleus.SaveType.INI, [
@@ -220,6 +222,15 @@ test('the `var x = (Context.X = ...)` idiom is only a hint', () => {
   const src = HEADER + 'Game.Play = function () {\n  var args = (Context.Args = " -windowed");\n  Context.Argz = 1;\n};\n';
   const d = only(src, 'unknown-member');
   assert.deepEqual(d.map((x) => x.severity), ['hint', 'warning']);
+});
+
+test('...but a typo of a real member in that idiom is a warning, with the fix', () => {
+  const src = HEADER + 'Game.Play = function () {\n  var a = (Context.StartArgument = "-x");\n};\n';
+  const d = only(src, 'unknown-member');
+  assert.equal(d.length, 1);
+  assert.equal(d[0].severity, 'warning');
+  assert.match(d[0].message, /Did you mean `StartArguments`/);
+  assert.equal(d[0].fixes?.[0].edits[0].text, 'StartArguments');
 });
 
 test('member names follow Jint: first letter case-insensitive, the rest exact', () => {
@@ -637,4 +648,129 @@ test('duplicate-assignment: remove this one, or keep it and remove the later one
   assert.ok(kept.includes('Game.MaxPlayers = 4;') && !kept.includes('Game.MaxPlayers = 8;'));
   // Fix all only applies the preferred one (the later value wins, as in Nucleus).
   assert.equal(d[0].fixes!.filter((f) => f.preferred).length, 1);
+});
+
+test('ESLint rules: general JavaScript mistakes, with a plain why, and no noise on correct code', () => {
+  const H = 'Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\n';
+  const rules = (code: string) => lint(H + code).map((d) => d.rule);
+  assert.ok(rules('Game.Play = function () { if ((Player.Owner.IsDualVertical = "true")) { } };').includes('no-constant-condition'), 'assignment in a condition (a real Hub bug)');
+  assert.ok(rules('var p = "C:\\Games\\Shooter";').includes('no-useless-escape'), 'a Windows path with single backslashes');
+  assert.ok(rules('var p = "C:\\\\workshop\\453090";').includes('no-octal-escape'), 'a backslash before digits');
+  assert.ok(rules('var o = { a: 1, a: 2 };').includes('no-dupe-keys'));
+  assert.ok(rules('var n = 1; if (n == NaN) { }').includes('use-isnan'));
+  assert.ok(rules('if (typeof Game === "strng") { }').includes('valid-typeof'));
+  assert.ok(rules('Game.Play = function () { return; Context.StartArguments = "x"; };').includes('no-unreachable'));
+  assert.ok(rules('Game.Play = function () { Context.Width + 1; };').includes('no-unused-expressions'));
+  const d = lint(H + 'var o = { a: 1, a: 2 };').find((x) => x.rule === 'no-dupe-keys')!;
+  assert.match(d.message, /Duplicate key 'a'\. An object can't have the same key twice/);
+  assert.equal(d.severity, 'warning');
+  // Correct code: nothing from these rules.
+  const clean = 'var p = "C:\\\\Games\\\\Shooter";\nvar re = /\\d+/g;\nGame.Play = function () {\n  var args = Context.StartArguments;\n  if (args.indexOf("-w") === -1) { Context.StartArguments = args + " -w"; }\n  while (true) { break; }\n  var ok = Context.PlayerID > 0 && Context.Width;\n};\n';
+  assert.deepEqual(lint(H + clean).filter((x) => /^(no-|use-|valid-|for-)/.test(x.rule)).map((x) => x.rule), []);
+  // Switched off like any other rule; a stray name is reported once (undefined-name, not also as an unused expression).
+  assert.ok(!lint(H + 'var o = { a: 1, a: 2 };', { rules: { 'no-dupe-keys': 'off' } }).some((x) => x.rule === 'no-dupe-keys'));
+  assert.deepEqual(lint(H + 'Game.Play = function () { wwdsss; };').map((x) => x.rule), ['undefined-name']);
+});
+
+test('names Nucleus itself gets wrong: misspelled options, readme names that do not exist', () => {
+  const cases: [string, string | undefined, RegExp][] = [
+    ['Game.ProtoInput.WindowActivateAppFilter = true;', 'WindowActvateAppFilter', /Nucleus spells this option/],
+    ['Game.ProtoInput.TranslateXAcceleration = 1;', 'TranslateXAccelration', /Nucleus spells this option/],
+    ['Game.ProtoInput.FreezeExternalInputWhenInputNotLocke = true;', 'FreezeExternalInputWhenInputNotLocked', /Handlers Tool/],
+    ['Game.IgnoreWindowBordercheck = true;', 'IgnoreWindowBorderCheck', /readme\.txt/],
+    ['Game.Usex360ce = true;', 'UseX360ce', /readme\.txt/],
+    ['Game.UseDI8CoopLvlUnlock = true;', 'UseDI8CoopLvlUnlocker', /readme\.txt/],
+    ['Game.DrawFakeMouseForControllers = true;', 'DrawFakeMouseCursorForControllers', /readme\.txt/],
+    ['Game.Play = function () { var h = Context.OrigHeight; };', undefined, /readme\.txt/],
+    ['Game.Play = function () { var g = Context.GCD(4, 3); };', undefined, /private/],
+  ];
+  for (const [line, to, note] of cases) {
+    const d = only(`${HEADER}${line}\n`, 'unknown-member');
+    assert.equal(d.length, 1, line);
+    assert.match(d[0].message, note, line);
+    if (to) {
+      assert.match(d[0].message, new RegExp(`Did you mean \`${to}\``), line);
+      assert.equal(d[0].fixes?.[0].edits[0].text, to, line);
+    } else {
+      assert.doesNotMatch(d[0].message, /Did you mean/, line);
+      assert.equal(d[0].fixes, undefined, line);
+    }
+  }
+  // The spellings Nucleus reads are fine.
+  assert.deepEqual(only(`${HEADER}Game.ProtoInput.WindowActvateAppFilter = true;\nGame.ProtoInput.TranslateXAccelration = 1;\n`, 'unknown-member'), []);
+});
+
+test('Context.Options["key"]: a key no Game.AddOption adds (a typo), with a fix; quiet when keys are computed', () => {
+  const code = `${HEADER}Game.AddOption("Language", "", "lang", ["English", "French"]);\nGame.Play = function () {\n  var a = Context.Options["lang"];\n  var b = Context.Options["Lang"];\n  var c = Context.Options["lnag"];\n};\n`;
+  const d = only(code, 'unknown-member');
+  assert.equal(d.length, 2);
+  assert.match(d[0].message, /No `Game.AddOption` in this handler adds the key `Lang`.*Did you mean `lang`/);
+  assert.equal(d[0].fixes?.[0].edits[0].text, '"lang"');
+  assert.equal(d[1].fixes?.[0].edits[0].text, '"lang"');
+  const dyn = `${HEADER}var k = "lang";\nGame.AddOption("Language", "", k, ["English"]);\nGame.Play = function () {\n  var a = Context.Options["lang"];\n};\n`;
+  assert.deepEqual(only(dyn, 'unknown-member'), [], 'a key in a variable: can not tell');
+  const none = `${HEADER}Game.Play = function () {\n  var a = Context.Options["fps"];\n};\n`;
+  assert.match(only(none, 'unknown-member')[0].message, /Add the option with/);
+});
+
+test('missing required options: explained, the fix uses what the handler already says, one problem for one cause', () => {
+  const both = lint('Game.GameName = "Halo: Reach";\nGame.ExecutableName = "reach.exe";\n');
+  const m = both.filter((d) => d.rule === 'missing-required');
+  assert.equal(m.length, 1);
+  assert.match(m[0].message, /`Game\.GUID` \(the folder name/);
+  assert.equal(m[0].fixes?.[0].edits[0].text, 'Game.GUID = "Halo Reach";\n');
+  assert.equal(m[0].fixes?.[0].preferred, true, 'derived from GameName: safe for Fix all');
+  const none = lint('Game.MaxPlayers = 4;\n');
+  const all = none.find((d) => d.rule === 'missing-required')!;
+  assert.match(all.fixes![0].title, /then fill in the real value/);
+  assert.notEqual(all.fixes![0].preferred, true, 'placeholders: not in Fix all');
+  assert.ok(!none.some((d) => d.rule === 'hub-install-parse'), 'a missing ExecutableName is reported once');
+  const nested = lint('Game.GUID = "A";\nGame.GameName = "A";\nGame.Play = function () {\n  Game.ExecutableName = "a.exe";\n};\n');
+  assert.deepEqual(nested.filter((d) => d.severity === 'error').map((d) => d.rule), ['missing-required'], 'set only inside Game.Play (too late): reported once');
+  const indented = lint('Game.GUID = "A";\nGame.GameName = "A";\n  Game.ExecutableName = "a.exe";\n');
+  assert.ok(indented.some((d) => d.rule === 'hub-install-parse'), 'set, but indented: the Hub install still fails');
+});
+
+test('every diagnostic has a severity (the CLI, VS Code and LSP all need one)', () => {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const dir = path.join(__dirname, '..', 'src', 'test', 'fixtures');
+  const texts = [
+    'Game.GUID = "A";\nGame.GameName = "A";\nGame.ExecutableName = "a.exe";\nGame.MaxPlayers = "4";\nGame.SymlinkGame = "true";\nGame.KillMutex = "x";\nGame.Hook.ForceFocus = 1;\nGame.Play = 3;\nContext.Width = 1;\nvar a = `x`;\nGame.Nope = 1;\n',
+    ...(fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dir, f), 'utf8')) : []),
+  ];
+  let n = 0;
+  for (const t of texts)
+    for (const d of lint(t)) {
+      n++;
+      assert.ok(['error', 'warning', 'info', 'hint'].includes(d.severity), `${d.rule}: severity ${String(d.severity)}`);
+    }
+  assert.ok(n > 5, 'the samples should trigger several rules');
+});
+
+test('lineOf: the same answers as counting newlines, and fast on long files', () => {
+  const text = 'a\nbb\r\n\nccc\n';
+  for (let o = -1; o <= text.length + 2; o++) {
+    let n = 0;
+    for (let i = 0; i < o && i < text.length; i++) if (text[i] === '\n') n++;
+    assert.equal(lineOf(text, o), n, `offset ${o}`);
+  }
+  // Many problems in a long file: the time grows with the number of problems, not with problems × lines.
+  const run = (n: number) => {
+    const t0 = Date.now();
+    const ds = lint('Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\n' + 'Game.KilMutex = "x";\n'.repeat(n));
+    assert.ok(ds.length >= n);
+    return Date.now() - t0;
+  };
+  run(200);
+  const small = run(1000), big = run(4000);
+  assert.ok(big < Math.max(small, 50) * 8, `1000 lines: ${small} ms, 4000 lines: ${big} ms`);
+});
+
+test('quick fixes: "Fix all" is a quick fix, so the Ctrl+. menu keeps it', () => {
+  const src = 'Game.GUID = "x";\nGame.GameName = "x";\nGame.ExecutableName = "x.exe";\nGame.MaxPlayers = "4";\nGame.KillMutex = "m";\n';
+  const ds = lint(src);
+  const all = quickFixes(src, ds).filter((a) => a.title.startsWith('Fix all '));
+  assert.equal(all.length, 1);
+  assert.equal(all[0].kind, 'quickfix');
 });

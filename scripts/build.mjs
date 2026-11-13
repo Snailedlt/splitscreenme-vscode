@@ -20,18 +20,26 @@ const common = {
 // The "Try it" simulator, bundled to a string that src/sandbox.ts evaluates inside an isolated
 // vm context (see there). Built first so the other bundles can embed it.
 const simSandbox = (
-  await esbuild.build({ ...common, entryPoints: ['src/sim-sandbox-entry.ts'], format: 'iife', platform: 'neutral', mainFields: ['module', 'main'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
+  await esbuild.build({ ...common, entryPoints: ['src/sim-sandbox-entry.ts'], format: 'iife', platform: 'neutral', alias: { 'eslint/universal': './src/core/eslint-stub.ts' }, mainFields: ['module', 'main'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
 ).outputFiles[0].text;
-common.define = { __SIM_SANDBOX__: JSON.stringify(simSandbox), __VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version) };
+// The worker thread that owns that sandbox (src/simworker.ts), also a string: started with `eval: true`,
+// so the standalone ncdev (one file) can run it. The simulator reaches it as workerData.
+const simWorker = (
+  await esbuild.build({ ...common, entryPoints: ['src/sim-worker-entry.ts'], sourcemap: false, minify: true, write: false, logLevel: 'warning' })
+).outputFiles[0].text;
+common.define = { __SIM_SANDBOX__: JSON.stringify(simSandbox), __SIM_WORKER__: JSON.stringify(simWorker), __VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version) };
 
+// Which tool a bundle is, for the headers of its Hub requests (src/hubcache.ts).
+const tool = (id) => ({ define: { ...common.define, __HUB_TOOL__: JSON.stringify(id) } });
 const builds = [
-  { ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', external: ['vscode'] },
-  { ...common, entryPoints: ['src/cli.ts'], outfile: 'dist/cli.js', banner: { js: '#!/usr/bin/env node' } },
+  { ...common, ...tool('vscode-extension'), entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', external: ['vscode'] },
+  { ...common, ...tool('ncdev-cli'), entryPoints: ['src/cli.ts'], outfile: 'dist/cli.js', banner: { js: '#!/usr/bin/env node' } },
 ];
 // The agent skill ships its own copy of the CLI so it works without npm/the extension.
 const SKILL = 'plugin/skills/nucleus-handler';
 const skillCli = {
   ...common,
+  ...tool('claude-skill'),
   entryPoints: ['src/cli.ts'],
   outfile: `${SKILL}/scripts/nucleus.js`,
   sourcemap: false,
@@ -43,7 +51,7 @@ if (tests) {
   fs.rmSync('dist-test', { recursive: true, force: true });
   const entryPoints = fs.readdirSync('src/test').filter((f) => f.endsWith('.test.ts')).map((f) => `src/test/${f}`);
   // Tests run in plain Node: swap the `vscode` module for a small mock.
-  builds.push({ ...common, entryPoints, outdir: 'dist-test', sourcemap: true, logLevel: 'warning', alias: { vscode: './src/test/vscode-mock.ts' } });
+  builds.push({ ...common, ...tool('test'), entryPoints, outdir: 'dist-test', sourcemap: true, logLevel: 'warning', alias: { vscode: './src/test/vscode-mock.ts' } });
 }
 
 if (watch) {

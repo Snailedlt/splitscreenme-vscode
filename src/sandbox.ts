@@ -3,10 +3,11 @@
 // handler can reach (Game, Context, the fake System, errors, arrays) belongs to that context:
 // there is no host object to climb out through (`x.constructor.constructor("return process")`
 // only finds the context's own Function). Only strings go in and come out. A time limit stops
-// handlers that never finish.
+// handlers that never finish. The vm part is src/sandbox-vm.ts; src/simworker.ts runs it in a worker
+// thread for editors and servers, so a looping handler never blocks the thread that serves people.
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
+import { vmRunner, type VmReply, type VmRunner } from './sandbox-vm';
 import { parsePluginsInfo } from './core/sim';
 import type { SimOptions, SimResult } from './core/sim';
 import { unpackTrace } from './core/debug';
@@ -25,69 +26,44 @@ export function pluginsFor(handlerFile: string): Record<string, string[]> | unde
 declare const __SIM_SANDBOX__: string; // the bundled src/sim-sandbox-entry.ts, injected by scripts/build.mjs
 
 export const SIM_TIMEOUT_MS = 2000;
-
-let context: vm.Context | undefined;
-function getContext(): vm.Context {
-  if (context) return context;
-  // A context whose global object has no host-side object behind it.
-  const dontContextify = (vm as any).constants?.DONT_CONTEXTIFY;
-  const ctx = dontContextify !== undefined ? vm.createContext(dontContextify) : vm.createContext(Object.create(null));
-  vm.runInContext(__SIM_SANDBOX__, ctx, { filename: 'nucleus-simulator.js' });
-  return (context = ctx);
-}
-
-export function simulateIsolated(src: string, opts: SimOptions, timeoutMs = SIM_TIMEOUT_MS): SimResult {
-  const ctx = getContext();
-  const g = vm.runInContext('globalThis', ctx);
-  g.__src = String(src);
-  g.__opts = JSON.stringify(opts);
-  try {
-    const out = vm.runInContext('__nucleusSimulate(__src, __opts)', ctx, { timeout: timeoutMs, filename: 'handler.js' });
-    return JSON.parse(String(out));
-  } catch (e: any) {
-    // Timeouts (and anything else that escapes the simulator) become a load failure.
-    context = undefined; // start from a clean context next time
-    return failure(opts, e, timeoutMs);
-  } finally {
-    if (context) {
-      delete g.__src;
-      delete g.__opts;
-    }
-  }
-}
-
-function failure(opts: SimOptions, e: any, timeoutMs: number): SimResult {
-  const msg = /timed out/i.test(String(e?.message)) ? `The handler did not finish within ${timeoutMs / 1000} s (an endless loop?). Nucleus would hang here.` : String(e?.message ?? e);
-  return { loaded: false, loadError: msg, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opts.players };
-}
-
 /** Tracing runs every statement through the debugger's hooks: slower than a plain run. */
 export const TRACE_TIMEOUT_MS = 6000;
+
+let runner: VmRunner | undefined;
+const vmr = () => (runner ??= vmRunner(__SIM_SANDBOX__));
+
+/** Synchronous, on the calling thread: for one-shot runs (the CLI) and tests. Editors and servers use
+ *  src/simworker.ts instead, which runs the same code in a worker thread that can be stopped. */
+export function simulateIsolated(src: string, opts: SimOptions, timeoutMs = SIM_TIMEOUT_MS): SimResult {
+  return simResultOf(vmr().simulate(String(src), JSON.stringify(opts), timeoutMs), opts, timeoutMs);
+}
 
 /** core/debug.ts traceHandler() in the same isolated context as simulateIsolated(). A run that
  *  doesn't finish in time gives what it recorded until then, with `error` saying so. */
 export function traceIsolated(src: string, opts: TraceOptions, timeoutMs = TRACE_TIMEOUT_MS): Trace {
-  const ctx = getContext();
-  const g = vm.runInContext('globalThis', ctx);
-  g.__src = String(src);
-  g.__opts = JSON.stringify(opts);
-  try {
-    return unpackTrace(String(vm.runInContext('__nucleusTrace(__src, __opts)', ctx, { timeout: timeoutMs, filename: 'handler.js' })));
-  } catch (e: any) {
-    let partial = '';
-    try {
-      partial = String(vm.runInContext('__nucleusTracePartial()', ctx, { timeout: 2000 }));
-    } catch {
-      // nothing recorded
-    }
-    context = undefined;
-    const result = failure(opts, e, timeoutMs);
-    const t: Omit<Trace, 'result'> = partial ? unpackTrace(partial) : { steps: [], calls: [], truncated: false, truncatedPhases: [], maxSteps: opts.maxSteps ?? 0 };
-    return { ...t, result, error: result.loadError };
-  } finally {
-    if (context) {
-      delete g.__src;
-      delete g.__opts;
-    }
-  }
+  return traceOf(vmr().trace(String(src), JSON.stringify(opts), timeoutMs), opts, timeoutMs);
+}
+
+/** The message of a run that didn't finish in time (also matched by isTimeout()). */
+export const timeoutMessage = (timeoutMs: number) => `The handler did not finish within ${timeoutMs / 1000} s (an endless loop?). Nucleus would hang here.`;
+/** True for a result whose run was stopped because it took too long. */
+export const isTimeout = (r: Pick<SimResult, 'loadError'>) => /did not finish within/.test(r.loadError ?? '');
+
+/** A failed run as a result: the handler doesn't load, with why. */
+export function failure(opts: Pick<SimOptions, 'players'>, error: string, timeoutMs: number): SimResult {
+  const msg = /timed out/i.test(error) ? timeoutMessage(timeoutMs) : error;
+  return { loaded: false, loadError: msg, ignored: [], options: [], players: [], callbacks: [], hasPlay: false, playerCount: opts.players };
+}
+
+/** A runner's reply (src/sandbox-vm.ts, here or in the worker) as a SimResult. */
+export function simResultOf(r: VmReply, opts: SimOptions, timeoutMs: number): SimResult {
+  return r.ok ? JSON.parse(r.out) : failure(opts, r.error, timeoutMs);
+}
+
+/** A runner's reply as a Trace; a run cut off keeps what it recorded until then. */
+export function traceOf(r: VmReply, opts: TraceOptions, timeoutMs: number): Trace {
+  if (r.ok) return unpackTrace(r.out);
+  const result = failure(opts, r.error, timeoutMs);
+  const t: Omit<Trace, 'result'> = r.partial ? unpackTrace(r.partial) : { steps: [], calls: [], truncated: false, truncatedPhases: [], maxSteps: opts.maxSteps ?? 0 };
+  return { ...t, result, error: result.loadError };
 }

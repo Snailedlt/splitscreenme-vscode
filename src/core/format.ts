@@ -1,10 +1,14 @@
-// Format a handler: indentation and the spacing between tokens, nothing else.
+// Format a handler: indentation, the spacing between tokens and, by default, double quotes and semicolons.
+// Opinionated (one style, like Prettier's), configurable where it matters: `quotes` ("double", "single", "keep")
+// and `semicolons` ("add", "keep"). Double quotes are the default for a Nucleus reason too: the Hub install reads
+// `Game.GameName` and `Game.ExecutableName` between double quotes.
 //
 // Safe for Nucleus by construction:
 // - Line breaks stay where they are (Nucleus runs the file line by line, and ASI depends on them);
 //   only runs of blank lines shrink to one.
 // - Tokens, strings and comments are never changed: the result is tokenized again and compared,
-//   token by token, with the original. Any difference and nothing is formatted.
+//   token by token, with the original. Any difference and nothing is formatted. Changing quotes and adding
+//   semicolons are checked harder still: the program they give must parse to exactly the same syntax tree.
 // - Lines inside a multi-line comment (or a string continued with a backslash) are left as they are.
 // - Lines at the top level stay unindented, so the Hub install still finds `Game.GameName` and
 //   `Game.ExecutableName` at the start of a line.
@@ -13,6 +17,76 @@ import * as acorn from 'acorn';
 export interface FormatOptions {
   /** One level of indentation; detected from the file when left out (tab, 2 or 4 spaces). */
   indent?: string;
+  /** Quotes around strings: "double" (default), "single", or "keep" as written. A string that holds the chosen quote
+   *  keeps its own, so no escapes are added. */
+  quotes?: 'double' | 'single' | 'keep';
+  /** "add" (default): a semicolon at the end of each statement that ends without one; "keep": as written. */
+  semicolons?: 'add' | 'keep';
+  /** Keep runs of blank lines (range formatting, so line numbers don't move). Default: shrink them to one. */
+  keepBlankLines?: boolean;
+}
+
+/** The handler with only the quote and semicolon changes, or the text unchanged when there are none (or when they
+ *  can't be proven safe: the syntax tree must stay the same). */
+function restyle(body: string, items: Item[], o: FormatOptions): string {
+  const quotes = o.quotes ?? 'double';
+  const semis = o.semicolons ?? 'add';
+  if (quotes === 'keep' && semis === 'keep') return body;
+  const edits: { at: number; end: number; text: string }[] = [];
+  if (quotes !== 'keep') {
+    const want = quotes === 'double' ? '"' : "'";
+    const other = want === '"' ? "'" : '"';
+    for (const it of items) {
+      if (it.kind !== 'tok' || it.type.label !== 'string' || it.endLine !== it.line || it.value[0] !== other) continue;
+      const inner = it.value.slice(1, -1);
+      let out = '';
+      let ok = true;
+      for (let i = 0; i < inner.length; i++) {
+        const c = inner[i];
+        if (c === '\\') {
+          const n = inner[i + 1];
+          out += n === other ? n : c + n; // \' needs no escape inside "…"
+          i++;
+        } else if (c === want) {
+          ok = false; // holds the chosen quote: leave it as it is
+          break;
+        } else out += c;
+      }
+      if (ok) edits.push({ at: it.start, end: it.end, text: want + out + want });
+    }
+  }
+  const tree = (t: string) => {
+    try {
+      return acorn.parse(t, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowReserved: true }) as any;
+    } catch {
+      return undefined;
+    }
+  };
+  const before = tree(body);
+  if (!before) return body; // not a whole program yet: only spacing is touched
+  if (semis === 'add') {
+    const NEEDS = new Set(['ExpressionStatement', 'VariableDeclaration', 'ReturnStatement', 'ThrowStatement', 'BreakStatement', 'ContinueStatement', 'DoWhileStatement', 'DebuggerStatement']);
+    const walk = (n: any, parent: any) => {
+      if (!n || typeof n.type !== 'string') return;
+      const forHead = parent && (parent.type === 'ForStatement' || parent.type === 'ForInStatement' || parent.type === 'ForOfStatement') && parent.body !== n;
+      if (NEEDS.has(n.type) && !forHead && body[n.end - 1] !== ';') edits.push({ at: n.end, end: n.end, text: ';' });
+      for (const k of Object.keys(n)) {
+        if (k === 'loc') continue;
+        const v = n[k];
+        if (Array.isArray(v)) v.forEach((c) => walk(c, n));
+        else if (v && typeof v.type === 'string') walk(v, n);
+      }
+    };
+    walk(before, undefined);
+  }
+  if (!edits.length) return body;
+  edits.sort((a, b) => b.at - a.at);
+  let out = body;
+  for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
+  // The guarantee: the same program. Positions and how literals are written aside, the trees must be equal.
+  const shape = (n: any): string => JSON.stringify(n, (k, v) => (k === 'start' || k === 'end' || k === 'raw' || k === 'loc' ? undefined : v));
+  const after = tree(out);
+  return after && shape(after) === shape(before) ? out : body;
 }
 export type FormatResult = { ok: true; code: string; changed: boolean } | { ok: false; reason: string };
 
@@ -64,15 +138,25 @@ const closesExpr = (t: Item | undefined) => t?.kind === 'tok' && (t.type.label =
 /** Whether a +/-/++/-- token is a prefix (unary) one, from the token before it. */
 const isPrefix = (prev: Tok | undefined) => !prev || (prev.type.beforeExpr && !closesExpr(prev)) || (!!prev.type.keyword && prev.value !== 'this' && prev.value !== 'true' && prev.value !== 'false' && prev.value !== 'null');
 
+/** A line break, as JavaScript sees them (.NET's ReadLine: the first three). */
+const LINE_BREAK = /\r\n|\r|\n|\u2028|\u2029/g;
+
 export function formatHandler(text: string, options: FormatOptions = {}): FormatResult {
   const bom = text.startsWith('﻿') ? '﻿' : '';
   const src = text.slice(bom.length);
   const eol = (src.match(/\r\n/g)?.length ?? 0) > (src.match(/(?<!\r)\n/g)?.length ?? 0) ? '\r\n' : '\n';
-  const body = src.replace(/\r\n/g, '\n');
-  const lexed = lex(body);
-  if (typeof lexed === 'string') return { ok: false, reason: `The file can't be read as ES5 (${lexed}), so it isn't formatted. Fix that first (Check lists it).` };
+  // Every line break JavaScript and .NET's ReadLine know: \r\n, \n, a lone \r, and (JavaScript's) U+2028/U+2029.
+  // Formatting works on \n; the rare ones are put back exactly where they were, \r\n and \n follow the file's own.
+  const breaks = src.match(LINE_BREAK) ?? [];
+  const body = src.replace(LINE_BREAK, '\n');
+  const first = lex(body);
+  if (typeof first === 'string') return { ok: false, reason: `The file can't be read as ES5 (${first}), so it isn't formatted. Fix that first (Check lists it).` };
+  // Quotes and semicolons first (proven to keep the program the same), then indentation and spacing.
+  const styled = restyle(body, first.items, options);
+  const lexed = styled === body ? first : lex(styled);
+  if (typeof lexed === 'string') return { ok: false, reason: `Formatting would have broken the code (${lexed}), so nothing was changed. Please report this handler.` };
   const { items, lineStarts } = lexed;
-  const lines = body.split('\n');
+  const lines = styled.split('\n');
   const unit = options.indent ?? detectIndent(lines);
 
   // Lines inside a multi-line comment or token: left exactly as they are.
@@ -146,6 +230,9 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
   type Open = { value: string; line: number; isSwitch: boolean; control: boolean };
   const stack: Open[] = [];
   const out: string[] = [];
+  /** The source line each output line comes from (for its line break). */
+  const outLn: number[] = [];
+  const push = (l: string, ln: number) => (out.push(l), outLn.push(ln));
   let blank = 0;
   let prevLast: Tok | undefined; // the last token of the previous line with code
   let parenKeyword: string | undefined;
@@ -154,13 +241,13 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
   let inCase = 0;
   for (let ln = 0; ln < lines.length; ln++) {
     if (raw.has(ln)) {
-      out.push(lines[ln]);
+      push(lines[ln], ln);
       blank = 0;
       continue;
     }
     const its = byLine.get(ln) ?? [];
     if (!its.length) {
-      if (++blank <= 1 && out.length) out.push('');
+      if ((++blank <= 1 || options.keepBlankLines) && (out.length || options.keepBlankLines)) push('', ln);
       continue;
     }
     blank = 0;
@@ -199,12 +286,12 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
       if (i > 0) line += space(its[i - 1], it);
       // Something that runs onto the next lines (a block comment, a continued string): only its
       // part on this line goes here; the rest of its lines are kept as they are.
-      if (it.endLine > it.line) line += body.slice(it.start, ln + 1 < lineStarts.length ? lineStarts[ln + 1] - 1 : body.length);
+      if (it.endLine > it.line) line += styled.slice(it.start, ln + 1 < lineStarts.length ? lineStarts[ln + 1] - 1 : styled.length);
       else line += it.kind === 'tok' ? it.value : it.block ? `/*${it.value}*/` : `//${it.value.trimEnd()}`;
     }
     // Trailing spaces go, unless they belong to a comment or string that goes on to the next line.
     const runsOn = its[its.length - 1].endLine > ln;
-    out.push(runsOn ? line : line.replace(/[ \t]+$/, ''));
+    push(runsOn ? line : line.replace(/[ \t]+$/, ''), ln);
     // Update the bracket stack with this line's tokens.
     for (const it of its) {
       if (it.kind !== 'tok') continue;
@@ -233,7 +320,7 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     }
     void parenKeyword;
   }
-  while (out.length && out[out.length - 1] === '') out.pop();
+  if (!options.keepBlankLines) while (out.length && out[out.length - 1] === '') (out.pop(), outLn.pop());
   const formatted = out.join('\n') + '\n';
 
   // The guarantee: the same tokens and comments, in the same order.
@@ -254,8 +341,14 @@ export function formatHandler(text: string, options: FormatOptions = {}): Format
     const rank = new Map(nonBlank.map((l2, i) => [l2, i]));
     return l.items.map((i) => rank.get(i.line) ?? -1).join(',');
   };
-  if (typeof again !== 'string' && lineSig(lexed, body) !== lineSig(again, formatted)) return { ok: false, reason: 'Formatting would have moved code to other lines, so nothing was changed. Please report this handler.' };
-  const code = bom + (eol === '\r\n' ? formatted.replace(/\n/g, '\r\n') : formatted);
+  if (typeof again !== 'string' && lineSig(lexed, styled) !== lineSig(again, formatted)) return { ok: false, reason: 'Formatting would have moved code to other lines, so nothing was changed. Please report this handler.' };
+  const breakAfter = (ln: number) => {
+    const b = breaks[ln];
+    return b === '\r' || b === '\u2028' || b === '\u2029' ? b : eol;
+  };
+  const restored = out.length ? out.map((l, i) => l + breakAfter(outLn[i])).join('') : eol;
+  if (restored.replace(LINE_BREAK, '\n') !== formatted) return { ok: false, reason: 'Formatting would have changed the line breaks, so nothing was changed. Please report this handler.' };
+  const code = bom + restored;
   return { ok: true, code, changed: code !== text };
 }
 

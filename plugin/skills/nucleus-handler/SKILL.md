@@ -19,12 +19,18 @@ This skill ships a self-contained Node CLI at `${CLAUDE_SKILL_DIR}/scripts/nucle
 | `node .../nucleus.js lint <file.js>` | **Always run after every edit.** Catches syntax Nucleus can't load, nonexistent options, wrong types, Context used outside `Game.Play`, Hub-install pitfalls. Shows available fixes. |
 | `node .../nucleus.js format <file.js> --write` | Tidy indentation and spacing after editing. It never moves a line or changes a token (it checks), so it can't change what the handler does. |
 | `node .../nucleus.js simulate <file.js> [--players 4]` | **Run after lint is clean.** Loads the handler and runs `Game.Play` for each player the way Nucleus would (emulating its Jint engine), without Nucleus or the game: each player's window, launch arguments, the file/registry changes it would make, settings Nucleus skips, and errors a player would hit (for example an ES2015 method that Jint lacks). Check the output matches what you intended. It runs isolated and touches nothing. |
+| `node .../nucleus.js debug <file.js> --break 14 [--watch Context.Width]` | When `simulate` shows a wrong value or an error: stop at a line (optionally `--break "14 if Context.PlayerID == 1"`) and see the variables, the call stack and what the handler did so far. Isolated like `simulate`. |
+| `node .../nucleus.js rules <id>` | A check you don't understand, by the rule id `lint` printed: why Nucleus cares, the fix, a wrong and a right example. Each has a page too (`https://snailedlt.github.io/nucleuscoop-handler-testbench/rules/<id>/`), worth linking for the user. |
+| `node .../nucleus.js explain <file.js> --line N` | What a line of an unfamiliar handler does: the docs of each name on it and its problems. |
 | `node .../nucleus.js api <name>` | Check an option/method before using it: `api Game.KillMutex`, `api Context.ModifySaveFile`, `api ForceFocus`, `api Nucleus.Folder`. |
 | `node .../nucleus.js api --search <words>` | Find the right option: `api --search mutex`, `api --search window title`, `api --search steam emulator`. |
 | `node .../nucleus.js hub search <words>` | Find existing handlers by game or series name. The Hub has no engine field: to find same-engine handlers, get a list of games on that engine (for example PCGamingWiki's engine page) and search for those titles. |
 | `node .../nucleus.js hub fetch <id> --out <dir>` | Download one to read how its author solved instancing, input and LAN. The best learning resource there is. Fetch the one or two that matter, never in bulk: the Hub is run by volunteers. The list is cached for an hour and each version is downloaded once, so repeating a search is free. |
 | `node .../nucleus.js new --name "Game" --exe Game.exe [--steam-id N] [--features protoinput,goldberg,resolution-ini,options]` | Start a new handler from a lint-clean template. |
-| `node .../nucleus.js package <file.js>` | Build the `.nc` package for hub.splitscreen.me. |
+| `node .../nucleus.js package <file.js>` | Build the `.nc` package for hub.splitscreen.me. `lint` already checks the files in the handler's `<Name>/` folder next to it, as they go into the package. |
+| `node .../nucleus.js install <file.js> --nucleus <folder>` / `test …` | Install the handler into the user's Nucleus Co-op, or install and start Nucleus with it selected. They change the user's Nucleus folder (and `test` closes a running Nucleus), so only with the user's OK. |
+
+Through MCP instead of a shell (`node .../nucleus.js mcp`), the same tools are `nucleus_lint`, `nucleus_fix`, `nucleus_format`, `nucleus_simulate`, `nucleus_debug`, `nucleus_explain`, `nucleus_rules`, `nucleus_api`, `nucleus_api_search`, `nucleus_new_handler`, `nucleus_hub_search` and `nucleus_hub_handler`.
 
 If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `### Game.Name`) and apply the rules below by hand.
 
@@ -49,7 +55,8 @@ If `node` is unavailable, read [reference/api.md](reference/api.md) (grep for `#
 2. **Learn from existing handlers.** `hub search` the game and its series. If a handler for this exact game already exists (especially a verified one), tell the user **first**. Installing it from Nucleus' handler browser may be all they need. If they still want changes, build on it rather than starting over. Then search titles of other games on the same engine (Unreal Engine 4, Unity, Source, ...). `hub fetch` one or two and reuse their approach.
 3. **Scaffold** with `new`, then adapt it: multiple instances (mutexes, `ChangeExe`, ...), connectivity (LAN or emulator), windowing/resolution in `Game.Play`, focus, input.
 4. **Lint** until there are no errors or warnings you can't justify, then **simulate** with 2 and 4 players and check each player's launch arguments, window and file changes are what you meant (per-player values differ, paths point at the instance folder, nothing is skipped).
-5. **Hand over a test plan.** Install via the VS Code extension or copy `<Name>.js` (and its `<Name>/` folder) into `<Nucleus>/handlers/`. Ask the user to enable debug logging (Settings, or `DebugLog=True` under `[Misc]` in Nucleus' `Settings.ini`), test with 2 players, and send `debug-log.txt` from the Nucleus folder plus what they saw.
+5. **Add the credit lines** at the top (see [Credit lines](#credit-lines-who-made-it-what-was-checked)) with what you checked and simulated.
+6. **Hand over a test plan.** Install via the VS Code extension or copy `<Name>.js` (and its `<Name>/` folder) into `<Nucleus>/handlers/`. Ask the user to enable debug logging (Settings, or `DebugLog=True` under `[Misc]` in Nucleus' `Settings.ini`), test with 2 players, and send `debug-log.txt` from the Nucleus folder plus what they saw.
 
 **Fixing a handler.** Run `lint --fix`, then lint again, then `simulate` to see what each player actually gets, then match the user's symptom in [reference/troubleshooting.md](reference/troubleshooting.md). Change one thing at a time and say what each change is for, so test results stay interpretable.
 
@@ -66,6 +73,22 @@ See [reference/recipes.md](reference/recipes.md) for tested patterns: INI/XML/te
 - `Nucleus.Globals.NucleusInstallRoot`, `Nucleus.Globals.UserDocumentsRoot`, `Nucleus.Globals.UserEnvironmentRoot`: Nucleus' install folder and the user's Documents and profile folders.
 - Use `\\` in path strings. `System.IO.*` (.NET) is available for files and folders.
 - `Context.Log("...")` writes to Nucleus' debug log; use it to confirm what `Game.Play` computed.
+
+## Credit lines (who made it, what was checked)
+
+When you create a handler, or change one, put these lines at its very top (refresh them after each change you make), so the people who support handler authors see at a glance that an AI agent wrote it and what was and wasn't checked:
+
+```
+// Made with Claude Code (AI agent) and the Nucleus Co-op handler tools: https://snailedlt.github.io/nucleuscoop-handler-testbench/?ref=handler-comment-agent
+// - Checked with ncdev lint: no problems found.
+// - Try it (simulated with ncdev simulate, not the real game): run on this version (2 and 4 players), the handler loaded. Not run in Nucleus Co-op by the agent.
+// - AI: written by an AI agent (Claude Code) on 2026-11-09; not reviewed by a person yet.
+```
+
+- **Facts only, from this version.** Name the agent you are (Claude Code, Codex, Cursor, Copilot…). Write what `lint` actually reported ("1 error and 2 warnings left"), and "not run on this version" when you haven't simulated since your last change. Never claim a test in Nucleus or the real game.
+- **Changing someone else's handler:** say what you did, e.g. `// - AI: Game.Play changed by an AI agent (Claude Code) on 2026-11-09; the rest is the author's.`
+- **Keep other credit lines** (the browser workbench writes its own) and anything a person wrote there. If the user asks you to leave the lines out or removes them, don't add them back.
+- Keep them as plain `//` comments at the top: no line may start with `Game.ExecutableName` or `Game.GameName` (the Hub install reads those).
 
 ## Time tracking (WakaTime)
 

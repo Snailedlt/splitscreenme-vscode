@@ -1,6 +1,11 @@
 // Static analysis for Nucleus Co-op handlers. Pure: no VS Code dependency, so
 // the same code powers the editor diagnostics and the `nucleus-lint` CLI.
+import { toGuid } from './templates';
+import { hubScan } from './hubscan';
+import { withoutBom } from './bom';
+import { eolOf, withEol } from './eol';
 import { blockTarget, hex, wmName } from './wm';
+import { JS_RULES, jsRuleDiagnostics, type JsRuleId } from './jsrules';
 import * as acorn from 'acorn';
 import { parseLikeJint } from './jsparse';
 import { BEFORE_SESSION } from './lifecycle';
@@ -32,12 +37,65 @@ const KEY_NAMES = new Set([
 // never read (checked in splitscreenme-nucleus' whole history and the v3.0.0 branches), still in its
 // example handler (MasterHandler.js), so handlers keep copying them. A warning that says so, not a
 // typo guess.
+/**
+ * Names that come from Nucleus itself but don't work: the correct spelling of an option Nucleus misspells, and names
+ * from Nucleus's readme.txt, readme Proto Input.txt or the Handlers Tool's suggestions that don't match the real member
+ * (checked against splitscreenme-nucleus 3d22c0e). `to` is the member that works (none: there is nothing to use).
+ */
+const NUCLEUS_NAMES: Record<string, { to?: string; note: string }> = {
+  'Game.ProtoInput.WindowActivateAppFilter': { to: 'WindowActvateAppFilter', note: 'Nucleus spells this option without the second "i" (`WindowActvateAppFilter`, ProtoInputOptions.cs), so the correct spelling is ignored.' },
+  'Game.ProtoInput.TranslateXAcceleration': { to: 'TranslateXAccelration', note: 'Nucleus spells this option `TranslateXAccelration` (ProtoInputOptions.cs), so the correct spelling is ignored.' },
+  'Game.ProtoInput.FreezeExternalInputWhenInputNotLocke': { to: 'FreezeExternalInputWhenInputNotLocked', note: 'The Handlers Tool suggests this name with the last letter cut off; the option ends in "Locked".' },
+  'Game.IgnoreWindowBordercheck': { to: 'IgnoreWindowBorderCheck', note: "Nucleus's readme.txt spells it this way, but the option has a capital C." },
+  'Game.Usex360ce': { to: 'UseX360ce', note: "Nucleus's readme.txt spells it this way, but the option has a capital X." },
+  'Game.UseDI8CoopLvlUnlock': { to: 'UseDI8CoopLvlUnlocker', note: "Nucleus's readme.txt spells it this way, but the option ends in \"Unlocker\"." },
+  'Game.DrawFakeMouseForControllers': { to: 'DrawFakeMouseCursorForControllers', note: "Nucleus's readme.txt spells it this way, but the option is `DrawFakeMouseCursorForControllers`." },
+  'Context.OrigHeight': { note: "Nucleus's readme.txt lists it, but Context has no such member." },
+  'Context.OrigWidth': { note: "Nucleus's readme.txt lists it, but Context has no such member." },
+  'Context.NoDPIHandlingWidth': { note: "Nucleus's readme.txt lists it (deprecated), but Context no longer has it." },
+  'Context.NoDPIHandlingHeight': { note: "Nucleus's readme.txt lists it (deprecated), but Context no longer has it." },
+  'Context.GCD': { note: "Nucleus's readme.txt lists it, but it's private in Nucleus, so handlers can't call it." },
+};
+
 const OBSOLETE: Record<string, string> = {
   // HandlerData.ForceFinishOnPlay: WindowsGameProcessModule.PrePlayPlayer killed the game's exe.
   // Now GenericGameHandler always calls ProcessUtil.KillRemainingProcess when a session starts.
   'Game.ForceFinishOnPlay':
     "is from the original Nucleus Coop, where it closed running copies of the game before each player started. SplitScreen.Me's Nucleus doesn't read it: it always closes leftover copies of the game (its executable, the launcher and the names in `Game.KillProcessesOnClose`) when a session starts. Nucleus ignores the line, so remove it.",
 };
+
+const JS_SEVERITY: Record<JsRuleId, Severity> = {
+  'no-invalid-regexp': 'error',
+  'no-obj-calls': 'error',
+  'no-compare-neg-zero': 'info',
+  'no-control-regex': 'info',
+  'no-cond-assign': 'warning',
+  'no-constant-condition': 'warning',
+  'no-dupe-keys': 'warning',
+  'no-duplicate-case': 'warning',
+  'no-dupe-else-if': 'warning',
+  'no-dupe-args': 'warning',
+  'use-isnan': 'warning',
+  'valid-typeof': 'warning',
+  'no-unreachable': 'warning',
+  'no-unused-expressions': 'warning',
+  'no-self-assign': 'warning',
+  'no-self-compare': 'warning',
+  'no-unsafe-negation': 'warning',
+  'no-empty-character-class': 'warning',
+  'no-sparse-arrays': 'warning',
+  'no-useless-escape': 'warning',
+  'no-octal-escape': 'warning',
+  'no-loss-of-precision': 'warning',
+  'for-direction': 'warning',
+  'no-unsafe-finally': 'warning',
+  'no-func-assign': 'warning',
+  'no-ex-assign': 'warning',
+  'no-shadow-restricted-names': 'warning',
+};
+const JS_RULE_ENTRIES = Object.fromEntries(
+  (Object.keys(JS_RULES) as JsRuleId[]).map((id) => [id, { severity: JS_SEVERITY[id], description: `ESLint's \`${id}\`: ${JS_RULES[id].why}` }]),
+) as { [K in JsRuleId]: { severity: Severity; description: string } };
 
 export const RULES = {
   'syntax-error': { severity: 'error', description: 'The file cannot be parsed.' },
@@ -119,6 +177,8 @@ export const RULES = {
     description: 'Callbacks Nucleus never runs or calls without checking: `Game.SetupSse` (never called), `Game.Play` with both `GamePlayBeforeGameSetup` and `GamePlayAfterLaunch` (never runs), `Context.StartArguments` set in a `Game.Play` that runs after launch (no effect), and `Game.CustomHotkeys` entries without their `Game.OnCustomHotKey_N` (Nucleus crashes when the hotkey is pressed).',
   },
   deprecated: { severity: 'hint', description: 'The option is deprecated (setting it to false is fine).' },
+  // General JavaScript mistakes: ESLint's own rules (core/jsrules.ts).
+  ...JS_RULE_ENTRIES,
 } as const satisfies Record<string, { severity: Severity; description: string }>;
 
 export type RuleId = keyof typeof RULES;
@@ -198,6 +258,14 @@ export const MISSING_GLOBALS = new Set(['Map', 'Set', 'WeakMap', 'Promise', 'Sym
 export const MISSING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'repeat', 'find', 'findIndex', 'fill', 'flat', 'flatMap', 'trimStart', 'trimEnd', 'trimLeft', 'codePointAt', 'normalize', 'keys', 'values', 'entries']);
 
 export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
+  // Nucleus drops a leading BOM (core/bom.ts); so does ESLint, whose positions would be one off.
+  const out = withoutBom(text, 0, (t) => lintText(t, options));
+  // Fixes are written with \n: in a CRLF file they insert CRLF, so no line ends up mixed.
+  const eol = eolOf(text);
+  if (eol === '\n') return out;
+  return out.map((d) => (d.fixes ? { ...d, fixes: d.fixes.map((f) => ({ ...f, edits: f.edits.map((e) => ({ ...e, text: withEol(e.text, eol) })) })) } : d));
+}
+function lintText(text: string, options: LintOptions): Diagnostic[] {
   const out: Diagnostic[] = [];
   const comments: acorn.Comment[] = [];
   let program: Node;
@@ -234,6 +302,20 @@ export function lint(text: string, options: LintOptions = {}): Diagnostic[] {
   }
 
   new Analyzer(text, program, out, options.plugins, options.published).run();
+  // ESLint's general JavaScript rules, unless switched off (a name that isn't defined is ours to report).
+  const jsRules = (Object.keys(JS_RULES) as JsRuleId[]).filter((r) => options.rules?.[r] !== 'off');
+  for (const d of jsRuleDiagnostics(text, jsRules)) {
+    if (d.rule === 'no-unused-expressions' && out.some((o) => o.rule === 'undefined-name' && o.start < d.end && o.end > d.start)) continue;
+    out.push({
+      rule: d.rule,
+      severity: RULES[d.rule].severity,
+      message: d.message,
+      start: d.start,
+      end: d.end,
+      ...(d.fixes.length ? { fixes: d.fixes.map((f) => ({ title: f.title, edits: f.edits })) } : {}),
+      ...(d.rule === 'no-unreachable' ? { tags: ['unnecessary' as const] } : {}),
+    });
+  }
   return finalize(out, text, comments, options);
 }
 
@@ -291,7 +373,22 @@ class Analyzer {
     private published?: LintOptions['published'],
   ) {}
 
+  /** The keys the handler's `Game.AddOption` calls add; undefined when a key isn't written out (can't tell). */
+  private addedKeys?: Set<string>;
+
   run() {
+    {
+      const keys = new Set<string>();
+      let dynamic = false;
+      visit(this.program, (x) => {
+        if (x.type === 'CallExpression' && x.callee.type === 'MemberExpression' && !x.callee.computed && x.callee.property.name === 'AddOption' && x.callee.object.type === 'Identifier' && x.callee.object.name === 'Game') {
+          const k = x.arguments[2];
+          if (k?.type === 'Literal' && typeof k.value === 'string') keys.add(k.value);
+          else dynamic = true;
+        }
+      });
+      if (!dynamic) this.addedKeys = keys;
+    }
     this.collectBindings();
     this.walk(this.program, { fnDepth: 0, inTypeof: false, topLevelStatement: false, strict: hasUseStrict(this.program.body) });
     this.checkRequired();
@@ -447,6 +544,7 @@ class Analyzer {
       case 'MemberExpression':
         this.checkMissingBuiltin(n, ctx);
         this.checkMember(n, ctx);
+        this.checkOptionKey(n);
         break;
       case 'AssignmentExpression':
         this.checkAssignment(n, ctx);
@@ -467,7 +565,8 @@ class Analyzer {
   // ---- rules ------------------------------------------------------------------
 
   private report(d: Omit<Diagnostic, 'severity'> & { severity?: Severity }) {
-    this.out.push({ severity: RULES[d.rule].severity, ...d });
+    // A caller may pass `severity: undefined` (meaning "the rule's own"): never let that blank the rule's severity.
+    this.out.push({ ...d, severity: d.severity ?? RULES[d.rule].severity });
   }
 
   private checkEs5(n: Node, ctx: Ctx) {
@@ -835,6 +934,25 @@ class Analyzer {
     return this.moveFix;
   }
 
+  /** `Context.Options["key"]` for a key no `Game.AddOption` in the handler adds: usually a typo in the key. */
+  private checkOptionKey(n: Node) {
+    if (!this.addedKeys || !n.computed || n.property.type !== 'Literal' || typeof n.property.value !== 'string') return;
+    const o = n.object;
+    if (o.type !== 'MemberExpression' || o.computed || o.property.name !== 'Options' || o.object.type !== 'Identifier' || o.object.name !== 'Context') return;
+    const key: string = n.property.value;
+    if (this.addedKeys.has(key)) return;
+    const keys = [...this.addedKeys];
+    const s = keys.length ? suggest(key, keys) ?? keys.find((k) => k.toLowerCase() === key.toLowerCase()) : undefined;
+    const q = n.property.raw[0];
+    this.report({
+      rule: 'unknown-member',
+      message: `No \`Game.AddOption\` in this handler adds the key \`${key}\`, so Nucleus has no value for it.${s ? ` Did you mean \`${s}\`?` : keys.length ? ` The keys it adds: ${keys.map((k) => `\`${k}\``).join(', ')}.` : ' Add the option with `Game.AddOption(name, description, key, values)` first.'}`,
+      start: n.property.start,
+      end: n.property.end,
+      fixes: s ? [{ title: `Change to "${s}"`, edits: [{ start: n.property.start, end: n.property.end, text: q + s + q }], preferred: true }] : undefined,
+    });
+  }
+
   private checkMember(n: Node, ctx: Ctx) {
     if (n.computed) {
       if (!(n.property.type === 'Literal' && typeof n.property.value === 'string')) return;
@@ -854,7 +972,9 @@ class Analyzer {
         // Only suggest something that can actually be assigned.
         return !isWriteTarget || !cm || (!cm.readonly && cm.kind !== 'method' && cm.kind !== 'object');
       });
-      const s = suggest(name, visible.length ? visible : candidates);
+      const known = NUCLEUS_NAMES[`${label}.${name}`];
+      const s = known ? known.to : suggest(name, visible.length ? visible : candidates);
+      const why = known ? ` ${known.note}` : '';
       // `preferred` marks fixes safe for "Fix all". A suggestion that only differs in digits
       // (ProtoController5 -> ProtoController1) is a different member, not a typo.
       const digitsOnly = !!s && s.replace(/\d+/g, '#') === name.replace(/\d+/g, '#');
@@ -864,7 +984,7 @@ class Analyzer {
         this.report({
           rule: 'unknown-member',
           severity: 'error',
-          message: `\`${name}\` does not exist on \`${label}\`. In "use strict" code Jint throws on this write, so the handler fails to load (or the instance fails, inside a callback).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          message: `\`${name}\` does not exist on \`${label}\`. In "use strict" code Jint throws on this write, so the handler fails to load (or the instance fails, inside a callback).${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
           start: n.property.start,
           end: n.property.end,
           fixes,
@@ -875,6 +995,17 @@ class Analyzer {
       // guide): the property write is dropped, but the value still reaches the variable.
       const assign = ctx.parent;
       const valueUsed = isWrite && assign && this.parentOf.get(assign)?.type === 'VariableDeclarator';
+      // ...unless the name is a typo of a real member: then the handler likely meant that one, and it isn't set.
+      if (valueUsed && s && !known && !digitsOnly) {
+        this.report({
+          rule: 'unknown-member',
+          message: `\`${name}\` does not exist on \`${label}\`, so only the variable receives this value. Did you mean \`${s}\`?`,
+          start: n.property.start,
+          end: n.property.end,
+          fixes,
+        });
+        return;
+      }
       if (valueUsed) {
         this.report({
           rule: 'unknown-member',
@@ -929,7 +1060,7 @@ class Analyzer {
         this.report({
           rule: 'unknown-member',
           severity: 'error',
-          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws (Jint: "Object has no method '${name}'") and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${s ? ` Did you mean \`${s}\`?` : ''}`,
+          message: `\`${name}\` does not exist on \`${label}\`, so calling it throws (Jint: "Object has no method '${name}'") and Nucleus stops with an error here (in \`Game.Play\`, that ends the session).${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
           start: n.property.start,
           end: n.property.end,
           fixes,
@@ -939,7 +1070,7 @@ class Analyzer {
       const effect = isWrite ? 'Assigning it has no effect' : 'It will be undefined';
       this.report({
         rule: 'unknown-member',
-        message: `\`${name}\` does not exist on \`${label}\`. ${effect}.${s ? ` Did you mean \`${s}\`?` : ''}`,
+        message: `\`${name}\` does not exist on \`${label}\`. ${effect}.${why}${s ? ` Did you mean \`${s}\`?` : ''}`,
         start: n.property.start,
         end: n.property.end,
         fixes,
@@ -1206,14 +1337,33 @@ class Analyzer {
     }
     const firstGame = [...this.topAssignments.values()][0]?.[0];
     const at = firstGame ? lineStart(this.text, firstGame.start) : 0;
-    const lines = missing.map((k) => `Game.${k} = "${k === 'ExecutableName' ? 'Game.exe' : 'My Game'}";`).join('\n') + '\n';
+    // The values: from what the handler already says where it can (GUID from GameName, GameName from GUID), else
+    // placeholders to fill in.
+    const literal = (k: string) => {
+      const v = this.topAssignments.get(`Game.${k}`)?.[0]?.right;
+      return v?.type === 'Literal' && typeof v.value === 'string' && v.value.trim() ? (v.value as string) : undefined;
+    };
+    const known: Record<string, string | undefined> = {
+      GUID: literal('GameName') !== undefined ? toGuid(literal('GameName')!) : undefined,
+      GameName: literal('GUID'),
+    };
+    const value = (k: string) => known[k] ?? (k === 'ExecutableName' ? 'Game.exe' : 'My Game');
+    const placeholders = missing.filter((k) => known[k] === undefined);
+    const lines = missing.map((k) => `Game.${k} = ${JSON.stringify(value(k))};`).join('\n') + '\n';
+    const why: Record<string, string> = { GUID: 'the folder name Nucleus keeps the game\'s files under', GameName: 'the name players see in Nucleus', ExecutableName: 'the .exe Nucleus starts and finds the game by' };
     this.report({
       rule: 'missing-required',
-      message: `Missing required option${missing.length > 1 ? 's' : ''}: ${missing.map((k) => `Game.${k}`).join(', ')}. Nucleus cannot load the handler without ${missing.length > 1 ? 'them' : 'it'}.`,
+      message: `Missing required option${missing.length > 1 ? 's' : ''}: ${missing.map((k) => `\`Game.${k}\` (${why[k]})`).join(', ')}. Nucleus cannot load the handler without ${missing.length > 1 ? 'them' : 'it'}.`,
       start: at,
       end: lineEnd(this.text, at),
-      // Not part of "Fix all": it inserts placeholder values only the author can fill in.
-      fixes: [{ title: `Add ${missing.map((k) => `Game.${k}`).join(', ')}`, edits: [{ start: at, end: at, text: lines }] }],
+      fixes: [
+        {
+          title: `Add ${missing.map((k) => `Game.${k} = ${JSON.stringify(value(k))}`).join(', ')}${placeholders.length ? ' (then fill in the real value)' : ''}`,
+          edits: [{ start: at, end: at, text: lines }],
+          // In "Fix all" only when every value comes from the handler itself; placeholders need the author.
+          preferred: !placeholders.length,
+        },
+      ],
     });
   }
 
@@ -1246,44 +1396,9 @@ class Analyzer {
     }
   }
 
-  /**
-   * Replays DownloadPrompt.ExtractHandler (and the in-app Hub browser and drag & drop, which
-   * do the same) on the raw text: every physical line, comments and function bodies included;
-   * `line.ToLower().StartsWith("game.executablename")` else ("game.gamename"); the value is
-   * `line.Substring(first '"' + 1, last - first - 1)`, which throws with fewer than two '"';
-   * each match overwrites the previous one; it stops after two matches.
-   */
-  private hubScan() {
-    const result: Record<'ExecutableName' | 'GameName', { value: string | null; line: number; offset: number; crash: boolean } | undefined> & { matched: number[] } = {
-      ExecutableName: undefined,
-      GameName: undefined,
-      matched: [],
-    };
-    let found = 0;
-    let offset = 0;
-    const lines = this.text.split(/\r\n|\n|\r/);
-    const ends = this.text.match(/\r\n|\n|\r/g) ?? [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lower = line.toLowerCase();
-      const key = lower.startsWith('game.executablename') ? 'ExecutableName' : lower.startsWith('game.gamename') ? 'GameName' : null;
-      if (key) {
-        const first = line.indexOf('"');
-        const last = line.lastIndexOf('"');
-        const crash = first < 0 || last === first;
-        result[key] = { value: crash ? null : line.slice(first + 1, last), line: i, offset, crash };
-        result.matched.push(i + 1);
-        found++;
-        if (crash || found === 2) break; // a crash ends the install
-      }
-      offset += line.length + (ends[i]?.length ?? 0);
-    }
-    return result;
-  }
-
   private checkHubInstall() {
-    // See hubScan(): what Nucleus reads when installing from the Hub.
-    const scan = this.hubScan();
+    // What Nucleus reads when installing from the Hub (core/hubscan.ts).
+    const scan = hubScan(this.text);
     const reported = new Set<string>();
     const crashed = (['ExecutableName', 'GameName'] as const).find((k) => scan[k]?.crash);
     // When the crashing line is the assignment itself, its own report below (with its fix) says so.
@@ -1301,7 +1416,8 @@ class Analyzer {
         end: le,
       });
       reported.add(crashed);
-    } else if (!crashed && this.gameAssignedAnywhere.size && !scan.ExecutableName) {
+    } else if (!crashed && this.gameAssignedAnywhere.size && !scan.ExecutableName && (scan.matched.length === 2 || this.gameAssignedAnywhere.has('Game.ExecutableName'))) {
+      // (Not set at all: missing-required says so, with its fix; this would be the same problem twice.)
       this.report({
         rule: 'hub-install-parse',
         severity: 'error',
@@ -1852,10 +1968,21 @@ function templateFix(text: string, n: Node): Fix[] | undefined {
   return [{ title: 'Convert to string concatenation', edits: [{ start: n.start, end: n.end, text: parts.join(' + ') }], preferred: true }];
 }
 
+// Where each line starts, for the last text asked about: lint asks once per problem, and scanning from the start
+// every time made long files (thousands of lines) take seconds.
+let startsOf: { text: string; starts: number[] } | undefined;
 export function lineOf(text: string, offset: number): number {
-  let line = 0;
-  for (let i = 0; i < offset && i < text.length; i++) if (text.charCodeAt(i) === 10) line++;
-  return line;
+  if (startsOf?.text !== text) {
+    const starts = [0];
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+    startsOf = { text, starts };
+  }
+  const { starts } = startsOf;
+  const at = Math.min(Math.max(offset, 0), text.length);
+  // The last line starting at or before `at` (a newline at `at` itself still belongs to the line before).
+  let lo = 0, hi = starts.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= at) lo = mid; else hi = mid - 1; }
+  return lo;
 }
 export function lineStart(text: string, offset: number): number {
   return text.lastIndexOf('\n', offset - 1) + 1;

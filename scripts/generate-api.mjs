@@ -265,7 +265,16 @@ function parseClass(file, className) {
 const docs = new Map();
 const MEMBER_LINE = /^\s*((?:Game|Context|Hub|ProtoInput)(?:\.\w+)*)\.(\w+)(\s*(?:=|\(|;|\/\/|$).*)$/;
 
+// handler-api.mdx lists Context's functions (files, registry, processes, helpers) under "Path variables" with the
+// paths: give each the category of what it does.
+const FUNCTION_CATEGORIES = [
+  [/^Context\.(\w*TextFile|ChangeXmlNode\w*|FindFiles|CopyScriptFolder|RunAdditionalFiles|CreatedDate|ModifiedDate|ModifySaveFile|\w*Backup\w*)$/, 'Files'],
+  [/^Context\.\w*RegKey$/, 'Registry'],
+  [/^Context\.KillProcesses\w*$/, 'Processes'],
+  [/^Context\.(Convert\w+|GCD|Random\w+|Log)$/, 'Helpers'],
+];
 function setDoc(key, info, override = false) {
+  if (info.category === 'Path variables') { const c = FUNCTION_CATEGORIES.find(([re]) => re.test(key)); if (c) info = { ...info, category: c[1] }; }
   const prev = docs.get(key);
   if (prev && !override) {
     for (const [k, v] of Object.entries(info)) if (v && !prev[k]) prev[k] = v;
@@ -524,6 +533,16 @@ function pickDoc(key, human) {
   return { doc: human || '' };
 }
 
+// Parameter docs written by Claude from the source (data/claude-param-docs.json), marked docBy: 'claude'.
+const claudeParamDocs = JSON.parse(fs.readFileSync(path.join(root, 'data', 'claude-param-docs.json'), 'utf8')).params;
+const usedParamDocs = new Set();
+const paramDoc = (key, name) => {
+  const d = claudeParamDocs[key]?.params?.[name];
+  if (!d) return {};
+  usedParamDocs.add(key);
+  return { doc: d, docBy: 'claude' };
+};
+
 function buildObject(objName, docPrefix, parsed) {
   const result = {};
   for (const m of parsed) {
@@ -547,6 +566,7 @@ function buildObject(objName, docPrefix, parsed) {
           type: looseParam(p.rest ? tsType(p.csType.replace(/\[\]$/, '')) : tsType(p.csType)),
           csType: p.csType,
           ...(p.rest ? { rest: true } : {}),
+          ...paramDoc(key, p.name),
           // C# default values don't make a parameter optional in Jint 2.11: it only matches
           // overloads with exactly as many parameters as arguments (testbench probe 110:
           // Context.RandomString(8) throws, RandomString(8, false) works). So they're required.
@@ -701,6 +721,8 @@ for (const [obj, prefix] of [['Hub', 'Hub'], ['HubHandler', 'Hub.Handler'], ['Hu
 }
 const unusedClaude = Object.keys(claudeDocs).filter((k) => !usedClaude.has(k));
 if (unusedClaude.length) console.log(`data/claude-docs.json entries not used (a human doc exists now, or no such member): ${unusedClaude.join(', ')}`);
+const unusedParamDocs = Object.keys(claudeParamDocs).filter((k) => !usedParamDocs.has(k));
+if (unusedParamDocs.length) console.log(`data/claude-param-docs.json entries not used (no such method): ${unusedParamDocs.join(', ')}`);
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'nucleus-api.json'), JSON.stringify(model, null, 1) + '\n');
 
@@ -725,7 +747,8 @@ function iface(name, obj) {
         // .NET `params T[]` also accepts a single JS array.
         if (o.params.some((p) => p.rest)) variants.push(o.params.map((p) => `${safeIdent(p.name)}${p.optional ? '?' : ''}: ${p.rest ? `(${p.type})[]` : p.type}`));
         for (const params of variants) {
-          s += jsdoc(m.doc, [...claudeNote(m), ...(m.internal ? ['@internal'] : [])]);
+          const paramTags = o.params.filter((p) => p.doc).map((p) => `@param ${safeIdent(p.name)} ${p.doc}${p.docBy === 'claude' ? ' (AI-written)' : ''}`);
+          s += jsdoc(m.doc, [...claudeNote(m), ...paramTags, ...(m.internal ? ['@internal'] : [])]);
           s += `  ${k}(${params.join(', ')}): ${o.returns};\n`;
         }
       }
