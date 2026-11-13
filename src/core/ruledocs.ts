@@ -91,6 +91,13 @@ const NUCLEUS: Record<string, RuleDoc> = {
     fix: 'Add the missing line at the top of the handler.',
     whole: true,
   },
+  'replaces-nucleus-object': {
+    title: 'Game or Context replaced',
+    why: 'Nucleus gives the handler its own Game and Context and reads the settings from those. A variable, parameter or function of the same name puts a new object in their place, so Nucleus never sees what is set on it: with `var Game = {}` at the top it finds no Game.Play, and a `var Context` in Game.Play loses StartArguments.',
+    bad: 'Game.Play = function () {\n  var Context = {};\n  Context.StartArguments = "-windowed";\n};',
+    good: 'Game.Play = function () {\n  Context.StartArguments = "-windowed";\n};',
+    fix: 'Remove the declaration, or give your own variable another name.',
+  },
   'callback-only-global': {
     title: 'Code in the wrong place',
     why: 'Context, Player, PlayerList, Handler and ProtoInput only exist while Nucleus runs a callback such as Game.Play. Used at the top of the handler, they make it fail to load.',

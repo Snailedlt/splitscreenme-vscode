@@ -19,7 +19,14 @@ const firstSentence = (t?: string) => {
   const s = String(t ?? '').split('\n')[0].trim();
   return (s.match(/^[\s\S]*?[.!?](?=\s+[A-Z`"(]|$)/) ?? [s])[0];
 };
-const code = (t: string) => '`' + t.replace(/`/g, "'") + '`';
+/** `t` as Markdown inline code, exactly as written: code with backticks in it (a template string) gets a longer
+ *  fence, `` like this ``, as CommonMark does. */
+export const code = (t: string) => {
+  const runs = t.match(/`+/g);
+  if (!runs) return '`' + t + '`';
+  const fence = '`'.repeat(Math.max(...runs.map((r) => r.length)) + 1);
+  return `${fence} ${t} ${fence}`;
+};
 
 /** The names on the line that the API knows, in order, each once. */
 function namesOn(text: string, start: number, end: number): { path: string; member: Member }[] {

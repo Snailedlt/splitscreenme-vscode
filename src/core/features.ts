@@ -916,3 +916,10 @@ export function semanticTokens(text: string): SemanticToken[] {
   visit(program, undefined);
   return out.sort((a, b) => a.start - b.start);
 }
+
+/** A package check's quick fix for handler.js (core/pkgcheck.ts: a misspelled file in the handler's folder), as the
+ *  edit the editors apply. */
+export function packageQuickFix(p: { start?: number; end?: number; edit?: { title: string; text: string } }): { title: string; edits: { start: number; end: number; text: string }[] } | undefined {
+  if (!p.edit || p.start === undefined) return undefined;
+  return { title: p.edit.title, edits: [{ start: p.start, end: p.end ?? p.start, text: p.edit.text }] };
+}

@@ -75,6 +75,8 @@ export interface PkgProblem {
   title: string;
   why: string;
   fix?: { title: string; kind: 'move'; from: string; to: string };
+  /** A quick fix for handler.js: replace `start`…`end` with `text` (the file name the package has). */
+  edit?: { title: string; text: string };
 }
 
 const lev = (a: string, b: string) => {
@@ -148,7 +150,12 @@ export function checkPackage(handler: string, files: PackageFile[]): PkgProblem[
     // Only a likely typo is reported: many handlers download or create files in their folder at run time.
     if (!near || near[1] > 2) continue;
     const start = m.index! + m[0].indexOf('"') + 1;
-    out.push({ start, end: start + (m[1] ?? m[2]).length, severity: near && near[1] <= 2 ? 'warning' : 'info', title: 'A file that isn\'t in the package', why: `The handler uses ${raw} in its own folder, but the package has no such file${near && near[1] <= 2 ? `. Did you mean ${installed.get(near[0])!.split('/').slice(1).join('/')}?` : '. Fine if the handler creates it first.'}` });
+    const written = m[1] ?? m[2];
+    const meant = installed.get(near[0])!.split('/').slice(1).join('/');
+    // The name the package has, written the way the handler writes paths (its leading slashes, \\ or /).
+    const sep = written.includes('\\\\') ? '\\\\' : '/';
+    const text = (written.match(/^(?:\\\\|\/)*/)?.[0] ?? '') + meant.split('/').join(sep);
+    out.push({ start, end: start + written.length, severity: 'warning', title: 'A file that isn\'t in the package', why: `The handler uses ${raw} in its own folder, but the package has no such file. Did you mean ${meant}?`, edit: { title: `Change to ${meant}`, text } });
   }
   return out;
 }

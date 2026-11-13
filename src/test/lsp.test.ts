@@ -270,12 +270,13 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
   const js = path.join(dir, 'Pkg.js');
   fs.mkdirSync(path.join(dir, 'Pkg'));
   fs.writeFileSync(path.join(dir, 'Pkg', 'Config.json'), '{ bad');
+  fs.writeFileSync(path.join(dir, 'Pkg', 'Settings.ini'), 'a=1');
   const game = path.join(dir, 'game');
   fs.mkdirSync(path.join(game, 'Binaries', 'Win64'), { recursive: true });
   fs.writeFileSync(path.join(game, 'Binaries', 'Win64', 'Shooter-Win64-Shipping.exe'), 'x');
   fs.writeFileSync(path.join(game, 'readme.txt'), 'x');
   notify('workspace/didChangeConfiguration', { settings: { nucleus: { gameFolders: { 'Pkg.js': game } } } });
-  const text = 'Game.GUID = "Pkg";\nGame.GameName = "Pkg";\nGame.ExecutableName = "Shooter-Win64-Shiping.exe";\nGame.FileSymlinkExclusions = [""];\n';
+  const text = 'Game.GUID = "Pkg";\nGame.GameName = "Pkg";\nGame.ExecutableName = "Shooter-Win64-Shiping.exe";\nGame.FileSymlinkExclusions = [""];\nvar ini = Game.Folder + "\\\\Setings.ini";\n';
   const uri = pathToFileURL(js).href;
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'javascript', version: 1, text } });
   const own = (await diagnosticsFor(uri, 1)).params.diagnostics;
@@ -288,6 +289,11 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
   const actions = (await request('textDocument/codeAction', { textDocument: { uri }, range: exe.range, context: { diagnostics: [exe] } })).result;
   const fix = actions.find((a: any) => a.title === exe.data.fix.title);
   assert.equal(fix.edit.changes[uri][0].newText, 'Shooter-Win64-Shipping.exe');
+  // A misspelled file in the handler's folder: Did you mean Settings.ini, with the fix.
+  const pkg = own.find((d: any) => d.code === 'package' && /Did you mean Settings\.ini/.test(d.message));
+  assert.ok(pkg, JSON.stringify(own.map((d: any) => d.message)));
+  const pkgFix = (await request('textDocument/codeAction', { textDocument: { uri }, range: pkg.range, context: { diagnostics: [pkg] } })).result.find((a: any) => a.title === 'Change to Settings.ini');
+  assert.equal(pkgFix?.edit.changes[uri][0].newText, '\\\\Settings.ini');
 
   const list = (await request('textDocument/completion', { textDocument: { uri }, position: { line: 3, character: 32 } })).result;
   assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));

@@ -7,7 +7,7 @@ import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
 import { ruleOverrides } from './settings';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, explainLine, packageQuickFix, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -304,11 +304,16 @@ function toVsSymbol(doc: vscode.TextDocument, s: SymbolEntry): vscode.DocumentSy
   return sym;
 }
 
-/** A package check's problem as a VS Code diagnostic (no quick fixes: moving files is up to the author). */
+/** A package check's quick fix for handler.js (a misspelled file name), by its diagnostic. */
+const pkgFixOf = new WeakMap<vscode.Diagnostic, NonNullable<ReturnType<typeof packageQuickFix>>>();
+/** A package check's problem as a VS Code diagnostic. Moving files is up to the author; a misspelled name in the
+ *  handler gets a quick fix (packageQuickFix). */
 function pkgDiagnostic(p: PkgProblem, range: vscode.Range): vscode.Diagnostic {
   const v = new vscode.Diagnostic(range, `${p.title}. ${p.why}`, SEVERITY[p.severity]);
   v.source = SOURCE;
   v.code = { value: 'package', target: vscode.Uri.parse(RULES_URL) };
+  const fix = packageQuickFix(p);
+  if (fix) pkgFixOf.set(v, fix);
   return v;
 }
 
@@ -383,7 +388,12 @@ class FixProvider implements vscode.CodeActionProvider {
     }
     const ours = ctx.diagnostics.filter((d) => d.source === SOURCE && lintDiagnosticOf.has(d));
     const byLint = new Map(ours.map((d) => [lintDiagnosticOf.get(d)!, d]));
-    return quickFixes(doc.getText(), [...byLint.keys()], ruleOverrides()).map((a) => toCodeAction(doc, a, a.diagnostic && byLint.get(a.diagnostic)));
+    const actions = quickFixes(doc.getText(), [...byLint.keys()], ruleOverrides()).map((a) => toCodeAction(doc, a, a.diagnostic && byLint.get(a.diagnostic)));
+    for (const d of ctx.diagnostics) {
+      const fix = pkgFixOf.get(d);
+      if (fix) actions.push(toCodeAction(doc, { title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: true }, d));
+    }
+    return actions;
   }
 }
 

@@ -12,6 +12,22 @@ How to write it (people and AI agents read this; the release workflow publishes 
 - At release: rename "## Unreleased" to "## <version> · <yyyy-mm-dd>". A `---` line separates releases.
 -->
 
+## Unreleased
+
+### ✨ New
+
+- **`var Game = {}` is now an error.** Declaring `Game` or `Context` yourself (a variable, a parameter, a function name) puts a new object where Nucleus's was, so Nucleus never sees what you set on it: with `var Game = {}` it finds no Game.Play, and a `var Context` in Game.Play loses StartArguments. The new check, `replaces-nucleus-object`, says so, and the other checks keep looking at those lines.
+- **A quick fix for a misspelled file in the handler's folder.** When the handler uses `Game.Folder + "\\Confg.json"` and the package has `Config.json`, Ctrl+. changes the name (VS Code and other editors through `ncdev lsp`).
+
+### 🛠️ Improved
+
+- **`ncdev api Game` lists what's on Game.** Looking up an object Nucleus provides (`Game`, `Context`, `Player`, `Game.Hook`, `Nucleus`…) says what it is and lists its members by category, instead of "not part of the API". The MCP tool `nucleus_api` answers the same way.
+
+### 🐛 Fixed
+
+- **No "not defined" errors on top of an arrow function or destructuring.** Names that an arrow function, destructuring, a default or rest parameter, or a class declares counted as undefined, with a wrong "Did you mean" fix. Now there's just the one error about the ES5-only syntax.
+- **Explain quotes a template string as it's written.** It showed `` `-w ${Context.Width}` `` in single quotes; it keeps the backticks now.
+
 ## 0.6.0 · 2026-11-13
 
 ### ✨ New

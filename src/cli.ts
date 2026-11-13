@@ -12,7 +12,7 @@ import path from 'node:path';
 import { lint, lineOf, lineStart, RULES, RuleId, Severity, LintOptions, looksLikeHandler } from './core/lint';
 import { fixAll } from './core/fix';
 import { formatHandler } from './core/format';
-import { lookup, search, formatEntry, markdownReference } from './core/lookup';
+import { lookup, search, formatEntry, formatObject, markdownReference } from './core/lookup';
 import { handlerPageUrl, HubHandler } from './core/hub';
 import { hubHandlers, hubPackage } from './hubcache';
 import { renderHandler, toHandlerFileName, validateHandlerInfo, FEATURES, Feature } from './core/templates';
@@ -391,7 +391,7 @@ function cmdApi(args: Args, json: boolean): number {
     return hits.length ? 0 : 1;
   };
   if (has(args, '--search')) return doSearch(q);
-  const r = lookup(q);
+  const r = lookup(q, { objects: true });
   switch (r.kind) {
     case 'entries':
       print(json, r.entries.map((e) => ({ path: e.path, ...e.member })), () => r.entries.map((e) => formatEntry(e)).join('\n\n'));
@@ -401,6 +401,9 @@ function cmdApi(args: Args, json: boolean): number {
       return 0;
     case 'class':
       print(json, r, () => `new Nucleus.${r.name}(${r.params.join(', ')})\n  ${r.doc}`);
+      return 0;
+    case 'object':
+      print(json, { path: r.path, doc: r.doc, members: r.members.map((e) => ({ path: e.path, ...e.member })), children: r.children }, () => formatObject(r));
       return 0;
     case 'none':
       if (!json) console.log(`"${q}" is not part of the Nucleus handler API.${r.didYouMean ? ` Did you mean ${r.didYouMean}?` : ''} Searching docs instead:\n`);
