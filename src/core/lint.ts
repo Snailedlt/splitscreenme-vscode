@@ -64,6 +64,9 @@ const OBSOLETE: Record<string, string> = {
     "is from the original Nucleus Coop, where it closed running copies of the game before each player started. SplitScreen.Me's Nucleus doesn't read it: it always closes leftover copies of the game (its executable, the launcher and the names in `Game.KillProcessesOnClose`) when a session starts. Nucleus ignores the line, so remove it.",
 };
 
+/** The objects Nucleus hands the handler; declaring one of the same name replaces it (probes 120, 121). */
+const NUCLEUS_OBJECTS = new Set(['Game', 'Context']);
+
 const JS_SEVERITY: Record<JsRuleId, Severity> = {
   'no-invalid-regexp': 'error',
   'no-obj-calls': 'error',
@@ -122,6 +125,10 @@ export const RULES = {
     description: 'No overload of this Nucleus method takes this number of arguments. Jint throws "No public methods with the specified arguments were found", so the handler fails to load (top level) or the instance setup fails (Game.Play).',
   },
   'missing-required': { severity: 'error', description: 'Game.GUID, Game.GameName and Game.ExecutableName are required for Nucleus to load the handler.' },
+  'replaces-nucleus-object': {
+    severity: 'error',
+    description: 'The handler declares or assigns `Game` or `Context` itself (`var Game = {}`, a parameter named Context, ...). That makes a new object in place of the one Nucleus gives the handler, so Nucleus never sees what is set on it (probes 120 and 121).',
+  },
   'callback-only-global': {
     severity: 'error',
     description: 'Context, Player, PlayerList, Handler and ProtoInput only exist while a callback such as Game.Play runs. Using them at the top level makes the handler fail to load.',
@@ -402,6 +409,48 @@ class Analyzer {
     this.checkGuid();
     this.checkPublishedGuid();
     this.checkEncoding();
+    this.checkReplacedObjects();
+  }
+
+  /**
+   * `var Game = {}`, `Game = …`, a parameter or function named Game or Context: a new object where Nucleus's was.
+   * Jint 2.11.58: with `var Game = {}` at the top Nucleus finds no Game.Play (probe 120); `var Context = {}` in
+   * Game.Play loses StartArguments (probe 121).
+   */
+  private checkReplacedObjects() {
+    // Declarations that are statements of their own (not `for (var Game in …)`): only those can simply be removed.
+    const statements = new Set<Node>();
+    visit(this.program, (n) => {
+      if ((n.type === 'Program' || n.type === 'BlockStatement') && Array.isArray(n.body)) for (const st of n.body) if (st.type === 'VariableDeclaration') statements.add(st);
+    });
+    const at = (id: Node, how: string, fixes?: Fix[]) => {
+      const name = id.name as string;
+      const what = name === 'Game'
+        ? 'Nucleus gives the handler its own `Game` and reads every setting from it. This makes a new object in its place, so Nucleus never sees what is set after it (Game.Play included) and the game won\'t start right.'
+        : 'Nucleus gives each callback its own `Context` and reads StartArguments and the rest from it. This makes a new object in its place, so what is set on it is lost.';
+      this.report({ rule: 'replaces-nucleus-object', message: `${how} ${what} Use another name for your own variable.`, start: id.start, end: id.end, fixes });
+    };
+    visit(this.program, (n) => {
+      if (n.type === 'VariableDeclaration') {
+        for (const d of n.declarations) {
+          if (d.id.type !== 'Identifier' || !NUCLEUS_OBJECTS.has(d.id.name)) continue;
+          // `var Game = {};` or `var Game;` alone on its statement: removing it is the whole fix.
+          const empty = !d.init || (d.init.type === 'ObjectExpression' && !d.init.properties.length);
+          const fix: Fix[] | undefined = n.declarations.length === 1 && empty && statements.has(n)
+            ? [{ title: `Remove \`${this.text.slice(n.start, n.end).trim()}\``, edits: [{ start: n.start, end: this.text[n.end] === '\n' ? n.end + 1 : n.end, text: '' }] }]
+            : undefined;
+          at(d.id, `\`${n.kind} ${d.id.name}\` declares a variable of the same name.`, fix);
+        }
+      } else if (n.type === 'AssignmentExpression' && n.left.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.left.name)) {
+        at(n.left, `\`${n.left.name} = …\` replaces it.`);
+      } else if (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') {
+        // A named function expression's name means the function inside its body (`function Context() { Context.X = … }`).
+        if (n.id?.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.id.name)) at(n.id, `A function named \`${n.id.name}\` takes its name${n.type === 'FunctionExpression' ? ' inside the function' : ''}.`);
+        for (const p of n.params) if (p.type === 'Identifier' && NUCLEUS_OBJECTS.has(p.name)) at(p, `A parameter named \`${p.name}\` hides it inside the function (Nucleus passes nothing in).`);
+      } else if (n.type === 'CatchClause' && n.param?.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.param.name)) {
+        at(n.param, `\`catch (${n.param.name})\` hides it inside the catch block.`);
+      }
+    });
   }
 
   /** U+FFFD: what invalid UTF-8 turns into when the file is read (Nucleus reads handlers as UTF-8). */
@@ -444,12 +493,20 @@ class Analyzer {
     visit(this.program, (n) => {
       if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier') add(n.id.name, n.init);
       else if (n.type === 'AssignmentExpression' && n.operator === '=' && n.left.type === 'Identifier') add(n.left.name, n.right);
+      // Names an ES2015+ pattern declares (destructuring, defaults, rest): already an es5-only error, so they count
+      // as declared rather than adding "not defined" errors on top.
+      else if (n.type === 'VariableDeclarator') for (const p of patternNames(n.id)) add(p, null);
       else if (n.type === 'CatchClause' && n.param?.type === 'Identifier') add(n.param.name, null);
+      else if (n.type === 'CatchClause' && n.param) for (const p of patternNames(n.param)) add(p, null);
       else if ((n.type === 'ForInStatement' || n.type === 'ForOfStatement') && n.left.type === 'Identifier') add(n.left.name, null);
       else if (n.type === 'FunctionExpression' && n.id?.type === 'Identifier') this.fnExprNames.add(n.id.name);
-      if ((n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') && n.params) {
+      else if ((n.type === 'ClassDeclaration' || n.type === 'ClassExpression') && n.id?.type === 'Identifier') (n.type === 'ClassDeclaration' ? add(n.id.name, null) : this.fnExprNames.add(n.id.name));
+      if ((n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression') && n.params) {
         if (n.id?.type === 'Identifier' && n.type === 'FunctionDeclaration') add(n.id.name, null);
-        for (const p of n.params) if (p.type === 'Identifier') add(p.name, null);
+        for (const p of n.params) {
+          if (p.type === 'Identifier') add(p.name, null);
+          else for (const q of patternNames(p)) add(q, null);
+        }
       }
     });
     visit(this.program, (n) => {
@@ -458,6 +515,9 @@ class Analyzer {
     });
     for (const name of inits.keys()) this.declared.add(name);
     for (const [name, list] of inits) {
+      // Game and Context stay Nucleus's objects for the checks, even when the handler declares them: the declaration
+      // itself is the problem (replaces-nucleus-object), and the lines that use them still need checking.
+      if (NUCLEUS_OBJECTS.has(name)) continue;
       if (api.globals[name]) {
         this.shadowed.add(name);
         continue;
@@ -635,7 +695,8 @@ class Analyzer {
         es(n.start, n.start + 3, '`for...of`');
         break;
       case 'Property':
-        if (n.shorthand) {
+        // `{ p, q }` in a destructuring pattern is part of that one es5-only error, not a second one.
+        if (n.shorthand && ctx.parent?.type !== 'ObjectPattern') {
           const fix: Fix[] | undefined =
             ctx.parent?.type === 'ObjectExpression' && n.key.type === 'Identifier'
               ? [{ title: `Write \`${n.key.name}: ${n.key.name}\``, edits: [{ start: n.start, end: n.end, text: `${n.key.name}: ${n.key.name}` }], preferred: true }]
@@ -1822,6 +1883,25 @@ class Analyzer {
 
 // ---------------------------------------------------------------------------
 // helpers
+
+/** The names an ES2015+ binding pattern declares (`{ a, b: c }`, `[d, ...e]`, `f = 1`, `...g`). */
+function patternNames(p: Node | null | undefined): string[] {
+  if (!p) return [];
+  switch (p.type) {
+    case 'Identifier':
+      return [p.name];
+    case 'ObjectPattern':
+      return p.properties.flatMap((x: Node) => patternNames(x.type === 'RestElement' ? x.argument : x.value));
+    case 'ArrayPattern':
+      return p.elements.flatMap((x: Node) => patternNames(x));
+    case 'AssignmentPattern':
+      return patternNames(p.left);
+    case 'RestElement':
+      return patternNames(p.argument);
+    default:
+      return [];
+  }
+}
 
 function visit(node: Node, fn: (n: Node) => void) {
   fn(node);

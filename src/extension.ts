@@ -7,7 +7,7 @@ import { docsCommandLink, OPEN_DOCS, registerDocsPanel } from './docspanel';
 import { ruleOverrides } from './settings';
 import { definitionAt } from './core/definition';
 import { rangeFormatEdits } from './core/features';
-import { CodeActionEntry, CompletionKind, completionsAt, explainLine, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
+import { CodeActionEntry, CompletionKind, completionsAt, explainLine, packageQuickFix, documentSymbols, SymbolEntry, fixAllAction, fixAllCodeAction, formatEdits as coreFormatEdits, hoverAt, inlayHints, isHandlerFile, quickFixes, RULES_URL, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, semanticTokens, signatureHelpAt, Span } from './core/features';
 import { RULE_DOCS, ruleUrl } from './core/ruledocs';
 import { lintPluginsFor } from './plugins';
 import { publishedNow } from './published';
@@ -91,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
         // The handler's folder, as it goes into the .nc: files a Hub install mishandles, files the handler uses that aren't there.
         const files = doc.uri.scheme === 'file' && config().get('lint.packageChecks', true) ? packageFilesFor(doc.uri.fsPath) : undefined;
         const problems = files ? checkPackage(text, files) : [];
-        diags.push(...problems.filter((p) => !p.file && p.start !== undefined).map((p) => pkgDiagnostic(p, new vscode.Range(doc.positionAt(p.start!), doc.positionAt(p.end ?? p.start!)))));
+        diags.push(...problems.filter((p) => !p.file && p.start !== undefined).map((p) => pkgDiagnostic(p, new vscode.Range(doc.positionAt(p.start!), doc.positionAt(p.end ?? p.start!)), doc.version)));
         // The game folder linked to this handler (Nucleus: Link the Game's Folder…), if any.
         diags.push(...gameFolderDiagnostics(doc, SOURCE, SEVERITY));
         collection.set(doc.uri, diags);
@@ -304,11 +304,17 @@ function toVsSymbol(doc: vscode.TextDocument, s: SymbolEntry): vscode.DocumentSy
   return sym;
 }
 
-/** A package check's problem as a VS Code diagnostic (no quick fixes: moving files is up to the author). */
-function pkgDiagnostic(p: PkgProblem, range: vscode.Range): vscode.Diagnostic {
+/** A package check's quick fix for handler.js (a misspelled file name), by its diagnostic. */
+const pkgFixOf = new WeakMap<vscode.Diagnostic, NonNullable<ReturnType<typeof packageQuickFix>> & { version: number }>();
+/** A package check's problem as a VS Code diagnostic. Moving files is up to the author; a misspelled name in the
+ *  handler gets a quick fix (packageQuickFix). */
+function pkgDiagnostic(p: PkgProblem, range: vscode.Range, version?: number): vscode.Diagnostic {
   const v = new vscode.Diagnostic(range, `${p.title}. ${p.why}`, SEVERITY[p.severity]);
   v.source = SOURCE;
   v.code = { value: 'package', target: vscode.Uri.parse(RULES_URL) };
+  const fix = packageQuickFix(p);
+  // Its offsets are in the text it was checked on: offered only while the document is still that version.
+  if (fix && version !== undefined) pkgFixOf.set(v, { ...fix, version });
   return v;
 }
 
@@ -383,7 +389,12 @@ class FixProvider implements vscode.CodeActionProvider {
     }
     const ours = ctx.diagnostics.filter((d) => d.source === SOURCE && lintDiagnosticOf.has(d));
     const byLint = new Map(ours.map((d) => [lintDiagnosticOf.get(d)!, d]));
-    return quickFixes(doc.getText(), [...byLint.keys()], ruleOverrides()).map((a) => toCodeAction(doc, a, a.diagnostic && byLint.get(a.diagnostic)));
+    const actions = quickFixes(doc.getText(), [...byLint.keys()], ruleOverrides()).map((a) => toCodeAction(doc, a, a.diagnostic && byLint.get(a.diagnostic)));
+    for (const d of ctx.diagnostics) {
+      const fix = pkgFixOf.get(d);
+      if (fix && fix.version === doc.version) actions.push(toCodeAction(doc, { title: fix.title, kind: 'quickfix', edits: fix.edits, preferred: true }, d));
+    }
+    return actions;
   }
 }
 

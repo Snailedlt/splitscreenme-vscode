@@ -17,8 +17,10 @@ person, so the percentages are shares of votes, not of people):
 
 ## Priorities after the 0.6.0 release (decided 2026-11-13; nothing started yet)
 
-1. **Notepad++ first.** The most used editor. List the plugin in Plugins Admin right after the release (see AGENTS.md,
-   *Store listings*), so it installs from inside Notepad++; test its first install and setup the most.
+1. **Notepad++ first.** The most used editor. Its install is the one to make easy and to test the most. The Plugins
+   Admin listing (so it installs from inside Notepad++) waits for open-beta feedback, like the other store listings
+   (AGENTS.md, *Store listings*; decided 2026-11-13): every release that changes the plugin needs a new pull request
+   there. Until then, `ncdev setup notepad++` itself has to be as easy as possible.
 2. **Windows Notepad users → the workbench.** Our tools can't help inside Notepad. The workbench needs no install and
    has every check; the tools page and Learn should lead these (likely beginner) authors to it.
 3. **VS Code and its forks.** Covered by the extension. Forks (Cursor, Windsurf) install from Open VSX, so the prepared

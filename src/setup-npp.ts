@@ -35,6 +35,8 @@ export function pluginConfigDir(dir: string): string | undefined {
 export interface SetupResult {
   ok: boolean;
   lines: string[];
+  /** Notepad++'s folder isn't writable (Program Files without administrator rights). */
+  denied?: boolean;
 }
 
 export interface SetupOptions {
@@ -150,7 +152,7 @@ export function setupNotepadPP(opts: SetupOptions): SetupResult {
       if (opts.plugins && !plugin) lines.push(`There's no plugin for ${arch} Notepad++ yet, so it gets the names and call tips instead. Ask for one: https://github.com/Snailedlt/splitscreenme-vscode/issues`);
     }
   } catch (e: any) {
-    if (e?.code === 'EACCES' || e?.code === 'EPERM') return { ok: false, lines: [`Notepad++'s folder isn't writable (${dir}). Run this once from a terminal opened as administrator (right-click › Run as administrator), or use a portable Notepad++ with --path.`] };
+    if (e?.code === 'EACCES' || e?.code === 'EPERM') return { ok: false, denied: true, lines: [`Notepad++'s folder isn't writable (${dir}). Run this once from a terminal opened as administrator (right-click › Run as administrator), or use a portable Notepad++ with --path.`] };
     throw e;
   }
   // The Run menu entry (a command line Notepad++ runs with the open file).

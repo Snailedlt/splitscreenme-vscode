@@ -8,7 +8,7 @@ import readline from 'node:readline';
 import { lint, lineOf, lineStart, RULES } from './core/lint';
 import { fixAll } from './core/fix';
 import { formatHandler } from './core/format';
-import { lookup, search, formatEntry } from './core/lookup';
+import { lookup, search, formatEntry, formatObject } from './core/lookup';
 import { handlerPageUrl } from './core/hub';
 import { hubHandlers, hubPackage, setHubTool } from './hubcache';
 import { renderHandler, validateHandlerInfo, FEATURES, Feature } from './core/templates';
@@ -211,10 +211,11 @@ export const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true },
     run: (a) => {
       if (typeof a.query !== 'string' || !a.query.trim()) return { text: 'Give a name to look up, e.g. "Game.KillMutex".', isError: true };
-      const r = lookup(String(a.query));
+      const r = lookup(String(a.query), { objects: true });
       if (r.kind === 'entries') return { text: r.entries.map((e) => formatEntry(e)).join('\n\n'), data: r.entries.map((e) => ({ path: e.path, ...e.member })) };
       if (r.kind === 'enum') return { text: `enum Nucleus.${r.name}${r.doc ? ` - ${r.doc}` : ''}\n` + Object.entries(r.values).map(([k, v]) => `  Nucleus.${r.name}.${k} = ${v}`).join('\n'), data: r };
       if (r.kind === 'class') return { text: `new Nucleus.${r.name}(${r.params.join(', ')})\n  ${r.doc}`, data: r };
+      if (r.kind === 'object') return { text: formatObject(r).replace(/ncdev api /g, 'nucleus_api '), data: { path: r.path, doc: r.doc, members: r.members.map((e) => e.path), children: r.children } };
       const hits = search(String(a.query), 10);
       return {
         text: `"${a.query}" is not part of the handler API.${r.didYouMean ? ` Did you mean ${r.didYouMean}?` : ''}${hits.length ? `\nRelated:\n${hits.map((e) => formatEntry(e, false)).join('\n')}` : ''}`,

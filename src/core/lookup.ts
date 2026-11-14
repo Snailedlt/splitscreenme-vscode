@@ -56,10 +56,53 @@ export type LookupResult =
   | { kind: 'entries'; entries: Entry[] }
   | { kind: 'enum'; name: string; values: Record<string, number>; doc?: string }
   | { kind: 'class'; name: string; params: string[]; doc: string }
+  | { kind: 'object'; path: string; doc?: string; members: Entry[]; children: string[] }
   | { kind: 'none'; didYouMean?: string };
 
-/** Exact lookup by path ("Game.KillMutex") or bare member name ("KillMutex"). */
-export function lookup(query: string): LookupResult {
+/** "Game", "Context", "Game.Hook", "System", "Nucleus"…: an object Nucleus provides, with its members. */
+function objectAt(q: string, jintEq: (a: string, b: string) => boolean): Extract<LookupResult, { kind: 'object' }> | undefined {
+  const labels = [...new Set([...ROOTS.map(([, l]) => l), ...Object.keys(api.globals)])];
+  const parts = q.split('.');
+  const path = labels.find((l) => { const ls = l.split('.'); return ls.length === parts.length && ls.every((s, i) => jintEq(s, parts[i])); });
+  if (!path) return undefined;
+  const entries = allEntries(true);
+  const members = entries.filter((e) => e.path.slice(0, e.path.lastIndexOf('.')) === path);
+  const children = ROOTS.map(([, l]) => l).filter((l) => l.startsWith(path + '.'));
+  // Nucleus: its enums and helper classes are what it holds.
+  if (path === 'Nucleus') children.push(...Object.keys(api.enums).map((e) => `Nucleus.${e}`), ...Object.keys(api.nucleusClasses).map((c) => `Nucleus.${c}`));
+  if (path === 'PlayerList') children.push('Player');
+  const doc = api.globals[path]?.doc ?? entries.find((e) => e.path === path)?.member.doc;
+  return { kind: 'object', path, doc, members, children };
+}
+
+/** An object's members by category, names only (one in detail: `ncdev api <path>.<name>`). */
+export function formatObject(r: Extract<LookupResult, { kind: 'object' }>): string {
+  const out: string[] = [`${r.path}${r.doc ? `: ${r.doc}` : ''}`];
+  if (r.members.length) {
+    out.push('', `${r.members.length} member${r.members.length === 1 ? '' : 's'} (* required). One in detail: ncdev api ${r.path}.<name>`);
+    const groups = new Map<string, string[]>();
+    for (const e of r.members) {
+      const g = e.member.category ?? (e.member.kind === 'method' ? 'Functions' : 'Other');
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(`${e.name}${e.member.kind === 'method' ? '()' : ''}${e.member.required ? '*' : ''}`);
+    }
+    for (const [g, names] of groups) {
+      out.push('', `${g}:`);
+      let line = ' ';
+      for (const n of names) {
+        if (line.length + n.length + 2 > 100) { out.push(line.replace(/,$/, '')); line = ' '; }
+        line += ` ${n},`;
+      }
+      out.push(line.replace(/,$/, ''));
+    }
+  }
+  if (r.children.length) out.push('', `Inside it: ${r.children.join(', ')}`);
+  return out.join('\n');
+}
+
+/** Exact lookup by path ("Game.KillMutex") or bare member name ("KillMutex"). With `objects` (the CLI's and MCP's
+ *  `api`), an object Nucleus provides ("Game", "Context", "Game.Hook") answers with its members. */
+export function lookup(query: string, opts: { objects?: boolean } = {}): LookupResult {
   const q = normalise(query);
   const entries = allEntries(true);
   // Paths follow Jint's rule: only the first letter of a member name may differ in case.
@@ -68,6 +111,9 @@ export function lookup(query: string): LookupResult {
     const [pa, pb] = [e.path.split('.'), q.split('.')];
     return pa.length === pb.length && pa.every((seg, i) => jintEq(seg, pb[i]));
   });
+  // An object with members of its own (Game, Context, Game.Hook…): its members, not just its own line.
+  const obj = opts.objects ? objectAt(q, jintEq) : undefined;
+  if (obj && (obj.members.length || obj.children.length || !byPath.length)) return obj;
   if (byPath.length) return { kind: 'entries', entries: byPath };
   const en = q.replace(/^Nucleus\./, '');
   const [enumName, value] = en.split('.');

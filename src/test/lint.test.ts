@@ -213,6 +213,51 @@ test('deprecated options are hints with the deprecated tag', () => {
   assert.deepEqual(d[0].tags, ['deprecated']);
 });
 
+test('replaces-nucleus-object: declaring Game or Context is an error, and the API checks still run (probes 120, 121)', () => {
+  const top = 'var Game = {};\n' + HEADER + 'Game.Hook.ForceFocuss = true;\n';
+  const d = lint(top);
+  assert.deepEqual(d.filter((x) => x.rule === 'replaces-nucleus-object').map((x) => [x.severity, top.slice(x.start, x.end)]), [['error', 'Game']]);
+  assert.equal(d.find((x) => x.rule === 'replaces-nucleus-object')!.fixes?.[0].title, 'Remove `var Game = {};`');
+  assert.ok(d.some((x) => x.rule === 'unknown-member' && /ForceFocuss/.test(x.message)), 'Game.* is still checked');
+  const inPlay = HEADER + 'Game.Play = function () {\n  var Context = {};\n  Context.StartArgument = "-x";\n};\n';
+  const p = lint(inPlay);
+  assert.equal(only(inPlay, 'replaces-nucleus-object').length, 1);
+  assert.ok(p.some((x) => x.rule === 'unknown-member' && /StartArgument/.test(x.message)), 'Context.* is still checked');
+  assert.equal(only(HEADER + 'Game.Play = function (Context) {\n  Context.StartArguments = "-x";\n};\n', 'replaces-nucleus-object').length, 1, 'a parameter');
+  assert.equal(only(HEADER + 'Game = { GUID: "x" };\n', 'replaces-nucleus-object').length, 1, 'an assignment');
+  assert.equal(only(HEADER + 'try { x(); } catch (Context) { }\n', 'replaces-nucleus-object').length, 1, 'a catch parameter');
+  assert.equal(only(HEADER + 'var Game = { GUID: "x" };\n', 'replaces-nucleus-object')[0].fixes, undefined, 'no removal when it holds something');
+  assert.equal(only(HEADER + 'for (var Game in {}) {}\n', 'replaces-nucleus-object')[0].fixes, undefined, 'no removal inside a for head (it would not parse)');
+  const named = HEADER + 'Game.Play = function Context() {\n  Context.StartArguments = "-x";\n};\n';
+  assert.equal(only(named, 'replaces-nucleus-object').length, 1, 'a named function expression');
+});
+
+test('replaces-nucleus-object: no false alarms', () => {
+  const ok = HEADER + 'var GameName = "x";\nvar cfg = { Game: 1, Context: 2 };\nvar o = {};\no.Game = 1;\nGame.Play = function () {\n  var ctx = Context;\n  ctx.StartArguments = cfg.Game + GameName;\n};\n';
+  assert.deepEqual(only(ok, 'replaces-nucleus-object'), []);
+});
+
+test('ES2015+ ways of declaring a name: one es5-only error, no undefined-name on top', () => {
+  const cases: [string, number][] = [
+    ['var a = [1].map((x) => x + 1);', 1],
+    ['var a = [1].map(x => x * 2);', 1],
+    ['var {p, q} = {p: 1, q: 2};\nvar r = p + q;', 1],
+    ['var [m, n] = [1, 2];\nvar r = m + n;', 1],
+    ['function f(a, b = 2) { return a + b; }', 1],
+    ['function g(...rest) { return rest.length; }', 1],
+    ['for (const it of [1]) { var r = it; }', 2],
+    ['class K { m() { return 1; } }\nvar k = new K();', 1],
+    ['var h = function ({ u, v: [w] }) { return u + w; };', 2], // the outer and the nested pattern
+  ];
+  for (const [code, es5] of cases) {
+    const d = lint(HEADER + code + '\n');
+    assert.deepEqual(d.filter((x) => x.rule === 'undefined-name').map((x) => x.message.slice(0, 30)), [], code);
+    assert.equal(d.filter((x) => x.rule === 'es5-only').length, es5, code);
+  }
+  // Still caught: a name nothing declares, next to a shorthand in an object literal.
+  assert.equal(only(HEADER + 'var o = { p };\n', 'undefined-name').length, 1);
+});
+
 test('user variables shadowing globals are not resolved', () => {
   const src = HEADER + 'Game.Play = function () {\n  var Player = { Foo: 1 };\n  var x = Player.Foo;\n};\n';
   assert.deepEqual(lint(src), []);

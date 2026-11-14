@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as acorn from 'acorn';
-import { lookup, search, markdownReference } from '../core/lookup';
+import { lookup, search, markdownReference, formatObject } from '../core/lookup';
 import { lint } from '../core/lint';
 import { installAgentKit, findSkillDir } from '../core/pkg';
 import { tmpdir } from './tmp';
@@ -51,6 +51,22 @@ test('lookup and search', () => {
   assert.equal(lookup('killmutex').kind, 'entries');
   assert.equal(lookup('player.ProtoInputInstanceHandle').kind, 'entries');
   assert.equal(lookup('Nucleus.Folder').kind, 'enum');
+  // An object Nucleus provides: what it is and its members, not "not part of the API".
+  for (const [q, path, member] of [['Game', 'Game', 'GUID'], ['context', 'Context', 'StartArguments'], ['Game.Hook', 'Game.Hook', 'ForceFocus'], ['Player', 'Player', 'IsKeyboardPlayer']]) {
+    const o = lookup(q, { objects: true });
+    assert.equal(o.kind, 'object', q);
+    if (o.kind !== 'object') continue;
+    assert.equal(o.path, path);
+    assert.ok(o.members.some((e) => e.name === member), `${q} lists ${member}`);
+    assert.ok(o.doc, `${q} says what it is`);
+    assert.match(formatObject(o), new RegExp(`\\b${member}\\b`));
+  }
+  const g = lookup('Game', { objects: true });
+  assert.ok(g.kind === 'object' && g.children.includes('Game.Hook') && g.members.length > 100);
+  assert.match(formatObject(g as any), /GUID\*/, 'required ones are marked');
+  const n = lookup('Nucleus', { objects: true });
+  assert.equal(lookup('Game.Hook').kind, 'entries', 'without objects: the member, as the Docs page wants');
+  assert.ok(n.kind === 'object' && n.children.includes('Nucleus.Folder'));
   assert.equal(lookup('Nucleus.IniSaveInfo').kind, 'class');
   const none = lookup('Game.IgnoreWindowBordercheck');
   assert.equal(none.kind, 'none');

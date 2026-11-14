@@ -30,6 +30,11 @@ test('mcp: lint, fix, api', async () => {
   assert.match(fix.result.structuredContent.result.source, /Game\.KillMutex = \["a"\];/);
   const api = await call('nucleus_api', { query: 'Nucleus.DPIHandling' });
   assert.match(api.result.content[0].text, /Nucleus\.DPIHandling\.True = 0/);
+  const game = await call('nucleus_api', { query: 'Game' });
+  assert.match(game.result.content[0].text, /^Game: The handler being defined/);
+  assert.match(game.result.content[0].text, /nucleus_api Game\.<name>/);
+  assert.doesNotMatch(game.result.content[0].text, /not part of|Did you mean/);
+  assert.ok(game.result.structuredContent.result.members.includes('Game.GUID'));
   const none = await call('nucleus_api', { query: 'Game.KillMutx' });
   assert.match(none.result.content[0].text, /Did you mean/);
   const missing = await call('nucleus_lint', {});

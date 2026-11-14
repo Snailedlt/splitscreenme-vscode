@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { checkPackage, installMap, sizeOf, textOf, type PackageFile } from '../core/pkgcheck';
 import { packageFilesFor, packageFileForPath } from '../pkgfiles';
 import { tmpdir } from './tmp';
+import { packageQuickFix } from '../core/features';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const f = (name: string, text = 'x'): PackageFile => ({ name, data: enc(text) });
@@ -27,6 +28,16 @@ test('package checks: dropped files, Windows names, broken INI/JSON, missing fil
   assert.equal(missing?.title, "A file that isn't in the package");
   assert.match(missing!.why, /Did you mean Config\.json\?/);
   assert.ok(HANDLER.slice(missing!.start, missing!.end).endsWith('Confg.json'));
+  // The quick fix (features.ts packageQuickFix): the name the package has, written as the handler writes paths.
+  const fix = packageQuickFix(missing!)!;
+  assert.equal(fix.title, 'Change to Config.json');
+  const fixed = HANDLER.slice(0, fix.edits[0].start) + fix.edits[0].text + HANDLER.slice(fix.edits[0].end);
+  assert.match(fixed, /Game\.Folder \+ "\\\\Config\.json"/);
+  assert.equal(checkPackage(fixed, [f('My Game/settings.ini', 'a=1'), f('My Game/Config.json', '{}')]).filter((x) => !x.file).length, 0);
+  // Forward slashes and a subfolder stay as the handler wrote them.
+  const slash = 'Game.GameName = "My Game";\nvar p = Path.Combine(Game.Folder, "data/Confg.json");\n';
+  const s = checkPackage(slash, [f('My Game/data/Config.json', '{}')]).find((x) => !x.file)!;
+  assert.equal(packageQuickFix(s)!.edits[0].text, 'data/Config.json');
 });
 
 test('package checks: nothing to say about a clean package; big files only by size', () => {
