@@ -297,6 +297,10 @@ test('lsp: package problems on the files in <Name>/, and the linked game folder 
 
   const list = (await request('textDocument/completion', { textDocument: { uri }, position: { line: 3, character: 32 } })).result;
   assert.ok(list.items.some((i: any) => i.label.includes('readme.txt')), JSON.stringify(list.items.map((i: any) => i.label)));
+  // After an edit before it, the old diagnostic's place is stale: no fix from it (the fresh one comes with the next check).
+  notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: '// new first line\n' + text }] });
+  const stale = (await request('textDocument/codeAction', { textDocument: { uri }, range: pkg.range, context: { diagnostics: [pkg] } })).result;
+  assert.ok(!stale.some((a: any) => a.title === 'Change to Settings.ini'), JSON.stringify(stale.map((a: any) => a.title)));
 });
 
 test('lsp: every handler in the workspace is checked, opened or not, and files changed on disk are re-checked', async (t) => {

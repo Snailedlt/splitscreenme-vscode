@@ -418,6 +418,11 @@ class Analyzer {
    * Game.Play loses StartArguments (probe 121).
    */
   private checkReplacedObjects() {
+    // Declarations that are statements of their own (not `for (var Game in …)`): only those can simply be removed.
+    const statements = new Set<Node>();
+    visit(this.program, (n) => {
+      if ((n.type === 'Program' || n.type === 'BlockStatement') && Array.isArray(n.body)) for (const st of n.body) if (st.type === 'VariableDeclaration') statements.add(st);
+    });
     const at = (id: Node, how: string, fixes?: Fix[]) => {
       const name = id.name as string;
       const what = name === 'Game'
@@ -431,7 +436,7 @@ class Analyzer {
           if (d.id.type !== 'Identifier' || !NUCLEUS_OBJECTS.has(d.id.name)) continue;
           // `var Game = {};` or `var Game;` alone on its statement: removing it is the whole fix.
           const empty = !d.init || (d.init.type === 'ObjectExpression' && !d.init.properties.length);
-          const fix: Fix[] | undefined = n.declarations.length === 1 && empty
+          const fix: Fix[] | undefined = n.declarations.length === 1 && empty && statements.has(n)
             ? [{ title: `Remove \`${this.text.slice(n.start, n.end).trim()}\``, edits: [{ start: n.start, end: this.text[n.end] === '\n' ? n.end + 1 : n.end, text: '' }] }]
             : undefined;
           at(d.id, `\`${n.kind} ${d.id.name}\` declares a variable of the same name.`, fix);
@@ -439,7 +444,8 @@ class Analyzer {
       } else if (n.type === 'AssignmentExpression' && n.left.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.left.name)) {
         at(n.left, `\`${n.left.name} = …\` replaces it.`);
       } else if (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') {
-        if (n.type === 'FunctionDeclaration' && n.id?.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.id.name)) at(n.id, `A function named \`${n.id.name}\` takes its name.`);
+        // A named function expression's name means the function inside its body (`function Context() { Context.X = … }`).
+        if (n.id?.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.id.name)) at(n.id, `A function named \`${n.id.name}\` takes its name${n.type === 'FunctionExpression' ? ' inside the function' : ''}.`);
         for (const p of n.params) if (p.type === 'Identifier' && NUCLEUS_OBJECTS.has(p.name)) at(p, `A parameter named \`${p.name}\` hides it inside the function (Nucleus passes nothing in).`);
       } else if (n.type === 'CatchClause' && n.param?.type === 'Identifier' && NUCLEUS_OBJECTS.has(n.param.name)) {
         at(n.param, `\`catch (${n.param.name})\` hides it inside the catch block.`);

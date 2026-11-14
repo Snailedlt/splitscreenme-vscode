@@ -88,10 +88,16 @@ export async function runMenu(io: MenuIO, act: MenuActions, version: string): Pr
   );
   const choice = (await io.ask('Type 1, 2 or 3 and press Enter (just Enter closes): ')).trim();
   let code = 0;
-  if (choice === '1') code = await act.setup();
-  else if (choice === '2') code = await act.update();
-  else if (choice === '3') act.help();
-  else return 0;
+  if (!['1', '2', '3'].includes(choice)) return 0;
+  // Whatever happens, the window stays until Enter, so the result (or the error) can be read.
+  try {
+    if (choice === '1') code = await act.setup();
+    else if (choice === '2') code = await act.update();
+    else act.help();
+  } catch (e: any) {
+    io.say(`\nThat didn't work: ${e?.message ?? e}`);
+    code = 1;
+  }
   await io.ask('\nPress Enter to close.');
   return code;
 }

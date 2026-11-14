@@ -68,6 +68,13 @@ test('runMenu: one choice, then a key to close; Enter alone closes', async () =>
   assert.deepEqual((await run(['2', ''])).done, ['update']);
   assert.equal((await run(['2', ''])).code, 1);
   assert.deepEqual((await run([' 3 ', ''])).done, ['help']);
+  // A failing action: the error shows, and the window still waits for Enter.
+  const said: string[] = [];
+  const answers = ['1', ''];
+  const code = await runMenu({ ask: async (q) => (said.push(q), answers.shift() ?? ''), say: (t) => said.push(t) }, { setup: () => { throw new Error('disk full'); }, update: () => 0, help: () => {} }, '1');
+  assert.equal(code, 1);
+  assert.match(said.join('\n'), /disk full/);
+  assert.match(said.join('\n'), /Press Enter to close/);
   const quit = await run(['']);
   assert.deepEqual(quit.done, []);
   assert.doesNotMatch(quit.said, /Press Enter to close/);

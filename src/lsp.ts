@@ -215,8 +215,7 @@ export class Server {
         continue;
       }
       if (p.start === undefined) continue;
-      const fix = packageQuickFix(p);
-      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: p.end ?? p.start }), severity: SEVERITY[p.severity], code: 'package', codeDescription: { href: RULES_URL }, source: 'nucleus', message: `${p.title}. ${p.why}`, ...(fix ? { data: { fix } } : {}) });
+      (diagnostics as unknown[]).push({ range: lines.range({ start: p.start, end: p.end ?? p.start }), severity: SEVERITY[p.severity], code: 'package', codeDescription: { href: RULES_URL }, source: 'nucleus', message: `${p.title}. ${p.why}` });
     }
     // The game folder linked to this handler (settings.gameFolders), if any: problems with their fix as data.
     const folder = this.gameFolderOf(uri);
@@ -690,10 +689,19 @@ export class Server {
     }
     const actions: any[] = quickFixes(doc.text, pairs.map(([m]) => m), this.settings.lint.rules).map((a) => toAction(a, pairs.find(([m]) => m === a.diagnostic)?.[1]));
     actions.push(...source);
-    // Package problems about the handler's text (a misspelled file name) carry their fix in `data`.
-    for (const cd of p.context?.diagnostics ?? []) {
-      const f = cd?.code === 'package' ? cd.data?.fix : undefined;
-      if (f && Array.isArray(f.edits)) actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: f.edits.map((e: any) => ({ range: l.range(e), newText: e.text })) } } });
+    // Package problems about the handler's text (a misspelled file name): the fix from a fresh check of the current
+    // text, matched by place, so a diagnostic from before the last edit never applies old offsets.
+    const pkgDiags = (p.context?.diagnostics ?? []).filter((cd: any) => cd?.code === 'package');
+    if (pkgDiags.length) {
+      const file = pathOf(doc.uri);
+      const files = file ? packageFilesFor(file) : undefined;
+      const fresh = files ? checkPackage(doc.text, files) : [];
+      for (const cd of pkgDiags) {
+        const start = l.offset(cd.range.start);
+        const end = l.offset(cd.range.end);
+        const f = packageQuickFix(fresh.find((x) => x.start === start && (x.end ?? x.start) === end && `${x.title}. ${x.why}` === cd.message) ?? {});
+        if (f) actions.push({ title: f.title, kind: 'quickfix', diagnostics: [cd], isPreferred: true, edit: { changes: { [doc.uri]: f.edits.map((e) => ({ range: l.range(e), newText: e.text })) } } });
+      }
     }
     // Game-folder problems carry their fix (the exe's real name, BinariesFolder…) in `data`.
     for (const cd of p.context?.diagnostics ?? []) {

@@ -145,11 +145,7 @@ const flag = (a: Args, k: string) => a.flags.get(k)?.at(-1);
 const has = (a: Args, k: string) => a.flags.has(k);
 const print = (json: boolean, value: unknown, text: () => string) => console.log(json ? JSON.stringify(value, null, 2) : text());
 
-/** The arguments as given (the elevated setup passes them on). */
-let rawArgs: string[] = [];
-
 async function main(argv: string[]): Promise<number> {
-  rawArgs = [...argv];
   // Double-clicked in Explorer: a short menu that waits for a key (its window closes when ncdev exits). From a
   // terminal, no arguments still print the help and exit; only the no-arguments case takes the moment to tell.
   if (!argv.length && isStandalone() && startedFromExplorer()) {
@@ -604,7 +600,9 @@ function cmdSetup(args: Args, json: boolean): number {
   const resultFile = flag(args, '--result-file');
   if (r.denied && process.platform === 'win32' && !has(args, '--elevated')) {
     const self = isStandalone() ? [] : [path.resolve(process.argv[1])];
-    const again = runElevated(process.execPath, [...self, 'setup', ...rawArgs.slice(rawArgs.indexOf('setup') + 1).filter((a) => a !== '--json')]);
+    // The same setup, from what was asked (the double-click menu has no command line to copy).
+    const p = flag(args, '--path');
+    const again = runElevated(process.execPath, [...self, 'setup', 'notepad++', ...(p ? ['--path', p] : []), ...(has(args, '--remove') ? ['--remove'] : [])]);
     if (again.ran) r = { ok: !!again.ok, lines: again.lines ?? [] };
     else r.lines.unshift("Windows didn't give ncdev permission to write to Notepad++'s folder (the prompt was declined, or couldn't be shown).");
   }

@@ -227,6 +227,9 @@ test('replaces-nucleus-object: declaring Game or Context is an error, and the AP
   assert.equal(only(HEADER + 'Game = { GUID: "x" };\n', 'replaces-nucleus-object').length, 1, 'an assignment');
   assert.equal(only(HEADER + 'try { x(); } catch (Context) { }\n', 'replaces-nucleus-object').length, 1, 'a catch parameter');
   assert.equal(only(HEADER + 'var Game = { GUID: "x" };\n', 'replaces-nucleus-object')[0].fixes, undefined, 'no removal when it holds something');
+  assert.equal(only(HEADER + 'for (var Game in {}) {}\n', 'replaces-nucleus-object')[0].fixes, undefined, 'no removal inside a for head (it would not parse)');
+  const named = HEADER + 'Game.Play = function Context() {\n  Context.StartArguments = "-x";\n};\n';
+  assert.equal(only(named, 'replaces-nucleus-object').length, 1, 'a named function expression');
 });
 
 test('replaces-nucleus-object: no false alarms', () => {
